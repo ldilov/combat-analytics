@@ -16,6 +16,8 @@ local SUGGESTION_TITLES = {
     DUMMY_SUSTAINED_VARIANCE = "Sustained dummy damage is below your benchmark",
     ROTATION_GAPS_OBSERVED = "Successful casts had dead air between them",
     PROC_WINDOWS_UNDERUSED = "Proc-like buff windows were not converted cleanly",
+    LATE_FIRST_GO = "First major go started later than usual",
+    DEFENSIVE_DRIFT = "Defensive timing drifted later than your norm",
     MIDNIGHT_SAFE_LIMITS = "Timing detail is limited on Midnight-safe mode",
     RAW_EVENT_OVERFLOW = "Raw event storage hit its emergency cap",
 }
@@ -92,6 +94,12 @@ local function buildSuggestionEvidence(suggestion)
     if suggestion.reasonCode == "PROC_WINDOWS_UNDERUSED" then
         return string.format("Proc-like windows: %d. Casts inside windows: %d.", evidence.procWindows or 0, evidence.castsDuringWindows or 0)
     end
+    if suggestion.reasonCode == "LATE_FIRST_GO" then
+        return string.format("First major go at %.1fs vs %.1fs usual timing across %d sessions.", evidence.current or 0, evidence.baseline or 0, evidence.samples or 0)
+    end
+    if suggestion.reasonCode == "DEFENSIVE_DRIFT" then
+        return string.format("First defensive at %.1fs vs %.1fs norm. Damage taken: %s.", evidence.current or 0, evidence.baseline or 0, Helpers.FormatNumber(evidence.damageTaken or 0))
+    end
     if suggestion.reasonCode == "MIDNIGHT_SAFE_LIMITS" then
         return "Built from Blizzard's post-combat Damage Meter totals, not raw combat log events."
     end
@@ -124,6 +132,19 @@ local function setComparisonRow(row, title, description, current, expected, form
     row:SetData(title, deltaText, string.format("%s %s", description or "", deltaLabel), percent, color, marker)
     row:Show()
     return true
+end
+
+local function formatDisplayLabel(value)
+    local map = {
+        high = "High",
+        medium = "Medium",
+        limited = "Limited",
+        ["local"] = "Local",
+        damage_meter = "Damage Meter",
+        enemy_damage_taken_fallback = "Enemy Fallback",
+        estimated = "Estimated",
+    }
+    return map[value] or tostring(value or "unknown")
 end
 
 function SummaryView:Build(parent)
@@ -234,11 +255,15 @@ function SummaryView:Refresh(payload)
         self.scrollFrame:SetVerticalScroll(0)
     end
     if not session then
+        self.caption:SetText("Latest fight translated into explained scores, benchmark bars, and recognizable spell output.")
         self.emptyState:Show()
         for _, collection in ipairs({ self.metricCards, self.metricBars, self.comparisonRows, self.spellRows, self.insightCards }) do
             for _, widget in ipairs(collection) do
                 widget:Hide()
             end
+        end
+        if self.dummyNotice then
+            self.dummyNotice:Hide()
         end
         self.scoresTitle:Hide()
         self.scoresCaption:Hide()
@@ -252,6 +277,7 @@ function SummaryView:Refresh(payload)
     end
 
     self.emptyState:Hide()
+    self.caption:SetText("Latest fight translated into explained scores, benchmark bars, and recognizable spell output.")
 
     local isDummy = session.context == ns.Constants.CONTEXT.TRAINING_DUMMY
     if self.dummyNotice then
@@ -282,9 +308,19 @@ function SummaryView:Refresh(payload)
     local itemLevel = snapshot.equippedItemLevel or snapshot.averageItemLevel or snapshot.pvpItemLevel or 0
     local buildHash = snapshot.buildHash or "unknown"
     local contextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
-    local buildBaseline = store:GetBuildBaseline(buildHash, contextKey)
-    local opponentBaseline = session.primaryOpponent and store:GetOpponentBaseline(session.primaryOpponent.guid or session.primaryOpponent.name) or nil
+    local buildBaseline = store:GetBuildBaseline(buildHash, contextKey, session.id)
+    local opponentBaseline = session.primaryOpponent and store:GetOpponentBaseline(session.primaryOpponent.guid or session.primaryOpponent.name, session.id) or nil
+    local matchupBaseline = session.primaryOpponent and store:GetSessionBaseline(buildHash, contextKey, session.primaryOpponent.guid or session.primaryOpponent.name, session.id) or nil
     local dummyBenchmark = nil
+    local openerFingerprint = session.openerFingerprint or {}
+    local readQuality = formatDisplayLabel(session.analysisConfidence)
+    local readSource = formatDisplayLabel(session.finalDamageSource)
+
+    self.caption:SetText(string.format(
+        "Latest fight translated into explained scores, benchmark bars, and recognizable spell output. Read quality: %s via %s.",
+        readQuality,
+        readSource
+    ))
 
     if session.context == ns.Constants.CONTEXT.TRAINING_DUMMY then
         for _, benchmark in ipairs(store:GetDummyBenchmarks()) do
@@ -298,7 +334,7 @@ function SummaryView:Refresh(payload)
     self.metricCards[1]:SetData(
         string.format("%s", Helpers.FormatNumber(session.totals.damageDone or 0)),
         "Damage Done",
-        string.format("%s DPS over %s versus %s.", Helpers.FormatNumber(session.metrics.sustainedDps or 0), Helpers.FormatDuration(session.duration or 0), opponent),
+        string.format("%s DPS over %s versus %s. Source: %s.", Helpers.FormatNumber(session.metrics.sustainedDps or 0), Helpers.FormatDuration(session.duration or 0), opponent, readSource),
         Theme.accent
     )
     self.metricCards[1]:Show()
@@ -322,7 +358,7 @@ function SummaryView:Refresh(payload)
     self.metricCards[4]:SetData(
         string.format("%s ilvl", formatItemLevel(itemLevel)),
         "Fight Snapshot",
-        string.format("Mastery %s  |  Vers %s dmg / %s DR", formatPercent(snapshot.masteryEffect), formatPercent(snapshot.versatilityDamageDone), formatPercent(snapshot.versatilityDamageTaken)),
+        string.format("Mastery %s  |  Vers %s dmg / %s DR  |  Read %s", formatPercent(snapshot.masteryEffect), formatPercent(snapshot.versatilityDamageDone), formatPercent(snapshot.versatilityDamageTaken), readQuality),
         Theme.text
     )
     self.metricCards[4]:Show()
@@ -358,7 +394,7 @@ function SummaryView:Refresh(payload)
     self.metricBars[5]:SetData(
         "Buff Window Follow-through",
         string.format("%.1f / 100", session.metrics.procConversionScore or 0),
-        string.format("Proc-like windows observed: %d. Casts landed inside them: %d. Reference: 35 low, 60 solid, 80 excellent.", session.metrics.procWindowsObserved or 0, session.metrics.procWindowCastCount or 0),
+        string.format("Proc-like windows observed: %d. Casts landed inside them: %d. First go %s.", session.metrics.procWindowsObserved or 0, session.metrics.procWindowCastCount or 0, openerFingerprint.firstMajorOffensiveAt and string.format("%.1fs", openerFingerprint.firstMajorOffensiveAt) or "--"),
         (session.metrics.procConversionScore or 0) / 100,
         Theme.borderStrong
     )
@@ -400,7 +436,18 @@ function SummaryView:Refresh(payload)
         )
     end
 
-    if dummyBenchmark and dummyBenchmark.sessions >= 5 and comparisonCount < #self.comparisonRows then
+    if matchupBaseline and matchupBaseline.fights >= 5 and (session.metrics.openerDamage or 0) > 0 and comparisonCount < #self.comparisonRows then
+        local row = nextComparisonRow()
+        setComparisonRow(
+            row,
+            "Opener vs Matchup Baseline",
+            string.format("Compared against %d sessions on this build versus this opponent/context.", matchupBaseline.fights or 0),
+            session.metrics.openerDamage or 0,
+            matchupBaseline.averageOpenerDamage or 0,
+            Helpers.FormatNumber,
+            false
+        )
+    elseif dummyBenchmark and dummyBenchmark.sessions >= 5 and comparisonCount < #self.comparisonRows then
         local row = nextComparisonRow()
         local expectedSustained = (dummyBenchmark.totalSustainedDps or 0) / math.max(dummyBenchmark.sessions or 1, 1)
         setComparisonRow(
@@ -446,8 +493,8 @@ function SummaryView:Refresh(payload)
         else
             row:SetData(
                 "Personal Benchmark Pending",
-                string.format("%s sustained DPS", Helpers.FormatNumber(session.metrics.sustainedDps or 0)),
-                "Reference markers appear here once you have enough dummy pulls or matchup history for this session type.",
+                string.format("%s opener", Helpers.FormatNumber(session.metrics.openerDamage or 0)),
+                "Reference markers appear here once you have enough build-matched duels, dummy pulls, or matchup history for this session type.",
                 (session.metrics.pressureScore or 0) / 100,
                 Theme.accentSoft
             )

@@ -37,6 +37,10 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     local opponent = session.primaryOpponent or {}
     local hasRawTimeline = #(session.rawEvents or {}) > 0
     local successfulCastCount = getSuccessfulCastCount(session)
+    local matchupBaseline = nil
+    if opponent.guid or opponent.name then
+        matchupBaseline = store:GetSessionBaseline(buildHash, contextKey, opponent.guid or opponent.name)
+    end
 
     local buildBaseline = store:GetBuildBaseline(buildHash, contextKey)
     if buildBaseline and buildBaseline.fights >= 5 and session.metrics.pressureScore < (buildBaseline.averagePressureScore * 0.8) then
@@ -65,6 +69,49 @@ function SuggestionEngine:BuildSessionSuggestions(session)
             "rotation",
             "Successful casts showed noticeable gaps, which points to lost uptime in the rotation."
         ))
+    end
+
+    if matchupBaseline and matchupBaseline.fights >= 5 then
+        local openerFingerprint = session.openerFingerprint or {}
+        if openerFingerprint.firstMajorOffensiveAt
+            and matchupBaseline.averageFirstMajorOffensiveAt
+            and openerFingerprint.firstMajorOffensiveAt > (matchupBaseline.averageFirstMajorOffensiveAt + 1.0)
+        then
+            addSuggestion(results, buildSuggestion(
+                session,
+                "LATE_FIRST_GO",
+                "medium",
+                0.74,
+                {
+                    samples = matchupBaseline.fights,
+                    current = openerFingerprint.firstMajorOffensiveAt,
+                    baseline = matchupBaseline.averageFirstMajorOffensiveAt,
+                },
+                contextKey,
+                "Major offensive cooldowns came online later than your usual timing for this build and matchup."
+            ))
+        end
+
+        if openerFingerprint.firstMajorDefensiveAt
+            and matchupBaseline.averageFirstMajorDefensiveAt
+            and openerFingerprint.firstMajorDefensiveAt > (matchupBaseline.averageFirstMajorDefensiveAt + 1.0)
+            and (session.totals.damageTaken or 0) > (matchupBaseline.averageDamageTaken or 0)
+        then
+            addSuggestion(results, buildSuggestion(
+                session,
+                "DEFENSIVE_DRIFT",
+                "medium",
+                0.71,
+                {
+                    samples = matchupBaseline.fights,
+                    current = openerFingerprint.firstMajorDefensiveAt,
+                    baseline = matchupBaseline.averageFirstMajorDefensiveAt,
+                    damageTaken = session.totals.damageTaken or 0,
+                },
+                contextKey,
+                "Defensive timing drifted later than your stronger historical pacing for this matchup."
+            ))
+        end
     end
 
     if (session.metrics.procWindowsObserved or 0) >= 3 and (session.metrics.procWindowCastCount or 0) < math.max(2, session.metrics.procWindowsObserved) then

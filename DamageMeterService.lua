@@ -632,6 +632,7 @@ function DamageMeterService:ApplyImportMetadata(session, metadata)
     session.import.durationDelta = metadata and metadata.durationDelta or nil
     session.import.signalScore = metadata and metadata.signalScore or 0
     session.import.score = metadata and metadata.score or 0
+    session.import.finalDamageSourceHint = session.import.finalDamageSourceHint or nil
 end
 
 function DamageMeterService:ResolveDamageSpellBreakdown(session, snapshot)
@@ -833,6 +834,11 @@ function DamageMeterService:ApplySnapshotToSession(session, snapshot)
     if (session.totals.damageDone or 0) <= 0 and expectedDamageTotal > 0 then
         session.totals.damageDone = expectedDamageTotal
         session.importedTotals.damageDone = math.max(session.importedTotals.damageDone or 0, expectedDamageTotal)
+        if session.import then
+            session.import.finalDamageSourceHint = "enemy_damage_taken_fallback"
+        end
+    elseif localDamageDone <= 0 and (session.importedTotals.damageDone or 0) > 0 and session.import then
+        session.import.finalDamageSourceHint = "damage_meter"
     end
 
     local damageMeterType, damageSpells, damageBreakdownSource = self:ResolveDamageSpellBreakdown(session, snapshot)

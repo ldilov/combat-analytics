@@ -52,7 +52,7 @@ function MainFrame:Initialize()
     self.frame:Hide()
     ns.Widgets.ApplyBackdrop(self.frame, ns.Widgets.THEME.background, ns.Widgets.THEME.borderStrong, { left = 1, right = 1, top = 1, bottom = 1 })
 
-    self.header = ns.Widgets.CreateSurface(self.frame, 1, 78, { 0.06, 0.08, 0.11, 0.98 }, ns.Widgets.THEME.borderStrong)
+    self.header = ns.Widgets.CreateSurface(self.frame, 1, 78, ns.Widgets.THEME.header, ns.Widgets.THEME.borderStrong)
     self.header:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 2, -2)
     self.header:SetPoint("TOPRIGHT", self.frame, "TOPRIGHT", -2, -2)
 
@@ -100,7 +100,7 @@ function MainFrame:Initialize()
     self.tabStrip:SetPoint("TOPRIGHT", self.header, "BOTTOMRIGHT", -16, -10)
     self.tabStrip:SetHeight(28)
 
-    self.contentShell = ns.Widgets.CreateSurface(self.frame, 1, 1, { 0.07, 0.09, 0.13, 0.97 }, ns.Widgets.THEME.border)
+    self.contentShell = ns.Widgets.CreateSurface(self.frame, 1, 1, ns.Widgets.THEME.contentShell, ns.Widgets.THEME.border)
     self.contentShell:SetPoint("TOPLEFT", self.tabStrip, "BOTTOMLEFT", 0, -10)
     self.contentShell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 16)
 

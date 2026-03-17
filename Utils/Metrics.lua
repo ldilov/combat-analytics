@@ -1,6 +1,7 @@
 local _, ns = ...
 
 local Constants = ns.Constants
+local ApiCompat = ns.ApiCompat
 local Helpers = ns.Helpers
 local MathUtil = ns.Math
 
@@ -203,6 +204,108 @@ local function computeTopOutputShare(session)
     return topAmount / totalAmount
 end
 
+local function isMajorOffensiveSpell(spellId)
+    local taxonomy = ns.StaticPvpData and ns.StaticPvpData.SPELL_TAXONOMY or nil
+    return taxonomy and taxonomy.majorOffensive and taxonomy.majorOffensive[spellId] or false
+end
+
+local function isMajorDefensiveSpell(spellId)
+    local taxonomy = ns.StaticPvpData and ns.StaticPvpData.SPELL_TAXONOMY or nil
+    if taxonomy and taxonomy.majorDefensive and taxonomy.majorDefensive[spellId] then
+        return true
+    end
+    return ApiCompat.AuraIsBigDefensive and ApiCompat.AuraIsBigDefensive(spellId) or false
+end
+
+local function findFirstCooldownAt(session, predicate)
+    local earliest = nil
+    for spellId, cooldown in pairs(session.cooldowns or {}) do
+        if cooldown.firstUsedAt and predicate(spellId, cooldown) then
+            earliest = earliest and math.min(earliest, cooldown.firstUsedAt) or cooldown.firstUsedAt
+        end
+    end
+    return earliest
+end
+
+local function countCooldownUses(session, predicate)
+    local total = 0
+    for spellId, cooldown in pairs(session.cooldowns or {}) do
+        if predicate(spellId, cooldown) then
+            total = total + (cooldown.useCount or 0)
+        end
+    end
+    return total
+end
+
+local function countOpenerCasts(session, openerEnd)
+    local count = 0
+    for _, eventRecord in ipairs(session.rawEvents or {}) do
+        if eventRecord.sourceMine
+            and eventRecord.eventType == "cast"
+            and (eventRecord.timestampOffset or 0) <= openerEnd
+        then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function collectOpenerSpellIds(session, openerEnd, limit)
+    local scored = {}
+    for _, eventRecord in ipairs(session.rawEvents or {}) do
+        local offset = eventRecord.timestampOffset or 0
+        if eventRecord.sourceMine and offset >= 0 and offset <= openerEnd and eventRecord.spellId then
+            local score = scored[eventRecord.spellId] or 0
+            score = score + (eventRecord.amount or 0)
+            if eventRecord.eventType == "cast" then
+                score = score + 100
+            end
+            scored[eventRecord.spellId] = score
+        end
+    end
+
+    local ranked = {}
+    for spellId, score in pairs(scored) do
+        ranked[#ranked + 1] = { spellId = spellId, score = score }
+    end
+    table.sort(ranked, function(left, right)
+        if (left.score or 0) == (right.score or 0) then
+            return (left.spellId or 0) < (right.spellId or 0)
+        end
+        return (left.score or 0) > (right.score or 0)
+    end)
+
+    local result = {}
+    for index = 1, math.min(limit or 3, #ranked) do
+        result[#result + 1] = ranked[index].spellId
+    end
+    return result
+end
+
+local function collectOpenerCooldownSpellIds(session, openerEnd, limit)
+    local ranked = {}
+    for spellId, cooldown in pairs(session.cooldowns or {}) do
+        if cooldown.firstUsedAt and cooldown.firstUsedAt <= openerEnd then
+            ranked[#ranked + 1] = {
+                spellId = spellId,
+                firstUsedAt = cooldown.firstUsedAt,
+            }
+        end
+    end
+    table.sort(ranked, function(left, right)
+        if (left.firstUsedAt or 0) == (right.firstUsedAt or 0) then
+            return (left.spellId or 0) < (right.spellId or 0)
+        end
+        return (left.firstUsedAt or 0) < (right.firstUsedAt or 0)
+    end)
+
+    local result = {}
+    for index = 1, math.min(limit or 3, #ranked) do
+        result[#result + 1] = ranked[index].spellId
+    end
+    return result
+end
+
 function Metrics.DeriveWindows(session)
     if not hasRawTimeline(session) then
         session.windows = {}
@@ -256,6 +359,22 @@ function Metrics.ComputeDerivedMetrics(session)
     local limitedTimeline = not hasRawTimeline(session)
     local procConversionScore, procWindowsObserved, procWindowCastCount = computeProcConversion(session)
     local topOutputShare = computeTopOutputShare(session)
+    local openerEnd = math.min(session.duration or 0, Constants.WINDOW_OPENERS_SECONDS)
+    local openerCastCount = countOpenerCasts(session, openerEnd)
+    local openerSpellIds = collectOpenerSpellIds(session, openerEnd, 3)
+    local openerCooldownSpellIds = collectOpenerCooldownSpellIds(session, openerEnd, 3)
+    local firstMajorOffensiveAt = findFirstCooldownAt(session, function(spellId)
+        return isMajorOffensiveSpell(spellId)
+    end)
+    local firstMajorDefensiveAt = findFirstCooldownAt(session, function(spellId)
+        return isMajorDefensiveSpell(spellId)
+    end)
+    local majorOffensiveCount = countCooldownUses(session, function(spellId)
+        return isMajorOffensiveSpell(spellId)
+    end)
+    local majorDefensiveCount = countCooldownUses(session, function(spellId)
+        return isMajorDefensiveSpell(spellId)
+    end)
     local sustainedBurstProxy = Helpers.Clamp((sustainedDps / 1500) * 20, 0, 20)
     local concentrationProxy = Helpers.Clamp(topOutputShare * 60, 0, 60)
     local procBurstProxy = Helpers.Clamp((procWindowsObserved or 0) * 8 + (procWindowCastCount or 0) * 4, 0, 20)
@@ -280,7 +399,20 @@ function Metrics.ComputeDerivedMetrics(session)
         procConversionScore = Helpers.Round(procConversionScore, 2),
         procWindowsObserved = procWindowsObserved or 0,
         procWindowCastCount = procWindowCastCount or 0,
+        openerCastCount = openerCastCount,
+        firstMajorOffensiveAt = firstMajorOffensiveAt and Helpers.Round(firstMajorOffensiveAt, 2) or nil,
+        firstMajorDefensiveAt = firstMajorDefensiveAt and Helpers.Round(firstMajorDefensiveAt, 2) or nil,
+        majorOffensiveCount = majorOffensiveCount,
+        majorDefensiveCount = majorDefensiveCount,
         limitedBySource = limitedTimeline,
+    }
+
+    session.openerFingerprint = {
+        openerCastCount = openerCastCount,
+        openerSpellIds = openerSpellIds,
+        openerCooldownSpellIds = openerCooldownSpellIds,
+        firstMajorOffensiveAt = firstMajorOffensiveAt and Helpers.Round(firstMajorOffensiveAt, 2) or nil,
+        firstMajorDefensiveAt = firstMajorDefensiveAt and Helpers.Round(firstMajorDefensiveAt, 2) or nil,
     }
 
     return session.metrics

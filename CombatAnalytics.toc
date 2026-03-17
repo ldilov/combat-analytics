@@ -6,6 +6,7 @@
 ## SavedVariables: CombatAnalyticsDB
 
 Constants.lua
+StaticPvpData.lua
 Utils\Helpers.lua
 Utils\Math.lua
 Utils\BuildHash.lua

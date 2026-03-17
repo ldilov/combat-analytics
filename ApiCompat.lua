@@ -491,6 +491,13 @@ function ApiCompat.GetSpellCooldown(spellId)
     return nil
 end
 
+function ApiCompat.AuraIsBigDefensive(spellId)
+    if C_UnitAuras and C_UnitAuras.AuraIsBigDefensive then
+        return C_UnitAuras.AuraIsBigDefensive(spellId)
+    end
+    return false
+end
+
 function ApiCompat.IsGuidPlayer(guid)
     return type(guid) == "string" and string.sub(guid, 1, 8) == "Player-"
 end

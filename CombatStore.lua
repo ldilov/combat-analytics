@@ -403,45 +403,152 @@ function CombatStore:GetRecentSuggestions(limit)
     return results
 end
 
-function CombatStore:GetBuildBaseline(buildHash, context)
-    local bucket = self:GetDB().aggregates.builds[buildHash or "unknown"]
-    if not bucket or bucket.fights <= 0 then
+function CombatStore:GetBuildBaseline(buildHash, context, excludeSessionId)
+    return self:GetSessionBaseline(buildHash, context, nil, excludeSessionId)
+end
+
+function CombatStore:GetContextBaseline(contextKey, excludeSessionId)
+    if not excludeSessionId then
+        local bucket = self:GetDB().aggregates.contexts[contextKey]
+        if not bucket or bucket.fights <= 0 then
+            return nil
+        end
+        return {
+            fights = bucket.fights,
+            averagePressureScore = bucket.totalPressureScore / bucket.fights,
+            averageBurstScore = bucket.totalBurstScore / bucket.fights,
+            averageDuration = bucket.totalDuration / bucket.fights,
+        }
+    end
+
+    local db = self:GetDB()
+    local fights = 0
+    local totalPressureScore = 0
+    local totalBurstScore = 0
+    local totalDuration = 0
+
+    for _, sessionId in ipairs(db.combats.order or {}) do
+        if sessionId ~= excludeSessionId then
+            local session = db.combats.byId[sessionId]
+            if session then
+                local sessionContextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
+                if sessionContextKey == contextKey then
+                    fights = fights + 1
+                    totalPressureScore = totalPressureScore + (session.metrics and session.metrics.pressureScore or 0)
+                    totalBurstScore = totalBurstScore + (session.metrics and session.metrics.burstScore or 0)
+                    totalDuration = totalDuration + (session.duration or 0)
+                end
+            end
+        end
+    end
+
+    if fights <= 0 then
         return nil
     end
+
     return {
-        fights = bucket.fights,
-        averagePressureScore = bucket.totalPressureScore / bucket.fights,
-        averageBurstScore = bucket.totalBurstScore / bucket.fights,
-        averageSurvivabilityScore = bucket.totalSurvivabilityScore / bucket.fights,
-        averageDamageDone = bucket.totalDamageDone / bucket.fights,
-        context = context,
+        fights = fights,
+        averagePressureScore = totalPressureScore / fights,
+        averageBurstScore = totalBurstScore / fights,
+        averageDuration = totalDuration / fights,
     }
 end
 
-function CombatStore:GetContextBaseline(contextKey)
-    local bucket = self:GetDB().aggregates.contexts[contextKey]
-    if not bucket or bucket.fights <= 0 then
+function CombatStore:GetOpponentBaseline(opponentKey, excludeSessionId)
+    if not excludeSessionId then
+        local bucket = self:GetDB().aggregates.opponents[opponentKey]
+        if not bucket or bucket.fights <= 0 then
+            return nil
+        end
+        return {
+            fights = bucket.fights,
+            averageDamageTaken = bucket.totalDamageTaken / bucket.fights,
+            averageDuration = bucket.totalDuration / bucket.fights,
+            averagePressureScore = bucket.totalPressureScore / bucket.fights,
+        }
+    end
+
+    return self:GetSessionBaseline(nil, nil, opponentKey, excludeSessionId)
+end
+
+function CombatStore:GetSessionBaseline(buildHash, contextKey, opponentKey, excludeSessionId)
+    local db = self:GetDB()
+    local fights = 0
+    local wins = 0
+    local losses = 0
+    local totalDamageDone = 0
+    local totalDamageTaken = 0
+    local totalPressureScore = 0
+    local totalBurstScore = 0
+    local totalSurvivabilityScore = 0
+    local totalOpenerDamage = 0
+    local totalDuration = 0
+    local totalFirstMajorOffensiveAt = 0
+    local totalFirstMajorDefensiveAt = 0
+    local firstMajorOffensiveSamples = 0
+    local firstMajorDefensiveSamples = 0
+
+    for _, sessionId in ipairs(db.combats.order or {}) do
+        local session = db.combats.byId[sessionId]
+        if session and sessionId ~= excludeSessionId then
+            local sessionBuildHash = session.playerSnapshot and session.playerSnapshot.buildHash or "unknown"
+            local sessionContextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
+            local sessionOpponentKey = session.primaryOpponent and (session.primaryOpponent.guid or session.primaryOpponent.name) or nil
+
+            if (not buildHash or sessionBuildHash == buildHash)
+                and (not contextKey or sessionContextKey == contextKey)
+                and (not opponentKey or sessionOpponentKey == opponentKey)
+            then
+                local openerFingerprint = session.openerFingerprint or {}
+                fights = fights + 1
+                totalDamageDone = totalDamageDone + (session.totals.damageDone or 0)
+                totalDamageTaken = totalDamageTaken + (session.totals.damageTaken or 0)
+                totalPressureScore = totalPressureScore + (session.metrics and session.metrics.pressureScore or 0)
+                totalBurstScore = totalBurstScore + (session.metrics and session.metrics.burstScore or 0)
+                totalSurvivabilityScore = totalSurvivabilityScore + (session.metrics and session.metrics.survivabilityScore or 0)
+                totalOpenerDamage = totalOpenerDamage + (session.metrics and session.metrics.openerDamage or 0)
+                totalDuration = totalDuration + (session.duration or 0)
+
+                if openerFingerprint.firstMajorOffensiveAt then
+                    totalFirstMajorOffensiveAt = totalFirstMajorOffensiveAt + openerFingerprint.firstMajorOffensiveAt
+                    firstMajorOffensiveSamples = firstMajorOffensiveSamples + 1
+                end
+                if openerFingerprint.firstMajorDefensiveAt then
+                    totalFirstMajorDefensiveAt = totalFirstMajorDefensiveAt + openerFingerprint.firstMajorDefensiveAt
+                    firstMajorDefensiveSamples = firstMajorDefensiveSamples + 1
+                end
+
+                if session.result == Constants.SESSION_RESULT.WON then
+                    wins = wins + 1
+                elseif session.result == Constants.SESSION_RESULT.LOST then
+                    losses = losses + 1
+                end
+            end
+        end
+    end
+
+    if fights <= 0 then
         return nil
     end
+
     return {
-        fights = bucket.fights,
-        averagePressureScore = bucket.totalPressureScore / bucket.fights,
-        averageBurstScore = bucket.totalBurstScore / bucket.fights,
-        averageDuration = bucket.totalDuration / bucket.fights,
+        fights = fights,
+        wins = wins,
+        losses = losses,
+        averageDamageDone = totalDamageDone / fights,
+        averageDamageTaken = totalDamageTaken / fights,
+        averagePressureScore = totalPressureScore / fights,
+        averageBurstScore = totalBurstScore / fights,
+        averageSurvivabilityScore = totalSurvivabilityScore / fights,
+        averageOpenerDamage = totalOpenerDamage / fights,
+        averageDuration = totalDuration / fights,
+        averageFirstMajorOffensiveAt = firstMajorOffensiveSamples > 0 and (totalFirstMajorOffensiveAt / firstMajorOffensiveSamples) or nil,
+        averageFirstMajorDefensiveAt = firstMajorDefensiveSamples > 0 and (totalFirstMajorDefensiveAt / firstMajorDefensiveSamples) or nil,
     }
 end
 
-function CombatStore:GetOpponentBaseline(opponentKey)
-    local bucket = self:GetDB().aggregates.opponents[opponentKey]
-    if not bucket or bucket.fights <= 0 then
-        return nil
-    end
-    return {
-        fights = bucket.fights,
-        averageDamageTaken = bucket.totalDamageTaken / bucket.fights,
-        averageDuration = bucket.totalDuration / bucket.fights,
-        averagePressureScore = bucket.totalPressureScore / bucket.fights,
-    }
+function CombatStore:GetDuelPracticeSummary(buildHash, opponentKey)
+    return self:GetSessionBaseline(buildHash, Constants.CONTEXT.DUEL, opponentKey)
 end
 
 function CombatStore:ResetAggregates()

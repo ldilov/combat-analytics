@@ -52,6 +52,18 @@ local function buildSpellBreakdown(session)
     return table.concat(lines, "\n")
 end
 
+local function formatSpellList(spellIds)
+    local names = {}
+    for _, spellId in ipairs(spellIds or {}) do
+        local spellInfo = ns.ApiCompat.GetSpellInfo(spellId) or {}
+        names[#names + 1] = spellInfo.name or tostring(spellId)
+    end
+    if #names == 0 then
+        return "--"
+    end
+    return table.concat(names, ", ")
+end
+
 function CombatDetailView:Build(parent)
     self.frame = CreateFrame("Frame", nil, parent)
     self.frame:SetAllPoints()
@@ -185,11 +197,13 @@ function CombatDetailView:Refresh(payload)
     local identity = session.identity or {}
     local identityEvidence = identity.evidence or {}
     local importInfo = session.import or {}
+    local openerFingerprint = session.openerFingerprint or {}
 
     local text = table.concat({
         string.format("Session: %s", session.id),
         string.format("Context: %s %s", session.context or "unknown", session.subcontext or ""),
         string.format("Result: %s", session.result or "unknown"),
+        string.format("Analysis: confidence=%s  finalDamageSource=%s", session.analysisConfidence or "unknown", session.finalDamageSource or "unknown"),
         string.format(
             "Identity: kind=%s provisional=%s confidence=%s source=%s reason=%s",
             identity.kind or "unknown",
@@ -222,6 +236,14 @@ function CombatDetailView:Refresh(payload)
             importInfo.damageBreakdown or "none"
         ),
         string.format(
+            "Opener: casts=%d firstOffensive=%s firstDefensive=%s spells=%s cooldowns=%s",
+            openerFingerprint.openerCastCount or 0,
+            openerFingerprint.firstMajorOffensiveAt and string.format("%.1fs", openerFingerprint.firstMajorOffensiveAt) or "--",
+            openerFingerprint.firstMajorDefensiveAt and string.format("%.1fs", openerFingerprint.firstMajorDefensiveAt) or "--",
+            formatSpellList(openerFingerprint.openerSpellIds),
+            formatSpellList(openerFingerprint.openerCooldownSpellIds)
+        ),
+        string.format(
             "Fight Snapshot: ilvl=%s  mastery=%s  versatility=%s dmg / %s DR",
             session.playerSnapshot and session.playerSnapshot.equippedItemLevel and string.format("%.1f", session.playerSnapshot.equippedItemLevel) or "--",
             session.playerSnapshot and session.playerSnapshot.masteryEffect and string.format("%.1f%%", session.playerSnapshot.masteryEffect) or "--",
@@ -234,7 +256,7 @@ function CombatDetailView:Refresh(payload)
         "Totals",
         string.format("Damage=%s  Healing=%s  Taken=%s", ns.Helpers.FormatNumber(session.totals.damageDone or 0), ns.Helpers.FormatNumber(session.totals.healingDone or 0), ns.Helpers.FormatNumber(session.totals.damageTaken or 0)),
         string.format("Pressure=%.1f  Burst=%.1f  Survivability=%.1f  Utility=%.1f", session.metrics.pressureScore or 0, session.metrics.burstScore or 0, session.metrics.survivabilityScore or 0, session.metrics.utilityEfficiencyScore or 0),
-        string.format("Rotation=%.1f  ProcFollowThrough=%.1f  ProcWindows=%d  ProcCasts=%d", session.metrics.rotationalConsistencyScore or 0, session.metrics.procConversionScore or 0, session.metrics.procWindowsObserved or 0, session.metrics.procWindowCastCount or 0),
+        string.format("Rotation=%.1f  ProcFollowThrough=%.1f  ProcWindows=%d  ProcCasts=%d  MajorOff=%d  MajorDef=%d", session.metrics.rotationalConsistencyScore or 0, session.metrics.procConversionScore or 0, session.metrics.procWindowsObserved or 0, session.metrics.procWindowCastCount or 0, session.metrics.majorOffensiveCount or 0, session.metrics.majorDefensiveCount or 0),
         "",
         "Spell Breakdown",
         buildSpellBreakdown(session),

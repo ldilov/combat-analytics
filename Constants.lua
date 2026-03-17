@@ -131,6 +131,8 @@ ns.Constants = {
         enableTraceLogging = true,
         showMinimapButton = false,
         minimapAngle = 225,
+        themePreset = "modern_steel_ember",
+        showConfidenceBadges = true,
     },
     TRAINING_DUMMY_PATTERNS = {
         "training dummy",

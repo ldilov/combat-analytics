@@ -17,12 +17,15 @@ function OpponentStatsView:Build(parent)
 end
 
 function OpponentStatsView:Refresh()
-    local buckets = ns.Addon:GetModule("CombatStore"):GetAggregateBuckets("opponents")
+    local store = ns.Addon:GetModule("CombatStore")
+    local buckets = store:GetAggregateBuckets("opponents")
     if #buckets == 0 then
         ns.Widgets.SetBodyText(self.content, self.text, "No opponent aggregates yet.")
         return
     end
 
+    local latestSession = store:GetLatestSession()
+    local latestBuildHash = latestSession and latestSession.playerSnapshot and latestSession.playerSnapshot.buildHash or nil
     local lines = {}
     for index = 1, math.min(25, #buckets) do
         local bucket = buckets[index]
@@ -37,6 +40,19 @@ function OpponentStatsView:Refresh()
             ns.Helpers.FormatNumber((bucket.totalDamageTaken or 0) / math.max(bucket.fights or 1, 1)),
             (bucket.totalPressureScore or 0) / math.max(bucket.fights or 1, 1)
         )
+
+        if latestBuildHash then
+            local duelPractice = store:GetDuelPracticeSummary(latestBuildHash, bucket.key)
+            if duelPractice and duelPractice.fights >= 3 then
+                lines[#lines + 1] = string.format(
+                    "   latest-build duel lens: fights=%d  opener=%s  avg dur=%s  first go=%s",
+                    duelPractice.fights or 0,
+                    ns.Helpers.FormatNumber(duelPractice.averageOpenerDamage or 0),
+                    ns.Helpers.FormatDuration(duelPractice.averageDuration or 0),
+                    duelPractice.averageFirstMajorOffensiveAt and string.format("%.1fs", duelPractice.averageFirstMajorOffensiveAt) or "--"
+                )
+            end
+        end
     end
 
     ns.Widgets.SetBodyText(self.content, self.text, table.concat(lines, "\n"))

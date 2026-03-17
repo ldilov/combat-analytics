@@ -13,6 +13,8 @@ local SUGGESTION_TITLES = {
     DUMMY_SUSTAINED_VARIANCE = "Sustained dummy damage fell below benchmark",
     ROTATION_GAPS_OBSERVED = "Rotation had visible dead space",
     PROC_WINDOWS_UNDERUSED = "Proc-like buff windows were not converted",
+    LATE_FIRST_GO = "First major go started later than usual",
+    DEFENSIVE_DRIFT = "Defensive timing drifted later than usual",
     MIDNIGHT_SAFE_LIMITS = "Timeline detail is limited in Midnight-safe mode",
     RAW_EVENT_OVERFLOW = "Raw event cap was reached",
 }
@@ -43,6 +45,12 @@ local function buildEvidenceText(suggestion)
     end
     if suggestion.reasonCode == "PROC_WINDOWS_UNDERUSED" then
         return string.format("Proc windows: %d. Casts inside windows: %d.", evidence.procWindows or 0, evidence.castsDuringWindows or 0)
+    end
+    if suggestion.reasonCode == "LATE_FIRST_GO" then
+        return string.format("First major go at %.1fs versus %.1fs over %d similar sessions.", evidence.current or 0, evidence.baseline or 0, evidence.samples or 0)
+    end
+    if suggestion.reasonCode == "DEFENSIVE_DRIFT" then
+        return string.format("First defensive at %.1fs versus %.1fs norm. Damage taken %s.", evidence.current or 0, evidence.baseline or 0, ns.Helpers.FormatNumber(evidence.damageTaken or 0))
     end
     if suggestion.reasonCode == "MIDNIGHT_SAFE_LIMITS" then
         return "Built from Blizzard's post-combat Damage Meter totals because raw CLEU timing is restricted."

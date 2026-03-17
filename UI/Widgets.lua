@@ -2,7 +2,7 @@ local _, ns = ...
 
 local Widgets = {}
 
-Widgets.THEME = {
+local DEFAULT_THEME = {
     background = { 0.04, 0.05, 0.07, 0.96 },
     panel = { 0.08, 0.10, 0.14, 0.96 },
     panelAlt = { 0.11, 0.13, 0.18, 0.96 },
@@ -14,7 +14,38 @@ Widgets.THEME = {
     textMuted = { 0.60, 0.69, 0.78, 1.0 },
     success = { 0.44, 0.82, 0.60, 1.0 },
     warning = { 0.96, 0.74, 0.38, 1.0 },
+    panelHover = { 0.15, 0.18, 0.24, 0.98 },
+    panelDisabled = { 0.06, 0.07, 0.09, 0.95 },
+    barShell = { 0.06, 0.08, 0.12, 1.0 },
+    header = { 0.06, 0.08, 0.11, 0.98 },
+    contentShell = { 0.07, 0.09, 0.13, 0.97 },
+    severityHigh = { 0.42, 0.19, 0.16, 1.0 },
+    severityMedium = { 0.34, 0.25, 0.12, 1.0 },
+    severityLow = { 0.12, 0.24, 0.30, 1.0 },
 }
+
+local function deepCopy(source)
+    if type(source) ~= "table" then
+        return source
+    end
+
+    local copy = {}
+    for key, value in pairs(source) do
+        if type(value) == "table" then
+            copy[key] = deepCopy(value)
+        else
+            copy[key] = value
+        end
+    end
+    return copy
+end
+
+local presetName = ns.Addon and ns.Addon.GetSetting and ns.Addon:GetSetting("themePreset") or nil
+local preset = ns.StaticPvpData
+    and ns.StaticPvpData.THEME_PRESETS
+    and ns.StaticPvpData.THEME_PRESETS[presetName or "modern_steel_ember"]
+
+Widgets.THEME = preset and deepCopy(preset) or deepCopy(DEFAULT_THEME)
 
 function Widgets.ApplyBackdrop(frame, backgroundColor, borderColor, insets)
     frame:SetBackdrop({
@@ -281,7 +312,7 @@ function Widgets.CreateButton(parent, label, width, height)
             Widgets.ApplyBackdrop(self, Widgets.THEME.accentSoft, Widgets.THEME.borderStrong)
             self.text:SetTextColor(unpack(Widgets.THEME.text))
         elseif not self:IsEnabled() then
-            Widgets.ApplyBackdrop(self, { 0.06, 0.07, 0.09, 0.95 }, Widgets.THEME.border)
+            Widgets.ApplyBackdrop(self, Widgets.THEME.panelDisabled, Widgets.THEME.border)
             self.text:SetTextColor(0.42, 0.48, 0.55, 1)
         else
             Widgets.ApplyBackdrop(self, Widgets.THEME.panelAlt, Widgets.THEME.border)
@@ -299,7 +330,7 @@ function Widgets.CreateButton(parent, label, width, height)
         if self.isActive or not self:IsEnabled() then
             return
         end
-        Widgets.ApplyBackdrop(self, { 0.15, 0.18, 0.24, 0.98 }, Widgets.THEME.borderStrong)
+        Widgets.ApplyBackdrop(self, Widgets.THEME.panelHover, Widgets.THEME.borderStrong)
     end)
     button:HookScript("OnLeave", function(self)
         self:SetActive(self.isActive)
@@ -354,7 +385,7 @@ function Widgets.CreateRowButton(parent, width, height)
     button.text:SetTextColor(unpack(Widgets.THEME.text))
 
     button:SetScript("OnEnter", function(self)
-        Widgets.ApplyBackdrop(self, { 0.13, 0.16, 0.22, 0.98 }, Widgets.THEME.borderStrong)
+        Widgets.ApplyBackdrop(self, Widgets.THEME.panelHover, Widgets.THEME.borderStrong)
     end)
     button:SetScript("OnLeave", function(self)
         Widgets.ApplyBackdrop(self, Widgets.THEME.panel, Widgets.THEME.border)
@@ -410,7 +441,7 @@ function Widgets.CreateMetricBar(parent, width, height)
     row.barShell:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -8)
     row.barShell:SetPoint("TOPRIGHT", row.value, "BOTTOMRIGHT", 0, -8)
     row.barShell:SetHeight(10)
-    Widgets.ApplyBackdrop(row.barShell, { 0.06, 0.08, 0.12, 1.0 }, Widgets.THEME.border, { left = 0, right = 0, top = 0, bottom = 0 })
+    Widgets.ApplyBackdrop(row.barShell, Widgets.THEME.barShell, Widgets.THEME.border, { left = 0, right = 0, top = 0, bottom = 0 })
 
     row.fill = row.barShell:CreateTexture(nil, "ARTWORK")
     row.fill:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -488,7 +519,7 @@ function Widgets.CreateSpellRow(parent, width, height)
     row.barShell:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMRIGHT", 10, 8)
     row.barShell:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -12, 8)
     row.barShell:SetHeight(6)
-    Widgets.ApplyBackdrop(row.barShell, { 0.06, 0.08, 0.12, 1.0 }, Widgets.THEME.border, { left = 0, right = 0, top = 0, bottom = 0 })
+    Widgets.ApplyBackdrop(row.barShell, Widgets.THEME.barShell, Widgets.THEME.border, { left = 0, right = 0, top = 0, bottom = 0 })
 
     row.fill = row.barShell:CreateTexture(nil, "ARTWORK")
     row.fill:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -544,13 +575,13 @@ function Widgets.CreateInsightCard(parent, width, height)
         local palette = Widgets.THEME.accentSoft
         local border = Widgets.THEME.borderStrong
         if severity == "high" then
-            palette = { 0.42, 0.19, 0.16, 1.0 }
+            palette = Widgets.THEME.severityHigh
             border = Widgets.THEME.warning
         elseif severity == "medium" then
-            palette = { 0.34, 0.25, 0.12, 1.0 }
+            palette = Widgets.THEME.severityMedium
             border = Widgets.THEME.warning
         elseif severity == "low" then
-            palette = { 0.12, 0.24, 0.30, 1.0 }
+            palette = Widgets.THEME.severityLow
             border = Widgets.THEME.borderStrong
         end
 

@@ -37,6 +37,7 @@ function SettingsPanel:RefreshStatus()
         string.format("Debug logging: %s", ns.Addon:IsDebugEnabled() and "enabled" or "disabled"),
         "Raw event timeline: unavailable on Midnight-safe mode",
         string.format("Include general combat: %s", ns.Addon:GetSetting("includeGeneralCombat") and "enabled" or "disabled"),
+        string.format("Theme preset: %s", ns.Addon:GetSetting("themePreset") or "default"),
         "Minimap button: disabled during stabilization",
         "",
         "Use /caa or /combatanalytics to open the addon directly.",

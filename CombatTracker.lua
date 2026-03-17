@@ -390,7 +390,23 @@ function CombatTracker:EnsureCooldownAggregate(session, spellId, category)
 end
 
 function CombatTracker:GetSpellCategory(spellId)
-    return Constants.SPELL_CATEGORIES[spellId]
+    local category = Constants.SPELL_CATEGORIES[spellId]
+    if category then
+        return category
+    end
+
+    local taxonomy = ns.StaticPvpData and ns.StaticPvpData.SPELL_TAXONOMY or nil
+    if taxonomy and taxonomy.majorOffensive and taxonomy.majorOffensive[spellId] then
+        return Constants.SPELL_CATEGORY.OFFENSIVE
+    end
+    if taxonomy and taxonomy.majorDefensive and taxonomy.majorDefensive[spellId] then
+        return Constants.SPELL_CATEGORY.DEFENSIVE
+    end
+    if ApiCompat.AuraIsBigDefensive and ApiCompat.AuraIsBigDefensive(spellId) then
+        return Constants.SPELL_CATEGORY.DEFENSIVE
+    end
+
+    return nil
 end
 
 function CombatTracker:AppendRawEvent(session, eventRecord)
@@ -930,6 +946,40 @@ function CombatTracker:EstimateUnusedDefensives(session)
     return 0
 end
 
+function CombatTracker:ResolveFinalDamageSource(session)
+    local localDamage = session.localTotals and session.localTotals.damageDone or 0
+    local importedDamage = session.importedTotals and session.importedTotals.damageDone or 0
+    local hint = session.import and session.import.finalDamageSourceHint or nil
+
+    if localDamage > 0 then
+        return "local"
+    end
+    if hint then
+        return hint
+    end
+    if importedDamage > 0 then
+        return "damage_meter"
+    end
+    if (session.damageBreakdownSource or "") == "estimated_from_casts" or (session.totals.damageDone or 0) > 0 then
+        return "estimated"
+    end
+    return "damage_meter"
+end
+
+function CombatTracker:ResolveAnalysisConfidence(session)
+    local hasRawTimeline = #(session.rawEvents or {}) > 0
+    local identityConfidence = session.identity and session.identity.confidence or 0
+    local finalDamageSource = session.finalDamageSource or "damage_meter"
+
+    if not hasRawTimeline then
+        return "limited"
+    end
+    if identityConfidence >= 90 and finalDamageSource == "local" then
+        return "high"
+    end
+    return "medium"
+end
+
 function CombatTracker:FinalizeSession(explicitResult, reason)
     local session = self:GetCurrentSession()
     if not session or session.state ~= "active" then
@@ -987,7 +1037,6 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
 
     session.result = self:DeriveResult(session, explicitResult, reason)
     session.survival.unusedDefensives = self:EstimateUnusedDefensives(session)
-    session.state = "finalized"
 
     local okWindows, errWindows = xpcall(function()
         ns.Metrics.DeriveWindows(session)
@@ -1008,6 +1057,21 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         ns.Addon:Warn("Suggestion generation failed for a session.")
         ns.Addon:Debug("%s", errSuggestions)
     end
+
+    session.finalDamageSource = self:ResolveFinalDamageSource(session)
+    session.analysisConfidence = self:ResolveAnalysisConfidence(session)
+    session.state = "finalized"
+
+    ns.Addon:Trace("session.finalized", {
+        context = session.context or "unknown",
+        identityConfidence = session.identity and session.identity.confidence or 0,
+        importConfidence = session.import and session.import.confidence or 0,
+        localDamage = session.localTotals and session.localTotals.damageDone or 0,
+        importedDamage = session.importedTotals and session.importedTotals.damageDone or 0,
+        finalDamage = session.totals and session.totals.damageDone or 0,
+        finalDamageSource = session.finalDamageSource or "unknown",
+        analysisConfidence = session.analysisConfidence or "unknown",
+    })
 
     local okPersist, errPersist = xpcall(function()
         ns.Addon:GetModule("CombatStore"):PersistSession(session)
