@@ -1,0 +1,203 @@
+local _, ns = ...
+
+local MainFrame = {
+    tabs = {
+        { id = "summary", label = "Summary", module = "SummaryView" },
+        { id = "history", label = "History", module = "CombatHistoryView" },
+        { id = "detail", label = "Detail", module = "CombatDetailView" },
+        { id = "opponents", label = "Opponent", module = "OpponentStatsView" },
+        { id = "classspec", label = "Class/Spec", module = "ClassSpecView" },
+        { id = "dummy", label = "Dummy", module = "DummyBenchmarkView" },
+        { id = "insights", label = "Insights", module = "SuggestionsView" },
+        { id = "cleanup", label = "Cleanup", module = "CleanupView" },
+    },
+}
+
+local function runViewMethod(viewModule, methodName, ...)
+    if not viewModule or type(viewModule[methodName]) ~= "function" then
+        return true
+    end
+
+    local args = { ... }
+    local ok, err = xpcall(function()
+        viewModule[methodName](viewModule, unpack(args))
+    end, debugstack)
+    if not ok then
+        ns.Addon:Warn(string.format("CombatAnalytics %s view failed.", tostring(viewModule.viewId or methodName)))
+        ns.Addon:Debug("%s", err)
+        return false
+    end
+    return true
+end
+
+function MainFrame:Initialize()
+    if self.frame then
+        return
+    end
+
+    self.frame = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    self.frame:SetSize(860, 600)
+    self.frame:SetPoint("CENTER")
+    self.frame:SetMovable(true)
+    self.frame:SetResizable(true)
+    if self.frame.SetResizeBounds then
+        self.frame:SetResizeBounds(860, 600, 1320, 920)
+    elseif self.frame.SetMinResize then
+        self.frame:SetMinResize(860, 600)
+    end
+    self.frame:EnableMouse(true)
+    self.frame:RegisterForDrag("LeftButton")
+    self.frame:SetScript("OnDragStart", self.frame.StartMoving)
+    self.frame:SetScript("OnDragStop", self.frame.StopMovingOrSizing)
+    self.frame:Hide()
+    ns.Widgets.ApplyBackdrop(self.frame, ns.Widgets.THEME.background, ns.Widgets.THEME.borderStrong, { left = 1, right = 1, top = 1, bottom = 1 })
+
+    self.header = ns.Widgets.CreateSurface(self.frame, 1, 78, { 0.06, 0.08, 0.11, 0.98 }, ns.Widgets.THEME.borderStrong)
+    self.header:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 2, -2)
+    self.header:SetPoint("TOPRIGHT", self.frame, "TOPRIGHT", -2, -2)
+
+    self.accentBar = CreateFrame("Frame", nil, self.header, "BackdropTemplate")
+    self.accentBar:SetPoint("BOTTOMLEFT", self.header, "BOTTOMLEFT", 0, 0)
+    self.accentBar:SetPoint("BOTTOMRIGHT", self.header, "BOTTOMRIGHT", 0, 0)
+    self.accentBar:SetHeight(2)
+    ns.Widgets.ApplyBackdrop(self.accentBar, ns.Widgets.THEME.accent, ns.Widgets.THEME.accent, { left = 0, right = 0, top = 0, bottom = 0 })
+
+    self.title = self.header:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    self.title:SetPoint("TOPLEFT", self.header, "TOPLEFT", 18, -14)
+    self.title:SetText("CombatAnalytics")
+    self.title:SetTextColor(unpack(ns.Widgets.THEME.text))
+
+    self.subtitle = self.header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.subtitle:SetPoint("TOPLEFT", self.title, "BOTTOMLEFT", 0, -4)
+    self.subtitle:SetText("Post-combat analytics for arenas, duels, battlegrounds, world PvP, and benchmark sessions")
+    self.subtitle:SetTextColor(unpack(ns.Widgets.THEME.textMuted))
+
+    self.closeButton = ns.Widgets.CreateButton(self.header, "Close", 64, 22)
+    self.closeButton:SetPoint("TOPRIGHT", self.header, "TOPRIGHT", -10, -12)
+    self.closeButton:SetScript("OnClick", function()
+        self.frame:Hide()
+    end)
+
+    self.resizeHandle = CreateFrame("Button", nil, self.frame)
+    self.resizeHandle:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -6, 6)
+    self.resizeHandle:SetSize(18, 18)
+    self.resizeHandle:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    self.resizeHandle:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    self.resizeHandle:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    self.resizeHandle:SetScript("OnMouseDown", function(_, button)
+        if button == "LeftButton" then
+            self.frame:StartSizing("BOTTOMRIGHT")
+        end
+    end)
+    self.resizeHandle:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" then
+            self.frame:StopMovingOrSizing()
+        end
+    end)
+
+    self.tabStrip = CreateFrame("Frame", nil, self.frame)
+    self.tabStrip:SetPoint("TOPLEFT", self.header, "BOTTOMLEFT", 16, -10)
+    self.tabStrip:SetPoint("TOPRIGHT", self.header, "BOTTOMRIGHT", -16, -10)
+    self.tabStrip:SetHeight(28)
+
+    self.contentShell = ns.Widgets.CreateSurface(self.frame, 1, 1, { 0.07, 0.09, 0.13, 0.97 }, ns.Widgets.THEME.border)
+    self.contentShell:SetPoint("TOPLEFT", self.tabStrip, "BOTTOMLEFT", 0, -10)
+    self.contentShell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 16)
+
+    self.content = CreateFrame("Frame", nil, self.contentShell)
+    self.content:SetPoint("TOPLEFT", self.contentShell, "TOPLEFT", 12, -12)
+    self.content:SetPoint("BOTTOMRIGHT", self.contentShell, "BOTTOMRIGHT", -12, 12)
+
+    self.buttons = {}
+    self.views = {}
+
+    local previousButton = nil
+    for _, tab in ipairs(self.tabs) do
+        local width = math.max(92, 34 + (string.len(tab.label) * 8))
+        local button = ns.Widgets.CreateButton(self.tabStrip, tab.label, width, 24)
+        if previousButton then
+            button:SetPoint("TOPLEFT", previousButton, "TOPRIGHT", 6, 0)
+        else
+            button:SetPoint("TOPLEFT", self.tabStrip, "TOPLEFT", 0, 0)
+        end
+        button:SetScript("OnClick", function()
+            self:ShowView(tab.id)
+        end)
+        self.buttons[tab.id] = button
+        previousButton = button
+
+        local viewModule = ns.Addon:GetModule(tab.module)
+        if viewModule then
+            if runViewMethod(viewModule, "Build", self.content) and viewModule.frame then
+                button.isViewAvailable = true
+                self.views[tab.id] = viewModule
+                viewModule.frame:Hide()
+            else
+                button.isViewAvailable = false
+                button:SetEnabled(false)
+            end
+        else
+            button.isViewAvailable = false
+            button:SetEnabled(false)
+        end
+    end
+end
+
+function MainFrame:RefreshAll()
+    for _, tab in ipairs(self.tabs) do
+        local view = self.views[tab.id]
+        if view and view.Refresh then
+            runViewMethod(view, "Refresh")
+        end
+    end
+end
+
+function MainFrame:ShowView(viewId, payload)
+    if not self.frame then
+        self:Initialize()
+    end
+
+    if InCombatLockdown and InCombatLockdown() then
+        ns.Addon:PrintWarning("CombatAnalytics UI cannot open during combat. Use /ca after combat ends.")
+        return
+    end
+
+    self.frame:Show()
+    self.activeViewId = viewId or self.activeViewId or "summary"
+    if not self.views[self.activeViewId] then
+        for _, tab in ipairs(self.tabs) do
+            if self.views[tab.id] then
+                self.activeViewId = tab.id
+                break
+            end
+        end
+    end
+    if not self.activeViewId then
+        ns.Addon:PrintWarning("CombatAnalytics has no available views to display.")
+        self.frame:Hide()
+        return
+    end
+
+    for _, tab in ipairs(self.tabs) do
+        local isActive = tab.id == self.activeViewId
+        local button = self.buttons[tab.id]
+        if button then
+            local isAvailable = button.isViewAvailable ~= false
+            button:SetActive(isActive and isAvailable)
+            button:SetEnabled(isAvailable)
+        end
+        local view = self.views[tab.id]
+        if view and view.frame then
+            if isActive then
+                view.frame:Show()
+                if view.Refresh then
+                    runViewMethod(view, "Refresh", payload)
+                end
+            else
+                view.frame:Hide()
+            end
+        end
+    end
+end
+
+ns.Addon:RegisterModule("MainFrame", MainFrame)
