@@ -17,8 +17,16 @@ function ClassSpecView:Build(parent)
 end
 
 function ClassSpecView:Refresh()
-    local classBuckets = ns.Addon:GetModule("CombatStore"):GetAggregateBuckets("classes")
-    local specBuckets = ns.Addon:GetModule("CombatStore"):GetAggregateBuckets("specs")
+    local store = ns.Addon:GetModule("CombatStore")
+    local characterKey = store:GetCurrentCharacterKey()
+    local classBuckets = store:GetAggregateBuckets("classes", characterKey)
+    local specBuckets = store:GetAggregateBuckets("specs", characterKey)
+    local latestSession = store:GetLatestSession(characterKey)
+    if latestSession then
+        self.caption:SetText(string.format("Rollups by class and spec for %s to expose matchup trends.", store:GetSessionCharacterLabel(latestSession)))
+    else
+        self.caption:SetText("Rollups by class and spec for the current character to expose matchup trends.")
+    end
     local lines = { "Classes" }
 
     if #classBuckets == 0 then
@@ -45,14 +53,17 @@ function ClassSpecView:Refresh()
     else
         for index = 1, math.min(12, #specBuckets) do
             local bucket = specBuckets[index]
+            local specProfile = ns.StaticPvpData and ns.StaticPvpData.GetSpecArchetype and ns.StaticPvpData.GetSpecArchetype(tonumber(bucket.key))
+            local descriptor = specProfile and string.format("%s / %s", specProfile.rangeBucket or "unknown", specProfile.archetype or "unknown") or "untyped"
             lines[#lines + 1] = string.format(
-                "%d. %s  fights=%d  W-L=%d-%d  avg pressure=%.1f",
+                "%d. %s  fights=%d  W-L=%d-%d  avg pressure=%.1f  |  %s",
                 index,
                 bucket.label or bucket.key,
                 bucket.fights or 0,
                 bucket.wins or 0,
                 bucket.losses or 0,
-                (bucket.totalPressureScore or 0) / math.max(bucket.fights or 1, 1)
+                (bucket.totalPressureScore or 0) / math.max(bucket.fights or 1, 1),
+                descriptor
             )
         end
     end

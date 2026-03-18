@@ -185,6 +185,9 @@ function SessionClassifier:IsTrainingDummyName(name)
     if Helpers.IsBlank(name) then
         return false
     end
+    if ns.StaticPvpData and ns.StaticPvpData.IsTrainingDummyName and ns.StaticPvpData.IsTrainingDummyName(name) then
+        return true
+    end
     for _, pattern in ipairs(Constants.TRAINING_DUMMY_PATTERNS) do
         if Helpers.ContainsIgnoreCase(name, pattern) then
             return true
@@ -199,7 +202,8 @@ function SessionClassifier:GetTrainingDummyScore(info)
     end
 
     local creatureId = info.creatureId
-    local isDummyById = creatureId and Constants.TRAINING_DUMMY_CREATURE_IDS[creatureId] or false
+    local dummyInfo = creatureId and ns.StaticPvpData and ns.StaticPvpData.GetDummyInfo and ns.StaticPvpData.GetDummyInfo(creatureId) or nil
+    local isDummyById = dummyInfo ~= nil or (creatureId and Constants.TRAINING_DUMMY_CREATURE_IDS[creatureId] or false)
     local isDummyByName = info.isTrainingDummyByName
     if isDummyById then
         return 100

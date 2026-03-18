@@ -1,0 +1,31 @@
+{
+  "specs": [
+    {
+      "specId": 62,
+      "classFile": "MAGE",
+      "specName": "Arcane",
+      "role": "DAMAGER",
+      "rangeBucket": "ranged",
+      "archetype": "setup_burst",
+      "threatTags": ["mobility_heavy"]
+    },
+    {
+      "specId": 70,
+      "classFile": "PALADIN",
+      "specName": "Retribution",
+      "role": "DAMAGER",
+      "rangeBucket": "melee",
+      "archetype": "setup_burst",
+      "threatTags": ["immunity_risk", "execute_risk"]
+    },
+    {
+      "specId": 71,
+      "classFile": "WARRIOR",
+      "specName": "Arms",
+      "role": "DAMAGER",
+      "rangeBucket": "melee",
+      "archetype": "melee_pressure",
+      "threatTags": ["execute_risk"]
+    }
+  ]
+}

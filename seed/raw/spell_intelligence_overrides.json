@@ -1,0 +1,25 @@
+{
+  "spells": [
+    {
+      "spellID": 42292,
+      "category": "defensive",
+      "isMajorDefensive": true,
+      "isTrinketLike": true,
+      "breaksCC": true,
+      "notesTag": "break_cc"
+    },
+    {
+      "spellID": 12042,
+      "category": "offensive",
+      "isMajorOffensive": true,
+      "isBurstEnabler": true,
+      "notesTag": "mage_burst"
+    },
+    {
+      "spellID": 196718,
+      "category": "defensive",
+      "isMajorDefensive": true,
+      "notesTag": "group_darkness"
+    }
+  ]
+}

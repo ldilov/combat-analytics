@@ -33,16 +33,17 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     local store = ns.Addon:GetModule("CombatStore")
     local results = {}
     local buildHash = session.playerSnapshot and session.playerSnapshot.buildHash or "unknown"
+    local characterKey = store:GetSessionCharacterKey(session)
     local contextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
     local opponent = session.primaryOpponent or {}
     local hasRawTimeline = #(session.rawEvents or {}) > 0
     local successfulCastCount = getSuccessfulCastCount(session)
     local matchupBaseline = nil
     if opponent.guid or opponent.name then
-        matchupBaseline = store:GetSessionBaseline(buildHash, contextKey, opponent.guid or opponent.name)
+        matchupBaseline = store:GetSessionBaseline(buildHash, contextKey, opponent.guid or opponent.name, nil, characterKey)
     end
 
-    local buildBaseline = store:GetBuildBaseline(buildHash, contextKey)
+    local buildBaseline = store:GetBuildBaseline(buildHash, contextKey, nil, characterKey)
     if buildBaseline and buildBaseline.fights >= 5 and session.metrics.pressureScore < (buildBaseline.averagePressureScore * 0.8) then
         addSuggestion(results, buildSuggestion(
             session,
@@ -129,7 +130,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         ))
     end
 
-    local contextBaseline = store:GetContextBaseline(contextKey)
+    local contextBaseline = store:GetContextBaseline(contextKey, nil, characterKey)
     if hasRawTimeline and contextBaseline and contextBaseline.fights >= 5 and session.metrics.burstScore < (contextBaseline.averageBurstScore * 0.8) then
         addSuggestion(results, buildSuggestion(
             session,
@@ -156,7 +157,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
 
     if opponent.guid or opponent.name then
         local opponentKey = opponent.guid or opponent.name
-        local opponentBaseline = store:GetOpponentBaseline(opponentKey)
+        local opponentBaseline = store:GetOpponentBaseline(opponentKey, nil, characterKey)
         if opponentBaseline and opponentBaseline.fights >= 10 and (session.totals.damageTaken or 0) > (opponentBaseline.averageDamageTaken * 1.25) then
             addSuggestion(results, buildSuggestion(
                 session,
@@ -171,7 +172,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     end
 
     if hasRawTimeline and session.context == Constants.CONTEXT.TRAINING_DUMMY then
-        local dummyBenchmarks = store:GetDummyBenchmarks()
+        local dummyBenchmarks = store:GetDummyBenchmarks(characterKey)
         for _, benchmark in ipairs(dummyBenchmarks) do
             if benchmark.buildHash == buildHash and benchmark.sessions >= 5 and benchmark.dummyName == (opponent.name or "") then
                 local averageOpenerDamage = benchmark.totalOpenerDamage / math.max(benchmark.sessions, 1)
@@ -192,7 +193,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     end
 
     if not hasRawTimeline and session.context == Constants.CONTEXT.TRAINING_DUMMY then
-        local dummyBenchmarks = store:GetDummyBenchmarks()
+        local dummyBenchmarks = store:GetDummyBenchmarks(characterKey)
         for _, benchmark in ipairs(dummyBenchmarks) do
             if benchmark.buildHash == buildHash and benchmark.sessions >= 5 and benchmark.dummyName == (opponent.name or "") then
                 local averageSustainedDps = benchmark.totalSustainedDps / math.max(benchmark.sessions, 1)

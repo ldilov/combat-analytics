@@ -1,0 +1,30 @@
+{
+  "dummies": [
+    {
+      "creatureID": 31144,
+      "displayName": "Training Dummy",
+      "normalizedName": "training dummy",
+      "family": "basic",
+      "benchmarkGroup": "general",
+      "isPvPUseful": true
+    },
+    {
+      "creatureID": 31146,
+      "displayName": "Raider's Training Dummy",
+      "normalizedName": "raider's training dummy",
+      "family": "raid",
+      "benchmarkGroup": "raid",
+      "isRaidDummy": true,
+      "isPvPUseful": true
+    },
+    {
+      "creatureID": 31147,
+      "displayName": "Dungeoneer's Training Dummy",
+      "normalizedName": "dungeoneer's training dummy",
+      "family": "dungeon",
+      "benchmarkGroup": "dungeon",
+      "isDungeonDummy": true,
+      "isPvPUseful": true
+    }
+  ]
+}

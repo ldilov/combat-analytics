@@ -395,6 +395,11 @@ function CombatTracker:GetSpellCategory(spellId)
         return category
     end
 
+    local spellInfo = ns.StaticPvpData and ns.StaticPvpData.SPELL_INTELLIGENCE and ns.StaticPvpData.SPELL_INTELLIGENCE[spellId] or nil
+    if spellInfo and spellInfo.category then
+        return spellInfo.category
+    end
+
     local taxonomy = ns.StaticPvpData and ns.StaticPvpData.SPELL_TAXONOMY or nil
     if taxonomy and taxonomy.majorOffensive and taxonomy.majorOffensive[spellId] then
         return Constants.SPELL_CATEGORY.OFFENSIVE

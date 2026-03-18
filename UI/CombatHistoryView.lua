@@ -53,11 +53,19 @@ function CombatHistoryView:Build(parent)
 end
 
 function CombatHistoryView:Refresh()
-    local sessions, total = ns.Addon:GetModule("CombatStore"):ListCombats(self.page, self.rowCount)
+    local store = ns.Addon:GetModule("CombatStore")
+    local characterKey = store:GetCurrentCharacterKey()
+    local latestSession = store:GetLatestSession(characterKey)
+    if latestSession then
+        self.caption:SetText(string.format("Chronological record of finalized sessions for %s. Click a row to inspect the full detail view.", store:GetSessionCharacterLabel(latestSession)))
+    else
+        self.caption:SetText("Chronological record of finalized sessions for the current character. Click a row to inspect the full detail view.")
+    end
+    local sessions, total = store:ListCombats(self.page, self.rowCount, nil, characterKey)
     local totalPages = math.max(1, math.ceil(total / self.rowCount))
     if self.page > totalPages then
         self.page = totalPages
-        sessions, total = ns.Addon:GetModule("CombatStore"):ListCombats(self.page, self.rowCount)
+        sessions, total = store:ListCombats(self.page, self.rowCount, nil, characterKey)
     end
 
     self.pageText:SetText(string.format("Page %d / %d", self.page, totalPages))

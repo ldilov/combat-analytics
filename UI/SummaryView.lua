@@ -248,7 +248,8 @@ end
 
 function SummaryView:Refresh(payload)
     local store = ns.Addon:GetModule("CombatStore")
-    local session = payload and payload.sessionId and store:GetCombatById(payload.sessionId) or store:GetLatestSession()
+    local characterKey = store:GetCurrentCharacterKey()
+    local session = payload and payload.sessionId and store:GetCombatById(payload.sessionId) or store:GetLatestSession(characterKey)
     if self.scrollFrame and self.scrollFrame.scrollBar then
         self.scrollFrame.scrollBar:SetValue(0)
     elseif self.scrollFrame and self.scrollFrame.SetVerticalScroll then
@@ -304,13 +305,14 @@ function SummaryView:Refresh(payload)
     self.insightsCaption:Show()
 
     local snapshot = session.playerSnapshot or {}
+    characterKey = store:GetSessionCharacterKey(session)
     local opponent = session.primaryOpponent and (session.primaryOpponent.name or session.primaryOpponent.guid) or "Unknown Opponent"
     local itemLevel = snapshot.equippedItemLevel or snapshot.averageItemLevel or snapshot.pvpItemLevel or 0
     local buildHash = snapshot.buildHash or "unknown"
     local contextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
-    local buildBaseline = store:GetBuildBaseline(buildHash, contextKey, session.id)
-    local opponentBaseline = session.primaryOpponent and store:GetOpponentBaseline(session.primaryOpponent.guid or session.primaryOpponent.name, session.id) or nil
-    local matchupBaseline = session.primaryOpponent and store:GetSessionBaseline(buildHash, contextKey, session.primaryOpponent.guid or session.primaryOpponent.name, session.id) or nil
+    local buildBaseline = store:GetBuildBaseline(buildHash, contextKey, session.id, characterKey)
+    local opponentBaseline = session.primaryOpponent and store:GetOpponentBaseline(session.primaryOpponent.guid or session.primaryOpponent.name, session.id, characterKey) or nil
+    local matchupBaseline = session.primaryOpponent and store:GetSessionBaseline(buildHash, contextKey, session.primaryOpponent.guid or session.primaryOpponent.name, session.id, characterKey) or nil
     local dummyBenchmark = nil
     local openerFingerprint = session.openerFingerprint or {}
     local readQuality = formatDisplayLabel(session.analysisConfidence)
@@ -323,7 +325,7 @@ function SummaryView:Refresh(payload)
     ))
 
     if session.context == ns.Constants.CONTEXT.TRAINING_DUMMY then
-        for _, benchmark in ipairs(store:GetDummyBenchmarks()) do
+        for _, benchmark in ipairs(store:GetDummyBenchmarks(characterKey)) do
             if benchmark.buildHash == buildHash and benchmark.dummyName == (session.primaryOpponent and session.primaryOpponent.name or "") then
                 dummyBenchmark = benchmark
                 break

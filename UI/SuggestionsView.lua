@@ -19,6 +19,27 @@ local SUGGESTION_TITLES = {
     RAW_EVENT_OVERFLOW = "Raw event cap was reached",
 }
 
+local function formatDisplayLabel(value)
+    local map = {
+        high = "High",
+        medium = "Medium",
+        limited = "Limited",
+        ["local"] = "Local",
+        damage_meter = "Damage Meter",
+        enemy_damage_taken_fallback = "Enemy Fallback",
+        estimated = "Estimated",
+    }
+    return map[value] or tostring(value or "unknown")
+end
+
+local function getInsightRule(key, fallback)
+    local rules = ns.StaticPvpData and ns.StaticPvpData.INSIGHT_RULES or nil
+    if rules and rules[key] ~= nil then
+        return rules[key]
+    end
+    return fallback
+end
+
 local function buildEvidenceText(suggestion)
     local evidence = suggestion.evidence or {}
 
@@ -71,12 +92,174 @@ local function buildSessionTag(session)
     return string.format("%s | %s | %s | %s", date("%Y-%m-%d %H:%M", session.timestamp or time()), session.context or "unknown", opponent, session.result or "unknown")
 end
 
+local function buildTrustCard(store, session)
+    local rawAvailable = #(session.rawEvents or {}) > 0
+    local importInfo = session.import or {}
+    local identityConfidence = session.identity and session.identity.confidence or 0
+    local readQuality = session.analysisConfidence or "limited"
+    local severity = readQuality == "high" and "low" or (readQuality == "medium" and "medium" or "high")
+    local characterLabel = store:GetSessionCharacterLabel(session)
+
+    local body = string.format(
+        "%s trust on %s. %s data is driving the read, and opponent identity confidence is %d.",
+        formatDisplayLabel(readQuality),
+        characterLabel,
+        formatDisplayLabel(session.finalDamageSource),
+        identityConfidence
+    )
+
+    if readQuality == "high" then
+        body = string.format(
+            "%s trust on %s. Raw timeline exists and the fight identity resolved cleanly enough for stronger coaching.",
+            formatDisplayLabel(readQuality),
+            characterLabel
+        )
+    elseif readQuality == "limited" then
+        body = string.format(
+            "%s trust on %s. This read leans on post-combat totals, so timing-heavy advice is intentionally conservative.",
+            formatDisplayLabel(readQuality),
+            characterLabel
+        )
+    end
+
+    local evidence = string.format(
+        "Source %s | capture %s | raw timeline %s | identity %d | import %d",
+        formatDisplayLabel(session.finalDamageSource),
+        session.captureSource or "unknown",
+        rawAvailable and "yes" or "no",
+        identityConfidence,
+        importInfo.confidence or 0
+    )
+
+    return severity, "Session Trust", body, evidence
+end
+
+local function buildFightStory(store, session, characterKey)
+    local opponentKey = session.primaryOpponent and (session.primaryOpponent.guid or session.primaryOpponent.name) or nil
+    local contextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
+    local buildHash = session.playerSnapshot and session.playerSnapshot.buildHash or "unknown"
+    local buildBaseline = store:GetBuildBaseline(buildHash, contextKey, session.id, characterKey)
+    local matchupBaseline = opponentKey and store:GetSessionBaseline(buildHash, contextKey, opponentKey, session.id, characterKey) or nil
+    local openerFingerprint = session.openerFingerprint or {}
+    local openerWarningRatio = getInsightRule("openerWarningRatio", 0.85)
+    local strongPressureRatio = getInsightRule("strongPressureRatio", 1.1)
+
+    if session.result == ns.Constants.SESSION_RESULT.LOST and (session.survival.unusedDefensives or 0) > 0 then
+        return
+            "high",
+            "Fight Story",
+            "The loss happened with a true defensive still available, which makes this look more like a trade issue than an output issue.",
+            string.format("Unused defensives %d | largest spike %s | self-heal %s", session.survival.unusedDefensives or 0, ns.Helpers.FormatNumber(session.survival.largestIncomingSpike or 0), ns.Helpers.FormatNumber(session.survival.selfHealing or 0))
+    end
+
+    if session.result == ns.Constants.SESSION_RESULT.LOST and not openerFingerprint.firstMajorDefensiveAt and (session.survival.largestIncomingSpike or 0) > 0 then
+        return
+            "high",
+            "Fight Story",
+            "You lost the first important trade before a major defensive was committed, so the session reads as survival-limited.",
+            string.format("Largest spike %s | damage taken %s | absorbed %s", ns.Helpers.FormatNumber(session.survival.largestIncomingSpike or 0), ns.Helpers.FormatNumber(session.totals.damageTaken or 0), ns.Helpers.FormatNumber(session.survival.totalAbsorbed or 0))
+    end
+
+    if matchupBaseline
+        and matchupBaseline.fights >= getInsightRule("minimumMatchupSamples", 3)
+        and (session.metrics.openerDamage or 0) > 0
+        and (session.metrics.openerDamage or 0) < ((matchupBaseline.averageOpenerDamage or 0) * openerWarningRatio)
+    then
+        return
+            "medium",
+            "Fight Story",
+            "The opener landed below your usual pace for this build and matchup, so the fight started behind your own norm.",
+            string.format("Opener %s vs %s over %d similar sessions", ns.Helpers.FormatNumber(session.metrics.openerDamage or 0), ns.Helpers.FormatNumber(matchupBaseline.averageOpenerDamage or 0), matchupBaseline.fights or 0)
+    end
+
+    if buildBaseline
+        and buildBaseline.fights >= getInsightRule("minimumBuildSamples", 5)
+        and (session.metrics.pressureScore or 0) >= ((buildBaseline.averagePressureScore or 0) * strongPressureRatio)
+        and session.result == ns.Constants.SESSION_RESULT.WON
+    then
+        return
+            "low",
+            "Fight Story",
+            "You won by sustaining more pressure than this build usually produces in the same context, even if the fight was not a perfect burst conversion.",
+            string.format("Pressure %.1f vs %.1f build norm over %d sessions", session.metrics.pressureScore or 0, buildBaseline.averagePressureScore or 0, buildBaseline.fights or 0)
+    end
+
+    if (session.metrics.procWindowsObserved or 0) >= 3 and (session.metrics.procWindowCastCount or 0) < math.max(2, session.metrics.procWindowsObserved or 0) then
+        return
+            "medium",
+            "Fight Story",
+            "Momentum windows showed up, but the follow-through inside those windows was lighter than the fight needed.",
+            string.format("Proc windows %d | casts inside %d | first go %s", session.metrics.procWindowsObserved or 0, session.metrics.procWindowCastCount or 0, openerFingerprint.firstMajorOffensiveAt and string.format("%.1fs", openerFingerprint.firstMajorOffensiveAt) or "--")
+    end
+
+    if session.result == ns.Constants.SESSION_RESULT.WON then
+        return
+            "low",
+            "Fight Story",
+            "This session looks stable rather than flashy: you kept output flowing well enough to win the exchange without a major collapse.",
+            string.format("Damage %s | taken %s | survivability %.1f", ns.Helpers.FormatNumber(session.totals.damageDone or 0), ns.Helpers.FormatNumber(session.totals.damageTaken or 0), session.metrics.survivabilityScore or 0)
+    end
+
+    return
+        "medium",
+        "Fight Story",
+        "This session ended without one single obvious failure point, so the cleaner read is to review opener pacing and first trade timing together.",
+        string.format("Opener %s | first offensive %s | first defensive %s", ns.Helpers.FormatNumber(session.metrics.openerDamage or 0), openerFingerprint.firstMajorOffensiveAt and string.format("%.1fs", openerFingerprint.firstMajorOffensiveAt) or "--", openerFingerprint.firstMajorDefensiveAt and string.format("%.1fs", openerFingerprint.firstMajorDefensiveAt) or "--")
+end
+
+local function buildMatchupCard(store, session, characterKey)
+    local opponentKey = session.primaryOpponent and (session.primaryOpponent.guid or session.primaryOpponent.name) or nil
+    local contextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
+    local buildHash = session.playerSnapshot and session.playerSnapshot.buildHash or "unknown"
+
+    if not opponentKey then
+        return
+            "low",
+            "Matchup Memory",
+            "This session does not have a stable opponent identity yet, so matchup memory is intentionally held back.",
+            "Need a recognizable opponent or spec bucket before history can say something useful."
+    end
+
+    local matchupBaseline = store:GetSessionBaseline(buildHash, contextKey, opponentKey, session.id, characterKey)
+    local opponentBaseline = store:GetOpponentBaseline(opponentKey, session.id, characterKey)
+    local minimumSamples = getInsightRule("minimumMatchupSamples", 3)
+
+    if matchupBaseline and matchupBaseline.fights >= minimumSamples then
+        local body = "This matchup trend on this character looks fairly stable."
+        if (matchupBaseline.losses or 0) > (matchupBaseline.wins or 0) then
+            body = "This matchup trend on this character is leaning defensive, so survivability and first-trade timing look like the bigger review target."
+        elseif (matchupBaseline.averageOpenerDamage or 0) > 0 and (session.metrics.openerDamage or 0) < (matchupBaseline.averageOpenerDamage or 0) then
+            body = "You have enough same-build history here to judge the opener cleanly, and this pull started below your usual pace."
+        end
+
+        return
+            "low",
+            "Matchup Memory",
+            body,
+            string.format("Fights %d | W-L %d-%d | avg opener %s | avg first go %s | avg duration %s", matchupBaseline.fights or 0, matchupBaseline.wins or 0, matchupBaseline.losses or 0, ns.Helpers.FormatNumber(matchupBaseline.averageOpenerDamage or 0), matchupBaseline.averageFirstMajorOffensiveAt and string.format("%.1fs", matchupBaseline.averageFirstMajorOffensiveAt) or "--", ns.Helpers.FormatDuration(matchupBaseline.averageDuration or 0))
+    end
+
+    if opponentBaseline and opponentBaseline.fights >= minimumSamples then
+        return
+            "low",
+            "Matchup Memory",
+            "You have opponent history on this character, but not enough same-build samples yet for a sharper matchup read.",
+            string.format("Opponent fights %d | avg taken %s | avg duration %s", opponentBaseline.fights or 0, ns.Helpers.FormatNumber(opponentBaseline.averageDamageTaken or 0), ns.Helpers.FormatDuration(opponentBaseline.averageDuration or 0))
+    end
+
+    return
+        "low",
+        "Matchup Memory",
+        "Need a few more same-character sessions before this section can tell whether the matchup is output-limited or survival-limited.",
+        "Three similar sessions is the minimum before matchup memory becomes meaningful."
+end
+
 function SuggestionsView:Build(parent)
     self.frame = CreateFrame("Frame", nil, parent)
     self.frame:SetAllPoints()
 
     self.title = ns.Widgets.CreateSectionTitle(self.frame, "Actionable Insights", "TOPLEFT", self.frame, "TOPLEFT", 16, -16)
-    self.caption = ns.Widgets.CreateCaption(self.frame, "History-backed notes translated into readable coaching cues instead of internal codes.", "TOPLEFT", self.title, "BOTTOMLEFT", 0, -4)
+    self.caption = ns.Widgets.CreateCaption(self.frame, "Post-fight review for the current character: trust first, then fight story, matchup memory, and coaching notes.", "TOPLEFT", self.title, "BOTTOMLEFT", 0, -4)
 
     self.shell, self.scrollFrame, self.canvas = ns.Widgets.CreateScrollCanvas(self.frame, 808, 410)
     self.shell:SetPoint("TOPLEFT", self.caption, "BOTTOMLEFT", 0, -12)
@@ -85,37 +268,57 @@ function SuggestionsView:Build(parent)
     self.emptyCard = ns.Widgets.CreateInsightCard(self.canvas, 750, 96)
     self.emptyCard:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
 
+    self.trustCard = ns.Widgets.CreateInsightCard(self.canvas, 750, 104)
+    self.trustCard:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
+
+    self.storyCard = ns.Widgets.CreateInsightCard(self.canvas, 750, 104)
+    self.storyCard:SetPoint("TOPLEFT", self.trustCard, "BOTTOMLEFT", 0, -10)
+
+    self.matchupCard = ns.Widgets.CreateInsightCard(self.canvas, 750, 104)
+    self.matchupCard:SetPoint("TOPLEFT", self.storyCard, "BOTTOMLEFT", 0, -10)
+
+    self.recentTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Recent Coaching Notes", "TOPLEFT", self.matchupCard, "BOTTOMLEFT", 0, -22)
+    self.recentCaption = ns.Widgets.CreateCaption(self.canvas, "Rules-backed notes from recent sessions on this character, newest first.", "TOPLEFT", self.recentTitle, "BOTTOMLEFT", 0, -4)
+
     self.cards = {}
     for index = 1, 8 do
         local card = ns.Widgets.CreateInsightCard(self.canvas, 750, 108)
         if index == 1 then
-            card:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
+            card:SetPoint("TOPLEFT", self.recentCaption, "BOTTOMLEFT", 0, -12)
         else
             card:SetPoint("TOPLEFT", self.cards[index - 1], "BOTTOMLEFT", 0, -10)
         end
         self.cards[index] = card
     end
 
-    ns.Widgets.SetCanvasHeight(self.canvas, 980)
+    ns.Widgets.SetCanvasHeight(self.canvas, 1320)
     return self.frame
 end
 
 function SuggestionsView:Refresh()
     local store = ns.Addon:GetModule("CombatStore")
-    local suggestions = store:GetRecentSuggestions(100)
+    local characterKey = store:GetCurrentCharacterKey()
+    local latestSession = store:GetLatestSession(characterKey)
+    local suggestions = store:GetRecentSuggestions(100, characterKey)
     if self.scrollFrame and self.scrollFrame.scrollBar then
         self.scrollFrame.scrollBar:SetValue(0)
     elseif self.scrollFrame and self.scrollFrame.SetVerticalScroll then
         self.scrollFrame:SetVerticalScroll(0)
     end
-    if #suggestions == 0 then
+
+    if not latestSession and #suggestions == 0 then
         self.emptyCard:SetData(
             "low",
             "No insights yet",
-            "Once you collect a few fights, this tab will surface benchmark misses, matchup trends, and rotation issues.",
-            "Dummy sessions help seed the baseline faster."
+            "Once this character has a few fights stored, this tab will surface trust, fight story, matchup memory, and coaching notes.",
+            "Dummy sessions help seed opener baselines; duels and arena rounds make the story cards stronger."
         )
         self.emptyCard:Show()
+        self.trustCard:Hide()
+        self.storyCard:Hide()
+        self.matchupCard:Hide()
+        self.recentTitle:Hide()
+        self.recentCaption:Hide()
         for _, card in ipairs(self.cards) do
             card:Hide()
         end
@@ -123,6 +326,23 @@ function SuggestionsView:Refresh()
     end
 
     self.emptyCard:Hide()
+    self.recentTitle:Show()
+    self.recentCaption:Show()
+
+    if latestSession then
+        self.caption:SetText(string.format("Post-fight review for %s. Trust first, then fight story, matchup memory, and coaching notes.", store:GetSessionCharacterLabel(latestSession)))
+        self.trustCard:SetData(buildTrustCard(store, latestSession))
+        self.storyCard:SetData(buildFightStory(store, latestSession, characterKey))
+        self.matchupCard:SetData(buildMatchupCard(store, latestSession, characterKey))
+        self.trustCard:Show()
+        self.storyCard:Show()
+        self.matchupCard:Show()
+    else
+        self.caption:SetText("Post-fight review for the current character: trust first, then fight story, matchup memory, and coaching notes.")
+        self.trustCard:Hide()
+        self.storyCard:Hide()
+        self.matchupCard:Hide()
+    end
 
     for index, card in ipairs(self.cards) do
         local suggestion = suggestions[index]
@@ -133,6 +353,13 @@ function SuggestionsView:Refresh()
                 SUGGESTION_TITLES[suggestion.reasonCode] or (suggestion.message or "Insight"),
                 string.format("%s\n%s", suggestion.message or "", buildSessionTag(session)),
                 buildEvidenceText(suggestion)
+            )
+        elseif index == 1 then
+            card:SetData(
+                "low",
+                "No fresh coaching notes",
+                "The latest sessions on this character did not trip any recent rule-based warnings, which usually means the trust/story cards are the better place to review.",
+                latestSession and buildSessionTag(latestSession) or "Collect another duel, arena round, or dummy pull for more notes."
             )
         else
             card:Hide()

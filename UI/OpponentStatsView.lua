@@ -18,13 +18,19 @@ end
 
 function OpponentStatsView:Refresh()
     local store = ns.Addon:GetModule("CombatStore")
-    local buckets = store:GetAggregateBuckets("opponents")
+    local characterKey = store:GetCurrentCharacterKey()
+    local buckets = store:GetAggregateBuckets("opponents", characterKey)
+    local latestSession = store:GetLatestSession(characterKey)
+    if latestSession then
+        self.caption:SetText(string.format("Aggregated opponent trends for %s.", store:GetSessionCharacterLabel(latestSession)))
+    else
+        self.caption:SetText("Aggregated opponent trends for the current character.")
+    end
     if #buckets == 0 then
         ns.Widgets.SetBodyText(self.content, self.text, "No opponent aggregates yet.")
         return
     end
 
-    local latestSession = store:GetLatestSession()
     local latestBuildHash = latestSession and latestSession.playerSnapshot and latestSession.playerSnapshot.buildHash or nil
     local lines = {}
     for index = 1, math.min(25, #buckets) do
@@ -42,7 +48,7 @@ function OpponentStatsView:Refresh()
         )
 
         if latestBuildHash then
-            local duelPractice = store:GetDuelPracticeSummary(latestBuildHash, bucket.key)
+            local duelPractice = store:GetDuelPracticeSummary(latestBuildHash, bucket.key, characterKey)
             if duelPractice and duelPractice.fights >= 3 then
                 lines[#lines + 1] = string.format(
                     "   latest-build duel lens: fights=%d  opener=%s  avg dur=%s  first go=%s",

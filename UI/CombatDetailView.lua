@@ -158,7 +158,7 @@ function CombatDetailView:Refresh(payload)
     end
 
     local store = ns.Addon:GetModule("CombatStore")
-    local session = self.sessionId and store:GetCombatById(self.sessionId) or store:GetLatestSession()
+    local session = self.sessionId and store:GetCombatById(self.sessionId) or store:GetLatestSession(store:GetCurrentCharacterKey())
     if not session then
         ns.Widgets.SetBodyText(self.content, self.text, "No combat session selected.")
         return

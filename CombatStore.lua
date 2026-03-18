@@ -1,6 +1,7 @@
 local _, ns = ...
 
 local Constants = ns.Constants
+local ApiCompat = ns.ApiCompat
 local Helpers = ns.Helpers
 
 local CombatStore = {}
@@ -156,28 +157,69 @@ local function getPrimaryOpponent(session)
     return session.primaryOpponent
 end
 
-local function updateDummyBenchmark(db, session)
+local function buildCharacterKey(guid, name, realm)
+    if guid and guid ~= "" then
+        return guid
+    end
+
+    local resolvedName = name or "unknown"
+    local resolvedRealm = realm or ""
+    if resolvedRealm ~= "" then
+        return string.format("%s@%s", resolvedName, resolvedRealm)
+    end
+    return resolvedName
+end
+
+local function getSessionCharacterKey(session)
+    local snapshot = session and session.playerSnapshot or nil
+    if not snapshot then
+        return "unknown"
+    end
+    return buildCharacterKey(snapshot.guid, snapshot.name, snapshot.realm)
+end
+
+local function getSessionCharacterLabel(session)
+    local snapshot = session and session.playerSnapshot or nil
+    if not snapshot then
+        return "Unknown Character"
+    end
+
+    local name = snapshot.name or "Unknown"
+    local realm = snapshot.realm or ""
+    if realm ~= "" then
+        return string.format("%s-%s", name, realm)
+    end
+    return name
+end
+
+local function updateDummyBenchmarkRecord(container, session)
     if session.context ~= Constants.CONTEXT.TRAINING_DUMMY then
         return
     end
 
     local opponent = getPrimaryOpponent(session) or {}
+    local dummyInfo = opponent.creatureId and ns.StaticPvpData and ns.StaticPvpData.GetDummyInfo and ns.StaticPvpData.GetDummyInfo(opponent.creatureId) or nil
     local buildHash = session.playerSnapshot and session.playerSnapshot.buildHash or "unknown"
     local specId = session.playerSnapshot and session.playerSnapshot.specId or 0
     local key = table.concat({
+        tostring(getSessionCharacterKey(session)),
         tostring(buildHash),
         tostring(specId),
-        tostring(opponent.name or "dummy"),
+        tostring(dummyInfo and dummyInfo.benchmarkGroup or opponent.name or "dummy"),
         tostring(opponent.level or 0),
     }, "#")
 
-    local benchmark = db.dummyBenchmarks[key]
+    local benchmark = container[key]
     if not benchmark then
         benchmark = {
             key = key,
+            characterKey = getSessionCharacterKey(session),
+            characterName = getSessionCharacterLabel(session),
             buildHash = buildHash,
             specId = specId,
-            dummyName = opponent.name or "Training Dummy",
+            dummyName = dummyInfo and dummyInfo.displayName or opponent.name or "Training Dummy",
+            dummyFamily = dummyInfo and dummyInfo.family or "unknown",
+            benchmarkGroup = dummyInfo and dummyInfo.benchmarkGroup or (opponent.name or "dummy"),
             dummyLevel = opponent.level or 0,
             sessions = 0,
             totalSustainedDps = 0,
@@ -187,7 +229,7 @@ local function updateDummyBenchmark(db, session)
             lastSessionId = nil,
             lastUpdatedAt = nil,
         }
-        db.dummyBenchmarks[key] = benchmark
+        container[key] = benchmark
     end
 
     benchmark.sessions = benchmark.sessions + 1
@@ -197,6 +239,53 @@ local function updateDummyBenchmark(db, session)
     benchmark.totalRotationScore = benchmark.totalRotationScore + (session.metrics.rotationalConsistencyScore or 0)
     benchmark.lastSessionId = session.id
     benchmark.lastUpdatedAt = session.timestamp
+end
+
+local function updateDummyBenchmark(db, session)
+    updateDummyBenchmarkRecord(db.dummyBenchmarks, session)
+end
+
+local function updateAggregateContainerForSession(aggregates, session, kindFilter)
+    local opponent = getPrimaryOpponent(session)
+
+    if (not kindFilter or kindFilter == Constants.AGGREGATE_KIND.OPPONENT) and opponent then
+        local opponentKey = opponent.guid or opponent.name or "unknown"
+        local opponentLabel = opponent.name or opponent.guid or "Unknown Opponent"
+        applySessionToBucket(getOrCreateBucket(aggregates.opponents, Constants.AGGREGATE_KIND.OPPONENT, opponentKey, opponentLabel), session)
+    end
+
+    if (not kindFilter or kindFilter == Constants.AGGREGATE_KIND.CLASS) and opponent and opponent.classFile then
+        applySessionToBucket(getOrCreateBucket(aggregates.classes, Constants.AGGREGATE_KIND.CLASS, opponent.classFile, opponent.className or opponent.classFile), session)
+    end
+
+    if (not kindFilter or kindFilter == Constants.AGGREGATE_KIND.SPEC) and opponent and opponent.specId then
+        local specKey = tostring(opponent.specId)
+        local specLabel = opponent.specName or specKey
+        applySessionToBucket(getOrCreateBucket(aggregates.specs, Constants.AGGREGATE_KIND.SPEC, specKey, specLabel), session)
+    end
+
+    local buildHash = session.playerSnapshot and session.playerSnapshot.buildHash or "unknown"
+    if not kindFilter or kindFilter == Constants.AGGREGATE_KIND.BUILD then
+        applySessionToBucket(getOrCreateBucket(aggregates.builds, Constants.AGGREGATE_KIND.BUILD, buildHash, buildHash), session)
+    end
+
+    local contextKey = session.context
+    if session.subcontext then
+        contextKey = string.format("%s:%s", session.context, session.subcontext)
+    end
+    if not kindFilter or kindFilter == Constants.AGGREGATE_KIND.CONTEXT then
+        applySessionToBucket(getOrCreateBucket(aggregates.contexts, Constants.AGGREGATE_KIND.CONTEXT, contextKey, contextKey), session)
+    end
+
+    local dateKey = Helpers.GetDateKey(session.timestamp)
+    if not kindFilter or kindFilter == Constants.AGGREGATE_KIND.DAILY then
+        applySessionToBucket(getOrCreateBucket(aggregates.daily, Constants.AGGREGATE_KIND.DAILY, dateKey, dateKey), session)
+    end
+
+    local weekKey = Helpers.GetWeekKey(session.timestamp)
+    if not kindFilter or kindFilter == Constants.AGGREGATE_KIND.WEEKLY then
+        applySessionToBucket(getOrCreateBucket(aggregates.weekly, Constants.AGGREGATE_KIND.WEEKLY, weekKey, weekKey), session)
+    end
 end
 
 function CombatStore:Initialize()
@@ -245,47 +334,43 @@ function CombatStore:GetCombatById(sessionId)
     return db.combats.byId[sessionId]
 end
 
-function CombatStore:GetLatestSession()
+function CombatStore:GetCurrentCharacterKey()
+    local snapshot = ns.Addon:GetLatestPlayerSnapshot()
+    if snapshot then
+        return buildCharacterKey(snapshot.guid, snapshot.name, snapshot.realm)
+    end
+    return buildCharacterKey(ApiCompat.GetPlayerGUID(), ApiCompat.GetPlayerName(), ApiCompat.GetNormalizedRealmName())
+end
+
+function CombatStore:GetSessionCharacterKey(session)
+    return getSessionCharacterKey(session)
+end
+
+function CombatStore:GetSessionCharacterLabel(session)
+    return getSessionCharacterLabel(session)
+end
+
+function CombatStore:GetLatestSession(characterKey)
     local db = self:GetDB()
-    local lastId = db.combats.order[#db.combats.order]
-    return lastId and db.combats.byId[lastId] or nil
+    if not characterKey then
+        local lastId = db.combats.order[#db.combats.order]
+        return lastId and db.combats.byId[lastId] or nil
+    end
+
+    for index = #db.combats.order, 1, -1 do
+        local sessionId = db.combats.order[index]
+        local session = db.combats.byId[sessionId]
+        if session and getSessionCharacterKey(session) == characterKey then
+            return session
+        end
+    end
+    return nil
 end
 
 function CombatStore:UpdateAggregatesForSession(session)
     local db = self:GetDB()
     local aggregates = db.aggregates
-    local opponent = getPrimaryOpponent(session)
-
-    if opponent then
-        local opponentKey = opponent.guid or opponent.name or "unknown"
-        local opponentLabel = opponent.name or opponent.guid or "Unknown Opponent"
-        applySessionToBucket(getOrCreateBucket(aggregates.opponents, Constants.AGGREGATE_KIND.OPPONENT, opponentKey, opponentLabel), session)
-
-        if opponent.classFile then
-            applySessionToBucket(getOrCreateBucket(aggregates.classes, Constants.AGGREGATE_KIND.CLASS, opponent.classFile, opponent.className or opponent.classFile), session)
-        end
-        if opponent.specId then
-            local specKey = tostring(opponent.specId)
-            local specLabel = opponent.specName or specKey
-            applySessionToBucket(getOrCreateBucket(aggregates.specs, Constants.AGGREGATE_KIND.SPEC, specKey, specLabel), session)
-        end
-    end
-
-    local buildHash = session.playerSnapshot and session.playerSnapshot.buildHash or "unknown"
-    applySessionToBucket(getOrCreateBucket(aggregates.builds, Constants.AGGREGATE_KIND.BUILD, buildHash, buildHash), session)
-
-    local contextKey = session.context
-    if session.subcontext then
-        contextKey = string.format("%s:%s", session.context, session.subcontext)
-    end
-    applySessionToBucket(getOrCreateBucket(aggregates.contexts, Constants.AGGREGATE_KIND.CONTEXT, contextKey, contextKey), session)
-
-    local dateKey = Helpers.GetDateKey(session.timestamp)
-    applySessionToBucket(getOrCreateBucket(aggregates.daily, Constants.AGGREGATE_KIND.DAILY, dateKey, dateKey), session)
-
-    local weekKey = Helpers.GetWeekKey(session.timestamp)
-    applySessionToBucket(getOrCreateBucket(aggregates.weekly, Constants.AGGREGATE_KIND.WEEKLY, weekKey, weekKey), session)
-
+    updateAggregateContainerForSession(aggregates, session)
     updateDummyBenchmark(db, session)
 end
 
@@ -295,6 +380,7 @@ function CombatStore:PersistSession(session)
     end
 
     local db = self:GetDB()
+    session.characterKey = session.characterKey or getSessionCharacterKey(session)
     local isNew = db.combats.byId[session.id] == nil
     db.combats.byId[session.id] = session
     if isNew then
@@ -331,7 +417,7 @@ function CombatStore:PersistSession(session)
     end
 end
 
-function CombatStore:ListCombats(page, pageSize, filters)
+function CombatStore:ListCombats(page, pageSize, filters, characterKey)
     local db = self:GetDB()
     local results = {}
     filters = filters or {}
@@ -343,6 +429,9 @@ function CombatStore:ListCombats(page, pageSize, filters)
         local session = db.combats.byId[sessionId]
         if session then
             local include = true
+            if include and characterKey and getSessionCharacterKey(session) ~= characterKey then
+                include = false
+            end
             if filters.context and session.context ~= filters.context then
                 include = false
             end
@@ -364,9 +453,36 @@ function CombatStore:ListCombats(page, pageSize, filters)
     return pageResults, #results
 end
 
-function CombatStore:GetAggregateBuckets(kind)
+function CombatStore:GetAggregateBuckets(kind, characterKey)
     local db = self:GetDB()
-    local source = db.aggregates[kind] or {}
+    if not characterKey then
+        local source = db.aggregates[kind] or {}
+        local list = {}
+        for _, bucket in pairs(source) do
+            list[#list + 1] = bucket
+        end
+        Helpers.SortByField(list, "fights", true)
+        return list
+    end
+
+    local aggregates = {
+        opponents = {},
+        classes = {},
+        specs = {},
+        builds = {},
+        contexts = {},
+        daily = {},
+        weekly = {},
+    }
+
+    for _, sessionId in ipairs(db.combats.order or {}) do
+        local session = db.combats.byId[sessionId]
+        if session and getSessionCharacterKey(session) == characterKey then
+            updateAggregateContainerForSession(aggregates, session, kind)
+        end
+    end
+
+    local source = aggregates[kind] or {}
     local list = {}
     for _, bucket in pairs(source) do
         list[#list + 1] = bucket
@@ -375,8 +491,28 @@ function CombatStore:GetAggregateBuckets(kind)
     return list
 end
 
-function CombatStore:GetDummyBenchmarks()
+function CombatStore:GetDummyBenchmarks(characterKey)
     local db = self:GetDB()
+    if characterKey then
+        local filtered = {}
+        for _, sessionId in ipairs(db.combats.order or {}) do
+            local session = db.combats.byId[sessionId]
+            if session
+                and getSessionCharacterKey(session) == characterKey
+                and session.context == Constants.CONTEXT.TRAINING_DUMMY
+            then
+                updateDummyBenchmarkRecord(filtered, session)
+            end
+        end
+
+        local results = {}
+        for _, benchmark in pairs(filtered) do
+            results[#results + 1] = benchmark
+        end
+        Helpers.SortByField(results, "lastUpdatedAt", true)
+        return results
+    end
+
     local results = {}
     for _, benchmark in pairs(db.dummyBenchmarks) do
         results[#results + 1] = benchmark
@@ -385,13 +521,14 @@ function CombatStore:GetDummyBenchmarks()
     return results
 end
 
-function CombatStore:GetRecentSuggestions(limit)
+function CombatStore:GetRecentSuggestions(limit, characterKey)
     local db = self:GetDB()
     local results = {}
     for index = #db.suggestionCache.order, 1, -1 do
         local sessionId = db.suggestionCache.order[index]
         local suggestions = db.suggestionCache.bySessionId[sessionId]
-        if suggestions then
+        local session = db.combats.byId[sessionId]
+        if suggestions and (not characterKey or (session and getSessionCharacterKey(session) == characterKey)) then
             for _, suggestion in ipairs(suggestions) do
                 results[#results + 1] = suggestion
                 if limit and #results >= limit then
@@ -403,22 +540,24 @@ function CombatStore:GetRecentSuggestions(limit)
     return results
 end
 
-function CombatStore:GetBuildBaseline(buildHash, context, excludeSessionId)
-    return self:GetSessionBaseline(buildHash, context, nil, excludeSessionId)
+function CombatStore:GetBuildBaseline(buildHash, context, excludeSessionId, characterKey)
+    return self:GetSessionBaseline(buildHash, context, nil, excludeSessionId, characterKey)
 end
 
-function CombatStore:GetContextBaseline(contextKey, excludeSessionId)
+function CombatStore:GetContextBaseline(contextKey, excludeSessionId, characterKey)
     if not excludeSessionId then
-        local bucket = self:GetDB().aggregates.contexts[contextKey]
-        if not bucket or bucket.fights <= 0 then
-            return nil
+        if not characterKey then
+            local bucket = self:GetDB().aggregates.contexts[contextKey]
+            if not bucket or bucket.fights <= 0 then
+                return nil
+            end
+            return {
+                fights = bucket.fights,
+                averagePressureScore = bucket.totalPressureScore / bucket.fights,
+                averageBurstScore = bucket.totalBurstScore / bucket.fights,
+                averageDuration = bucket.totalDuration / bucket.fights,
+            }
         end
-        return {
-            fights = bucket.fights,
-            averagePressureScore = bucket.totalPressureScore / bucket.fights,
-            averageBurstScore = bucket.totalBurstScore / bucket.fights,
-            averageDuration = bucket.totalDuration / bucket.fights,
-        }
     end
 
     local db = self:GetDB()
@@ -430,7 +569,7 @@ function CombatStore:GetContextBaseline(contextKey, excludeSessionId)
     for _, sessionId in ipairs(db.combats.order or {}) do
         if sessionId ~= excludeSessionId then
             local session = db.combats.byId[sessionId]
-            if session then
+            if session and (not characterKey or getSessionCharacterKey(session) == characterKey) then
                 local sessionContextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
                 if sessionContextKey == contextKey then
                     fights = fights + 1
@@ -454,24 +593,26 @@ function CombatStore:GetContextBaseline(contextKey, excludeSessionId)
     }
 end
 
-function CombatStore:GetOpponentBaseline(opponentKey, excludeSessionId)
+function CombatStore:GetOpponentBaseline(opponentKey, excludeSessionId, characterKey)
     if not excludeSessionId then
-        local bucket = self:GetDB().aggregates.opponents[opponentKey]
-        if not bucket or bucket.fights <= 0 then
-            return nil
+        if not characterKey then
+            local bucket = self:GetDB().aggregates.opponents[opponentKey]
+            if not bucket or bucket.fights <= 0 then
+                return nil
+            end
+            return {
+                fights = bucket.fights,
+                averageDamageTaken = bucket.totalDamageTaken / bucket.fights,
+                averageDuration = bucket.totalDuration / bucket.fights,
+                averagePressureScore = bucket.totalPressureScore / bucket.fights,
+            }
         end
-        return {
-            fights = bucket.fights,
-            averageDamageTaken = bucket.totalDamageTaken / bucket.fights,
-            averageDuration = bucket.totalDuration / bucket.fights,
-            averagePressureScore = bucket.totalPressureScore / bucket.fights,
-        }
     end
 
-    return self:GetSessionBaseline(nil, nil, opponentKey, excludeSessionId)
+    return self:GetSessionBaseline(nil, nil, opponentKey, excludeSessionId, characterKey)
 end
 
-function CombatStore:GetSessionBaseline(buildHash, contextKey, opponentKey, excludeSessionId)
+function CombatStore:GetSessionBaseline(buildHash, contextKey, opponentKey, excludeSessionId, characterKey)
     local db = self:GetDB()
     local fights = 0
     local wins = 0
@@ -490,7 +631,10 @@ function CombatStore:GetSessionBaseline(buildHash, contextKey, opponentKey, excl
 
     for _, sessionId in ipairs(db.combats.order or {}) do
         local session = db.combats.byId[sessionId]
-        if session and sessionId ~= excludeSessionId then
+        if session
+            and sessionId ~= excludeSessionId
+            and (not characterKey or getSessionCharacterKey(session) == characterKey)
+        then
             local sessionBuildHash = session.playerSnapshot and session.playerSnapshot.buildHash or "unknown"
             local sessionContextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
             local sessionOpponentKey = session.primaryOpponent and (session.primaryOpponent.guid or session.primaryOpponent.name) or nil
@@ -547,8 +691,8 @@ function CombatStore:GetSessionBaseline(buildHash, contextKey, opponentKey, excl
     }
 end
 
-function CombatStore:GetDuelPracticeSummary(buildHash, opponentKey)
-    return self:GetSessionBaseline(buildHash, Constants.CONTEXT.DUEL, opponentKey)
+function CombatStore:GetDuelPracticeSummary(buildHash, opponentKey, characterKey)
+    return self:GetSessionBaseline(buildHash, Constants.CONTEXT.DUEL, opponentKey, nil, characterKey)
 end
 
 function CombatStore:ResetAggregates()

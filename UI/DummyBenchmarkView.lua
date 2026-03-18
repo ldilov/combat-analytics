@@ -75,7 +75,15 @@ function DummyBenchmarkView:Build(parent)
 end
 
 function DummyBenchmarkView:Refresh()
-    local benchmarks = ns.Addon:GetModule("CombatStore"):GetDummyBenchmarks()
+    local store = ns.Addon:GetModule("CombatStore")
+    local characterKey = store:GetCurrentCharacterKey()
+    local benchmarks = store:GetDummyBenchmarks(characterKey)
+    local latestSession = store:GetLatestSession(characterKey)
+    if latestSession then
+        self.caption:SetText(string.format("Benchmark board for %s across stored dummy sessions.", store:GetSessionCharacterLabel(latestSession)))
+    else
+        self.caption:SetText("Benchmark board for the current character across stored dummy sessions.")
+    end
     if self.scrollFrame and self.scrollFrame.scrollBar then
         self.scrollFrame.scrollBar:SetValue(0)
     elseif self.scrollFrame and self.scrollFrame.SetVerticalScroll then
@@ -115,7 +123,7 @@ function DummyBenchmarkView:Refresh()
     self.cards[1]:SetData(
         bestSustainedAverages and ns.Helpers.FormatNumber(bestSustainedAverages.sustained) or "--",
         "Best Sustained DPS",
-        bestSustained and string.format("%s across %d sessions.", bestSustained.dummyName or "Dummy", bestSustained.sessions or 0) or "No data.",
+        bestSustained and string.format("%s (%s) across %d sessions.", bestSustained.dummyName or "Dummy", bestSustained.benchmarkGroup or "general", bestSustained.sessions or 0) or "No data.",
         ns.Widgets.THEME.accent
     )
     self.cards[1]:Show()
@@ -146,7 +154,7 @@ function DummyBenchmarkView:Refresh()
         if benchmark then
             local averages = getBenchmarkAverages(benchmark)
             row:SetData(
-                string.format("%s  |  %d sessions", benchmark.dummyName or "Training Dummy", benchmark.sessions or 0),
+                string.format("%s  |  %s  |  %d sessions", benchmark.dummyName or "Training Dummy", benchmark.benchmarkGroup or "general", benchmark.sessions or 0),
                 string.format("%s DPS", ns.Helpers.FormatNumber(averages.sustained)),
                 string.format("Burst %s  |  Opener %s  |  Rotation %.1f", ns.Helpers.FormatNumber(averages.burst), ns.Helpers.FormatNumber(averages.opener), averages.rotation or 0),
                 averages.sustained / maxSustained,
