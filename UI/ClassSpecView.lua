@@ -18,12 +18,19 @@ end
 
 function ClassSpecView:Refresh()
     local store = ns.Addon:GetModule("CombatStore")
-    local characterKey = store:GetCurrentCharacterKey()
-    local classBuckets = store:GetAggregateBuckets("classes", characterKey)
-    local specBuckets = store:GetAggregateBuckets("specs", characterKey)
-    local latestSession = store:GetLatestSession(characterKey)
+    local characterRef = store:GetCurrentCharacterRef()
+    local classBuckets = store:GetAggregateBuckets("classes", characterRef)
+    local specBuckets = store:GetAggregateBuckets("specs", characterRef)
+    local latestSession = store:GetLatestSession(characterRef)
+    local usingFallback = false
+    if #classBuckets == 0 and #specBuckets == 0 then
+        classBuckets = store:GetAggregateBuckets("classes")
+        specBuckets = store:GetAggregateBuckets("specs")
+        latestSession = latestSession or store:GetLatestSession()
+        usingFallback = (#classBuckets > 0 or #specBuckets > 0)
+    end
     if latestSession then
-        self.caption:SetText(string.format("Rollups by class and spec for %s to expose matchup trends.", store:GetSessionCharacterLabel(latestSession)))
+        self.caption:SetText(string.format("Rollups by class and spec for %s to expose matchup trends%s.", store:GetSessionCharacterLabel(latestSession), usingFallback and " (fallback to all stored sessions)" or ""))
     else
         self.caption:SetText("Rollups by class and spec for the current character to expose matchup trends.")
     end

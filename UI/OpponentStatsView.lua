@@ -18,11 +18,17 @@ end
 
 function OpponentStatsView:Refresh()
     local store = ns.Addon:GetModule("CombatStore")
-    local characterKey = store:GetCurrentCharacterKey()
-    local buckets = store:GetAggregateBuckets("opponents", characterKey)
-    local latestSession = store:GetLatestSession(characterKey)
+    local characterRef = store:GetCurrentCharacterRef()
+    local buckets = store:GetAggregateBuckets("opponents", characterRef)
+    local latestSession = store:GetLatestSession(characterRef)
+    local usingFallback = false
+    if #buckets == 0 then
+        buckets = store:GetAggregateBuckets("opponents")
+        latestSession = latestSession or store:GetLatestSession()
+        usingFallback = #buckets > 0
+    end
     if latestSession then
-        self.caption:SetText(string.format("Aggregated opponent trends for %s.", store:GetSessionCharacterLabel(latestSession)))
+        self.caption:SetText(string.format("Aggregated opponent trends for %s%s.", store:GetSessionCharacterLabel(latestSession), usingFallback and " (fallback to all stored sessions)" or ""))
     else
         self.caption:SetText("Aggregated opponent trends for the current character.")
     end
@@ -48,7 +54,7 @@ function OpponentStatsView:Refresh()
         )
 
         if latestBuildHash then
-            local duelPractice = store:GetDuelPracticeSummary(latestBuildHash, bucket.key, characterKey)
+            local duelPractice = store:GetDuelPracticeSummary(latestBuildHash, bucket.key, usingFallback and nil or characterRef)
             if duelPractice and duelPractice.fights >= 3 then
                 lines[#lines + 1] = string.format(
                     "   latest-build duel lens: fights=%d  opener=%s  avg dur=%s  first go=%s",

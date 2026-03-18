@@ -192,6 +192,44 @@ local function getSessionCharacterLabel(session)
     return name
 end
 
+local function buildCharacterRef(guid, name, realm)
+    return {
+        key = buildCharacterKey(guid, name, realm),
+        guid = guid,
+        name = name,
+        realm = realm,
+    }
+end
+
+local function matchesCharacter(session, characterRef)
+    if not characterRef then
+        return true
+    end
+
+    local snapshot = session and session.playerSnapshot or nil
+    if not snapshot then
+        return false
+    end
+
+    local sessionKey = getSessionCharacterKey(session)
+    if sessionKey == characterRef.key then
+        return true
+    end
+
+    local sessionName = tostring(snapshot.name or "")
+    local sessionRealm = tostring(snapshot.realm or "")
+    local refName = tostring(characterRef.name or "")
+    local refRealm = tostring(characterRef.realm or "")
+
+    if sessionName ~= "" and refName ~= "" and string.lower(sessionName) == string.lower(refName) then
+        if sessionRealm == "" or refRealm == "" or string.lower(sessionRealm) == string.lower(refRealm) then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function updateDummyBenchmarkRecord(container, session)
     if session.context ~= Constants.CONTEXT.TRAINING_DUMMY then
         return
@@ -342,6 +380,14 @@ function CombatStore:GetCurrentCharacterKey()
     return buildCharacterKey(ApiCompat.GetPlayerGUID(), ApiCompat.GetPlayerName(), ApiCompat.GetNormalizedRealmName())
 end
 
+function CombatStore:GetCurrentCharacterRef()
+    local snapshot = ns.Addon:GetLatestPlayerSnapshot()
+    if snapshot then
+        return buildCharacterRef(snapshot.guid, snapshot.name, snapshot.realm)
+    end
+    return buildCharacterRef(ApiCompat.GetPlayerGUID(), ApiCompat.GetPlayerName(), ApiCompat.GetNormalizedRealmName())
+end
+
 function CombatStore:GetSessionCharacterKey(session)
     return getSessionCharacterKey(session)
 end
@@ -357,10 +403,12 @@ function CombatStore:GetLatestSession(characterKey)
         return lastId and db.combats.byId[lastId] or nil
     end
 
+    local characterRef = type(characterKey) == "table" and characterKey or buildCharacterRef(characterKey, nil, nil)
+
     for index = #db.combats.order, 1, -1 do
         local sessionId = db.combats.order[index]
         local session = db.combats.byId[sessionId]
-        if session and getSessionCharacterKey(session) == characterKey then
+        if session and matchesCharacter(session, characterRef) then
             return session
         end
     end
@@ -423,13 +471,17 @@ function CombatStore:ListCombats(page, pageSize, filters, characterKey)
     filters = filters or {}
     page = math.max(page or 1, 1)
     pageSize = pageSize or Constants.HISTORY_PAGE_SIZE
+    local characterRef = nil
+    if characterKey then
+        characterRef = type(characterKey) == "table" and characterKey or buildCharacterRef(characterKey, nil, nil)
+    end
 
     for index = #db.combats.order, 1, -1 do
         local sessionId = db.combats.order[index]
         local session = db.combats.byId[sessionId]
         if session then
             local include = true
-            if include and characterKey and getSessionCharacterKey(session) ~= characterKey then
+            if include and characterRef and not matchesCharacter(session, characterRef) then
                 include = false
             end
             if filters.context and session.context ~= filters.context then
@@ -455,6 +507,10 @@ end
 
 function CombatStore:GetAggregateBuckets(kind, characterKey)
     local db = self:GetDB()
+    local characterRef = nil
+    if characterKey then
+        characterRef = type(characterKey) == "table" and characterKey or buildCharacterRef(characterKey, nil, nil)
+    end
     if not characterKey then
         local source = db.aggregates[kind] or {}
         local list = {}
@@ -477,7 +533,7 @@ function CombatStore:GetAggregateBuckets(kind, characterKey)
 
     for _, sessionId in ipairs(db.combats.order or {}) do
         local session = db.combats.byId[sessionId]
-        if session and getSessionCharacterKey(session) == characterKey then
+        if session and matchesCharacter(session, characterRef) then
             updateAggregateContainerForSession(aggregates, session, kind)
         end
     end
@@ -493,12 +549,16 @@ end
 
 function CombatStore:GetDummyBenchmarks(characterKey)
     local db = self:GetDB()
+    local characterRef = nil
+    if characterKey then
+        characterRef = type(characterKey) == "table" and characterKey or buildCharacterRef(characterKey, nil, nil)
+    end
     if characterKey then
         local filtered = {}
         for _, sessionId in ipairs(db.combats.order or {}) do
             local session = db.combats.byId[sessionId]
             if session
-                and getSessionCharacterKey(session) == characterKey
+                and matchesCharacter(session, characterRef)
                 and session.context == Constants.CONTEXT.TRAINING_DUMMY
             then
                 updateDummyBenchmarkRecord(filtered, session)
@@ -524,11 +584,15 @@ end
 function CombatStore:GetRecentSuggestions(limit, characterKey)
     local db = self:GetDB()
     local results = {}
+    local characterRef = nil
+    if characterKey then
+        characterRef = type(characterKey) == "table" and characterKey or buildCharacterRef(characterKey, nil, nil)
+    end
     for index = #db.suggestionCache.order, 1, -1 do
         local sessionId = db.suggestionCache.order[index]
         local suggestions = db.suggestionCache.bySessionId[sessionId]
         local session = db.combats.byId[sessionId]
-        if suggestions and (not characterKey or (session and getSessionCharacterKey(session) == characterKey)) then
+        if suggestions and (not characterRef or (session and matchesCharacter(session, characterRef))) then
             for _, suggestion in ipairs(suggestions) do
                 results[#results + 1] = suggestion
                 if limit and #results >= limit then
@@ -545,6 +609,10 @@ function CombatStore:GetBuildBaseline(buildHash, context, excludeSessionId, char
 end
 
 function CombatStore:GetContextBaseline(contextKey, excludeSessionId, characterKey)
+    local characterRef = nil
+    if characterKey then
+        characterRef = type(characterKey) == "table" and characterKey or buildCharacterRef(characterKey, nil, nil)
+    end
     if not excludeSessionId then
         if not characterKey then
             local bucket = self:GetDB().aggregates.contexts[contextKey]
@@ -569,7 +637,7 @@ function CombatStore:GetContextBaseline(contextKey, excludeSessionId, characterK
     for _, sessionId in ipairs(db.combats.order or {}) do
         if sessionId ~= excludeSessionId then
             local session = db.combats.byId[sessionId]
-            if session and (not characterKey or getSessionCharacterKey(session) == characterKey) then
+            if session and (not characterRef or matchesCharacter(session, characterRef)) then
                 local sessionContextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
                 if sessionContextKey == contextKey then
                     fights = fights + 1
@@ -614,6 +682,10 @@ end
 
 function CombatStore:GetSessionBaseline(buildHash, contextKey, opponentKey, excludeSessionId, characterKey)
     local db = self:GetDB()
+    local characterRef = nil
+    if characterKey then
+        characterRef = type(characterKey) == "table" and characterKey or buildCharacterRef(characterKey, nil, nil)
+    end
     local fights = 0
     local wins = 0
     local losses = 0
@@ -633,7 +705,7 @@ function CombatStore:GetSessionBaseline(buildHash, contextKey, opponentKey, excl
         local session = db.combats.byId[sessionId]
         if session
             and sessionId ~= excludeSessionId
-            and (not characterKey or getSessionCharacterKey(session) == characterKey)
+            and (not characterRef or matchesCharacter(session, characterRef))
         then
             local sessionBuildHash = session.playerSnapshot and session.playerSnapshot.buildHash or "unknown"
             local sessionContextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
