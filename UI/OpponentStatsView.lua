@@ -67,6 +67,41 @@ function OpponentStatsView:Refresh()
         end
     end
 
+    -- Arena roster section: show identified enemy slots from the latest arena session.
+    -- Slots are populated by ArenaRoundTracker and exported into session.arena.slots.
+    if latestSession and latestSession.context == "arena" then
+        local arenaData = type(latestSession.arena) == "table" and latestSession.arena or nil
+        local slots = arenaData and arenaData.slots or nil
+        local slotCount = 0
+        if slots then
+            for _ in pairs(slots) do slotCount = slotCount + 1 end
+        end
+        if slotCount > 0 then
+            lines[#lines + 1] = ""
+            lines[#lines + 1] = string.format("── Arena Roster (last session %s) ──",
+                date("%Y-%m-%d %H:%M", latestSession.timestamp or 0))
+            for slot = 1, 5 do
+                local s = slots[slot]
+                if s then
+                    local name = s.name or s.guid or "Unknown"
+                    local classSpec = s.classFile and s.specName
+                        and string.format("%s / %s", s.specName, s.classFile)
+                        or (s.classFile or s.specName or "?")
+                    local pressure = s.pressureScore and string.format("  pressure=%.1f", s.pressureScore) or ""
+                    lines[#lines + 1] = string.format("  Slot %d: %s  [%s]%s",
+                        slot, name, classSpec, pressure)
+                end
+            end
+            -- Report unresolved GUIDs (seen in combat but not linked to a slot).
+            local unresolved = arenaData.unresolvedGuids or {}
+            local unresolvedCount = 0
+            for _ in pairs(unresolved) do unresolvedCount = unresolvedCount + 1 end
+            if unresolvedCount > 0 then
+                lines[#lines + 1] = string.format("  Unresolved GUIDs: %d (seen but not identified)", unresolvedCount)
+            end
+        end
+    end
+
     ns.Widgets.SetBodyText(self.content, self.text, table.concat(lines, "\n"))
 end
 

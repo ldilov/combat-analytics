@@ -2,8 +2,8 @@ local ADDON_NAME, ns = ...
 
 ns.Constants = {
     ADDON_NAME = ADDON_NAME,
-    SCHEMA_VERSION = 1,
-    RAW_EVENT_VERSION = 1,
+    SCHEMA_VERSION = 2,
+    RAW_EVENT_VERSION = 2,
     MAX_RAW_EVENTS_PER_SESSION = 25000,
     RAW_EVENT_WARNING_THRESHOLD = 500000,
     TRACE_LOG_LIMIT = 200,
@@ -56,6 +56,20 @@ ns.Constants = {
         RANDOM_BATTLEGROUND = "random_battleground",
         WORLD = "world",
         TO_THE_DEATH = "to_the_death",
+        -- Used when the arena subcontext cannot be determined (transitional
+        -- queue states, unrecognised brawl types). Prevents false RATED_ARENA
+        -- labels on skirmishes and brawls.
+        UNKNOWN_ARENA = "unknown_arena",
+    },
+    -- Analysis confidence labels attached to session.captureQuality.
+    -- Used by the UI confidence badge and by the suggestion engine.
+    ANALYSIS_CONFIDENCE = {
+        FULL_RAW     = "full_raw",      -- CLEU unrestricted, delta < 5 %
+        ENRICHED     = "enriched",      -- CLEU unrestricted + DamageMeter detail merged
+        RESTRICTED_RAW = "restricted_raw", -- CLEU restricted, DamageMeter is primary source
+        DEGRADED     = "degraded",      -- delta > 12 % or major subevent gaps
+        PARTIAL_ROSTER = "partial_roster", -- arena slot coverage < 100 %
+        UNKNOWN      = "unknown",       -- could not determine
     },
     WINDOW_TYPE = {
         OPENER = "opener",
@@ -92,6 +106,14 @@ ns.Constants = {
         arena3 = true,
         arena4 = true,
         arena5 = true,
+        -- Pet units for arena enemies. Warlocks, Hunters, and Unholy DKs
+        -- deal significant damage through pets; excluding them skews enemy
+        -- spell attribution. Added in schema v2.
+        arena1pet = true,
+        arena2pet = true,
+        arena3pet = true,
+        arena4pet = true,
+        arena5pet = true,
     },
     ROUTER_EVENTS = {
         "ADDON_LOADED",
@@ -104,6 +126,7 @@ ns.Constants = {
         "DAMAGE_METER_CURRENT_SESSION_UPDATED",
         "DAMAGE_METER_RESET",
         "UNIT_SPELLCAST_SUCCEEDED",
+        "SPELL_DATA_LOAD_RESULT",
         "UNIT_AURA",
         "PLAYER_SPECIALIZATION_CHANGED",
         "PLAYER_JOINED_PVP_MATCH",

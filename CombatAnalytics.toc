@@ -24,6 +24,8 @@ DamageMeterService.lua
 CombatStore.lua
 SuggestionEngine.lua
 Utils\Metrics.lua
+ArenaRoundTracker.lua
+SpellAttributionPipeline.lua
 CombatTracker.lua
 Events.lua
 UI\Widgets.lua

@@ -5,8 +5,30 @@ local Constants = ns.Constants
 local CombatHistoryView = {
     viewId = "history",
     page = 1,
-    rowCount = 12,
+    rowCount = 6,
 }
+
+local function prettifyToken(value)
+    local text = tostring(value or "unknown")
+    text = string.gsub(text, "_", " ")
+    text = string.lower(text)
+    return string.gsub(text, "(%a)([%w']*)", function(first, rest)
+        return string.upper(first) .. rest
+    end)
+end
+
+local function formatDisplayLabel(value)
+    local map = {
+        high = "High",
+        medium = "Medium",
+        limited = "Limited",
+        ["local"] = "Local",
+        damage_meter = "Damage Meter",
+        enemy_damage_taken_fallback = "Enemy Fallback",
+        estimated = "Estimated",
+    }
+    return map[value] or prettifyToken(value)
+end
 
 function CombatHistoryView:Build(parent)
     self.frame = CreateFrame("Frame", nil, parent)
@@ -33,21 +55,30 @@ function CombatHistoryView:Build(parent)
     self.pageText:SetPoint("TOPRIGHT", self.prevButton, "BOTTOMRIGHT", 0, -6)
     self.pageText:SetTextColor(unpack(ns.Widgets.THEME.textMuted))
 
+    self.shell, self.scrollFrame, self.canvas = ns.Widgets.CreateScrollCanvas(self.frame, 808, 390)
+    self.shell:SetPoint("TOPLEFT", self.caption, "BOTTOMLEFT", 0, -18)
+    self.shell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 16)
+
     self.rows = {}
     for index = 1, self.rowCount do
-        local row = ns.Widgets.CreateRowButton(self.frame, 808, 28)
+        local row = ns.Widgets.CreateHistoryRow(self.canvas, 750, 58)
         if index == 1 then
-            row:SetPoint("TOPLEFT", self.caption, "BOTTOMLEFT", 0, -18)
+            row:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
         else
             row:SetPoint("TOPLEFT", self.rows[index - 1], "BOTTOMLEFT", 0, -6)
         end
         row:SetScript("OnClick", function(button)
             if button.sessionId then
+                if ns.Addon.SetReviewedSession then
+                    ns.Addon:SetReviewedSession(button.sessionId, "history")
+                end
                 ns.Addon:OpenView("detail", { sessionId = button.sessionId })
             end
         end)
         self.rows[index] = row
     end
+
+    ns.Widgets.SetCanvasHeight(self.canvas, (self.rowCount * 64) + 8)
 
     return self.frame
 end
@@ -71,6 +102,9 @@ function CombatHistoryView:Refresh()
     self.pageText:SetText(string.format("Page %d / %d", self.page, totalPages))
     self.prevButton:SetEnabled(self.page > 1)
     self.nextButton:SetEnabled(self.page < totalPages)
+    if self.scrollFrame and self.scrollFrame.scrollBar then
+        self.scrollFrame.scrollBar:SetValue(0)
+    end
 
     for index = 1, self.rowCount do
         local row = self.rows[index]
@@ -79,16 +113,41 @@ function CombatHistoryView:Refresh()
             row:Show()
             row.sessionId = session.id
             local opponent = session.primaryOpponent and (session.primaryOpponent.name or session.primaryOpponent.guid) or "Unknown"
-            row.text:SetText(string.format(
-                "%s  |  %s  |  %s  |  %s  |  dur=%s  |  dmg=%s  |  pressure=%.1f",
-                date("%Y-%m-%d %H:%M", session.timestamp),
-                opponent,
-                session.context,
-                session.result,
-                ns.Helpers.FormatDuration(session.duration or 0),
-                ns.Helpers.FormatNumber(session.totals.damageDone or 0),
-                session.metrics.pressureScore or 0
-            ))
+            local subcontext = session.subcontext and prettifyToken(session.subcontext) or nil
+            local contextLabel = prettifyToken(session.context)
+            if subcontext then
+                contextLabel = string.format("%s • %s", contextLabel, subcontext)
+            end
+            local readQuality = formatDisplayLabel(session.analysisConfidence or "limited")
+            local readSource = formatDisplayLabel(session.finalDamageSource or "damage_meter")
+            -- Use the richer dataConfidence label (e.g. "Full Raw", "Enriched",
+            -- "Partial Roster") when available; fall back to the 3-tier label.
+            local richLabel = session.dataConfidence
+                and formatDisplayLabel(session.dataConfidence)
+                or readQuality
+            row:SetData({
+                title = opponent,
+                timestamp = date("%Y-%m-%d %H:%M", session.timestamp),
+                meta = string.format(
+                    "%s  |  %s  |  %s",
+                    contextLabel,
+                    prettifyToken(session.result),
+                    store:GetSessionCharacterLabel(session)
+                ),
+                stats = string.format(
+                    "Duration %s  |  Damage %s  |  Taken %s  |  Pressure %.1f  |  Burst %.1f",
+                    ns.Helpers.FormatDuration(session.duration or 0),
+                    ns.Helpers.FormatNumber(session.totals.damageDone or 0),
+                    ns.Helpers.FormatNumber(session.totals.damageTaken or 0),
+                    session.metrics.pressureScore or 0,
+                    session.metrics.burstScore or 0
+                ),
+                source = string.format("%s via %s", richLabel, readSource),
+                result = string.lower(tostring(session.result or "unknown")),
+                resultLabel = prettifyToken(session.result),
+                analysisConfidence = session.analysisConfidence or "limited",
+                confidenceLabel = richLabel,
+            })
         else
             row:Hide()
             row.sessionId = nil

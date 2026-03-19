@@ -13,6 +13,7 @@ local Addon = {
         currentSession = nil,
         currentMatch = nil,
         pendingDuel = nil,
+        reviewedSessionId = nil,
         latestSummarySessionId = nil,
         summaryOpenAt = nil,
         latestPlayerSnapshot = nil,
@@ -266,6 +267,23 @@ function Addon:GetLatestPlayerSnapshot()
     return self.runtime.latestPlayerSnapshot
 end
 
+function Addon:SetReviewedSession(sessionId, source)
+    self.runtime.reviewedSessionId = sessionId
+    self:Trace("ui.reviewed_session.set", {
+        sessionId = sessionId or "nil",
+        source = source or "unknown",
+    })
+end
+
+function Addon:GetReviewedSession()
+    return self.runtime.reviewedSessionId
+end
+
+function Addon:ClearReviewedSession()
+    self.runtime.reviewedSessionId = nil
+    self:Trace("ui.reviewed_session.cleared")
+end
+
 function Addon:TryRegisterSlashCommands()
     return registerSlashCommands(self)
 end
@@ -427,6 +445,8 @@ function Addon:InitializeRuntime()
     self:InitializeCore()
 
     self:TryRegisterSlashCommands()
+    safeModuleCall(self, "ArenaRoundTracker", "Initialize")
+    safeModuleCall(self, "SpellAttributionPipeline", "Initialize")
     safeModuleCall(self, "CombatTracker", "Initialize")
     safeModuleCall(self, "SnapshotService", "Initialize")
     safeModuleCall(self, "DamageMeterService", "Initialize")

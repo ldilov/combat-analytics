@@ -258,7 +258,11 @@ function SessionClassifier:ResolveArenaSubcontext()
     if ApiCompat.IsInBrawl() then
         return Constants.SUBCONTEXT.BRAWL
     end
-    return Constants.SUBCONTEXT.RATED_ARENA
+    -- Cannot determine subcontext. The old fallback to RATED_ARENA was wrong:
+    -- it fired during transitional queue states (between queue-pop and match
+    -- start) and for brawl types not covered by IsInBrawl(), causing skirmishes
+    -- and brawls to be mislabelled as rated arenas.
+    return Constants.SUBCONTEXT.UNKNOWN_ARENA
 end
 
 function SessionClassifier:ResolveBattlegroundSubcontext()
@@ -697,10 +701,12 @@ function SessionClassifier:ResolveContext(eventRecord)
     end
 
     if self:IsWorldPvpEvent(eventRecord) then
-        return nil, nil
+        -- Previously returned nil, nil which silently dropped world PvP sessions
+        -- even though CONTEXT.WORLD_PVP is defined and has a priority weight.
+        return Constants.CONTEXT.WORLD_PVP, nil
     end
 
-    if self:IsPlayerEngagement(eventRecord) and ns.Addon:GetSetting("includeGeneralCombat") then
+    if (eventRecord.sourceHostilePlayer or eventRecord.destHostilePlayer) and ns.Addon:GetSetting("includeGeneralCombat") then
         return Constants.CONTEXT.GENERAL, nil
     end
 

@@ -27,6 +27,8 @@ local function dispatch(tracker, event, ...)
         tracker:HandleDamageMeterReset(...)
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         tracker:HandleUnitSpellcastSucceeded(...)
+    elseif event == "SPELL_DATA_LOAD_RESULT" then
+        tracker:HandleSpellDataLoadResult(...)
     elseif event == "UNIT_AURA" then
         tracker:HandleUnitAura(...)
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then

@@ -26,6 +26,9 @@ end
 local function createSpellAggregate(spellId)
     return {
         spellId = spellId,
+        name = nil,
+        iconID = nil,
+        schoolMask = nil,
         castCount = 0,
         executeCount = 0,
         hitCount = 0,
@@ -121,6 +124,27 @@ local function isSuccessfulCastEvent(eventRecord)
         and eventRecord.eventType == "cast"
         and eventRecord.sourceMine
         and eventRecord.subEvent ~= "SPELL_CAST_FAILED"
+end
+
+local function applySpellMetadata(aggregate, spellId, spellName, spellSchool)
+    if not aggregate then
+        return
+    end
+
+    if spellName and spellName ~= "" and not aggregate.name then
+        aggregate.name = spellName
+    end
+    if spellSchool and not aggregate.schoolMask then
+        aggregate.schoolMask = spellSchool
+    end
+
+    if spellId and spellId > 0 and (not aggregate.name or not aggregate.iconID) then
+        local spellInfo = ns.ApiCompat.GetSpellInfo(spellId)
+        if spellInfo then
+            aggregate.name = aggregate.name or spellInfo.name
+            aggregate.iconID = aggregate.iconID or spellInfo.iconID
+        end
+    end
 end
 
 local function isProcCandidate(unitToken, auraData)
@@ -326,6 +350,11 @@ function CombatTracker:CreateSession(context, subcontext, identitySource)
             rawEvents = Constants.CAPTURE_QUALITY.OK,
             enemyBuild = Constants.CAPTURE_QUALITY.DEGRADED,
         },
+        -- arena is populated at FinalizeSession by ArenaRoundTracker.
+        -- false = not an arena session; nil = arena session, not yet exported.
+        arena = (context == Constants.CONTEXT.ARENA) and nil or false,
+        -- attribution is populated by SpellAttributionPipeline (Phase 3).
+        attribution = false,
         state = "active",
         idleTime = 0,
         lastPlayerActionOffset = nil,
@@ -498,80 +527,176 @@ function CombatTracker:NormalizeCombatLogEvent(...)
 
     local payload = { select(12, ...) }
     local eventRecord = {
-        timestamp = timestamp,
-        subEvent = subEvent,
-        sourceGuid = sourceGuid,
-        sourceName = sourceName,
+        timestamp   = timestamp,
+        subEvent    = subEvent,
+        sourceGuid  = sourceGuid,
+        sourceName  = sourceName,
         sourceFlags = sourceFlags or 0,
-        destGuid = destGuid,
-        destName = destName,
-        destFlags = destFlags or 0,
-        sourceMine = isMineGuid(sourceGuid) or hasFlag(sourceFlags or 0, AFFILIATION_MINE),
-        destMine = isMineGuid(destGuid) or hasFlag(destFlags or 0, AFFILIATION_MINE),
+        destGuid    = destGuid,
+        destName    = destName,
+        destFlags   = destFlags or 0,
+        sourceMine  = isMineGuid(sourceGuid) or hasFlag(sourceFlags or 0, AFFILIATION_MINE),
+        destMine    = isMineGuid(destGuid)   or hasFlag(destFlags   or 0, AFFILIATION_MINE),
         sourcePlayer = ApiCompat.IsGuidPlayer(sourceGuid) or hasFlag(sourceFlags or 0, TYPE_PLAYER),
-        destPlayer = ApiCompat.IsGuidPlayer(destGuid) or hasFlag(destFlags or 0, TYPE_PLAYER),
+        destPlayer   = ApiCompat.IsGuidPlayer(destGuid)   or hasFlag(destFlags   or 0, TYPE_PLAYER),
         sourceHostilePlayer = (ApiCompat.IsGuidPlayer(sourceGuid) or hasFlag(sourceFlags or 0, TYPE_PLAYER)) and hasFlag(sourceFlags or 0, REACTION_HOSTILE),
-        destHostilePlayer = (ApiCompat.IsGuidPlayer(destGuid) or hasFlag(destFlags or 0, TYPE_PLAYER)) and hasFlag(destFlags or 0, REACTION_HOSTILE),
-        eventType = "other",
+        destHostilePlayer   = (ApiCompat.IsGuidPlayer(destGuid)   or hasFlag(destFlags   or 0, TYPE_PLAYER)) and hasFlag(destFlags   or 0, REACTION_HOSTILE),
+        eventType   = "other",
     }
 
+    -- ── Damage events ──────────────────────────────────────────────────────────
+    -- SWING_DAMAGE payload (1-indexed, positions 1..10):
+    --   1=amount, 2=overkill, 3=schoolMask, 4=resisted, 5=blocked,
+    --   6=absorbed, 7=critical, 8=glancing, 9=crushing, 10=isOffHand
+    -- NOTE: absorbed is at position 6, NOT position 5.
+    -- The previous code read payload[5] (blocked) as absorbed — this was wrong.
     if subEvent == "SWING_DAMAGE" then
-        eventRecord.eventType = "damage"
-        eventRecord.spellId = 6603
-        eventRecord.amount = payload[1]
-        eventRecord.overkill = payload[2]
-        eventRecord.absorbed = payload[5]
-        eventRecord.critical = payload[6]
+        eventRecord.eventType  = "damage"
+        eventRecord.spellId    = 6603
+        eventRecord.spellName  = ApiCompat.GetSpellName(6603) or "Melee"
+        eventRecord.amount     = payload[1]
+        eventRecord.overkill   = payload[2]
+        eventRecord.schoolMask = payload[3]
+        eventRecord.resisted   = payload[4]
+        eventRecord.blocked    = payload[5]
+        eventRecord.absorbed   = payload[6]   -- corrected from [5]
+        eventRecord.critical   = payload[7]
+        eventRecord.glancing   = payload[8]
+        eventRecord.crushing   = payload[9]
+        eventRecord.isOffHand  = payload[10]
+
+    -- SPELL_DAMAGE / RANGE_DAMAGE / SPELL_PERIODIC_DAMAGE payload (1-indexed):
+    --   1=spellId, 2=spellName, 3=spellSchool, 4=amount, 5=overkill,
+    --   6=schoolMask, 7=resisted, 8=absorbed, 9=critical,
+    --   10=glancing, 11=crushing, 12=isOffHand, 13=hideCaster
     elseif subEvent == "RANGE_DAMAGE" or subEvent == "SPELL_DAMAGE" or subEvent == "SPELL_PERIODIC_DAMAGE" then
-        eventRecord.eventType = "damage"
-        eventRecord.spellId = payload[1]
-        eventRecord.amount = payload[4]
-        eventRecord.overkill = payload[5]
-        eventRecord.absorbed = payload[8]
-        eventRecord.critical = payload[9]
+        eventRecord.eventType  = "damage"
+        eventRecord.spellId    = payload[1]
+        eventRecord.spellName  = payload[2]
+        eventRecord.spellSchool = payload[3]
+        eventRecord.amount     = payload[4]
+        eventRecord.overkill   = payload[5]
+        eventRecord.schoolMask = payload[6]
+        eventRecord.resisted   = payload[7]
+        eventRecord.absorbed   = payload[8]
+        eventRecord.critical   = payload[9]
+        eventRecord.glancing   = payload[10]
+        eventRecord.crushing   = payload[11]
+        eventRecord.isOffHand  = payload[12]
+        eventRecord.hideCaster = payload[13]
+
+    -- ENVIRONMENTAL_DAMAGE payload:
+    --   1=envType, 2=amount, 3=overkill, 4=schoolMask, 5=resisted,
+    --   6=blocked, 7=absorbed, 8=critical, 9=glancing, 10=crushing
     elseif subEvent == "ENVIRONMENTAL_DAMAGE" then
-        eventRecord.eventType = "damage"
-        eventRecord.spellId = 0
-        eventRecord.amount = payload[2]
-        eventRecord.overkill = payload[3]
-        eventRecord.absorbed = payload[6]
-        eventRecord.critical = payload[7]
+        eventRecord.eventType  = "damage"
+        eventRecord.spellId    = 0
+        eventRecord.spellName  = payload[1]
+        eventRecord.amount     = payload[2]
+        eventRecord.overkill   = payload[3]
+        eventRecord.schoolMask = payload[4]
+        eventRecord.resisted   = payload[5]
+        eventRecord.blocked    = payload[6]
+        eventRecord.absorbed   = payload[7]
+        eventRecord.critical   = payload[8]
+        eventRecord.glancing   = payload[9]
+        eventRecord.crushing   = payload[10]
+
+    -- ── Healing events ────────────────────────────────────────────────────────
     elseif subEvent == "SPELL_HEAL" or subEvent == "SPELL_PERIODIC_HEAL" then
-        eventRecord.eventType = "healing"
-        eventRecord.spellId = payload[1]
-        eventRecord.amount = payload[4]
+        eventRecord.eventType   = "healing"
+        eventRecord.spellId     = payload[1]
+        eventRecord.spellName   = payload[2]
+        eventRecord.spellSchool = payload[3]
+        eventRecord.amount      = payload[4]
         eventRecord.overhealing = payload[5]
-        eventRecord.absorbed = payload[6]
-        eventRecord.critical = payload[7]
+        eventRecord.absorbed    = payload[6]
+        eventRecord.critical    = payload[7]
+
+    -- ── Cast events ───────────────────────────────────────────────────────────
     elseif subEvent == "SPELL_CAST_SUCCESS" or subEvent == "SPELL_CAST_START" or subEvent == "SPELL_CAST_FAILED" then
-        eventRecord.eventType = "cast"
-        eventRecord.spellId = payload[1]
+        eventRecord.eventType    = "cast"
+        eventRecord.spellId      = payload[1]
+        eventRecord.spellName    = payload[2]
+        eventRecord.spellSchool  = payload[3]
         eventRecord.failedReason = payload[4]
-    elseif string.find(subEvent, "AURA") then
-        eventRecord.eventType = "aura"
-        eventRecord.spellId = payload[1]
-        eventRecord.auraId = payload[1]
-        eventRecord.auraType = payload[4]
-        eventRecord.stackCount = payload[5]
-    elseif string.find(subEvent, "MISSED") then
+
+    -- ── Summon / create events ─────────────────────────────────────────────────
+    -- These are critical for pet attribution — they establish the summon → owner
+    -- relationship that SpellAttributionPipeline uses to credit pet damage.
+    elseif subEvent == "SPELL_SUMMON" or subEvent == "SPELL_CREATE" then
+        eventRecord.eventType   = "summon"
+        eventRecord.spellId     = payload[1]
+        eventRecord.spellName   = payload[2]
+        eventRecord.spellSchool = payload[3]
+
+    -- ── Aura events ───────────────────────────────────────────────────────────
+    -- Handle BROKEN variants before the generic find() catch-all.
+    -- SPELL_AURA_BROKEN payload: 1=spellId, 2=spellName, 3=spellSchool, 4=auraType
+    -- SPELL_AURA_BROKEN_SPELL payload: same base + 5=extraSpellId, 6=extraSpellName, 7=extraSpellSchool
+    -- Generic AURA payload: 1=spellId, 2=spellName, 3=spellSchool, 4=auraType, 5=amount/stackCount
+    elseif subEvent == "SPELL_AURA_BROKEN" then
+        eventRecord.eventType   = "aura"
+        eventRecord.spellId     = payload[1]
+        eventRecord.spellName   = payload[2]
+        eventRecord.spellSchool = payload[3]
+        eventRecord.auraId      = payload[1]
+        eventRecord.auraType    = payload[4]
+
+    elseif subEvent == "SPELL_AURA_BROKEN_SPELL" then
+        eventRecord.eventType    = "aura"
+        eventRecord.spellId      = payload[1]
+        eventRecord.spellName    = payload[2]
+        eventRecord.spellSchool  = payload[3]
+        eventRecord.auraId       = payload[1]
+        eventRecord.auraType     = payload[4]
+        eventRecord.extraSpellId = payload[5]
+
+    elseif string.find(subEvent, "AURA", 1, true) then
+        eventRecord.eventType   = "aura"
+        eventRecord.spellId     = payload[1]
+        eventRecord.spellName   = payload[2]
+        eventRecord.spellSchool = payload[3]
+        eventRecord.auraId      = payload[1]
+        eventRecord.auraType    = payload[4]
+        eventRecord.stackCount  = payload[5]
+
+    -- ── Miss events ───────────────────────────────────────────────────────────
+    -- SWING_MISSED: 1=missType, 2=isOffHand, 3=amountMissed
+    -- SPELL_MISSED / RANGE_MISSED / SPELL_PERIODIC_MISSED: 1=spellId, 2=spellName, 3=spellSchool, 4=missType, 5=isOffHand, 6=amountMissed
+    elseif string.find(subEvent, "MISSED", 1, true) then
         eventRecord.eventType = "miss"
         if subEvent == "SWING_MISSED" then
-            eventRecord.spellId = 6603
-            eventRecord.missType = payload[1]
-            eventRecord.absorbed = payload[2]
+            eventRecord.spellId    = 6603
+            eventRecord.spellName  = ApiCompat.GetSpellName(6603) or "Melee"
+            eventRecord.missType   = payload[1]
+            eventRecord.isOffHand  = payload[2]
+            eventRecord.absorbed   = payload[3]
         else
-            eventRecord.spellId = payload[1]
-            eventRecord.missType = payload[4]
-            eventRecord.absorbed = payload[5]
+            eventRecord.spellId     = payload[1]
+            eventRecord.spellName   = payload[2]
+            eventRecord.spellSchool = payload[3]
+            eventRecord.missType    = payload[4]
+            eventRecord.isOffHand   = payload[5]
+            eventRecord.absorbed    = payload[6]
         end
+
+    -- ── Utility events ────────────────────────────────────────────────────────
     elseif subEvent == "SPELL_INTERRUPT" then
-        eventRecord.eventType = "interrupt"
-        eventRecord.spellId = payload[1]
+        eventRecord.eventType    = "interrupt"
+        eventRecord.spellId      = payload[1]
+        eventRecord.spellName    = payload[2]
+        eventRecord.spellSchool  = payload[3]
         eventRecord.extraSpellId = payload[4]
+
     elseif subEvent == "SPELL_DISPEL" or subEvent == "SPELL_STOLEN" then
-        eventRecord.eventType = "dispel"
-        eventRecord.spellId = payload[1]
+        eventRecord.eventType    = "dispel"
+        eventRecord.spellId      = payload[1]
+        eventRecord.spellName    = payload[2]
+        eventRecord.spellSchool  = payload[3]
         eventRecord.extraSpellId = payload[4]
+
+    -- ── Death events ──────────────────────────────────────────────────────────
     elseif subEvent == "UNIT_DIED" or subEvent == "UNIT_DESTROYED" or subEvent == "PARTY_KILL" then
         eventRecord.eventType = "death"
     end
@@ -622,6 +747,7 @@ function CombatTracker:UpdateSpellStats(session, eventRecord)
     end
 
     local aggregate = self:EnsureSpellAggregate(session, eventRecord.spellId)
+    applySpellMetadata(aggregate, eventRecord.spellId, eventRecord.spellName, eventRecord.spellSchool)
     if not aggregate.firstUse then
         aggregate.firstUse = eventRecord.timestampOffset
     end
@@ -670,6 +796,21 @@ function CombatTracker:UpdateSpellStats(session, eventRecord)
         session.lastPlayerActionOffset = eventRecord.timestampOffset
     elseif eventRecord.eventType == "miss" and eventRecord.sourceMine then
         aggregate.missCount = aggregate.missCount + 1
+    end
+end
+
+function CombatTracker:HandleSpellDataLoadResult(spellId, success)
+    if not success or not spellId or spellId <= 0 then
+        return
+    end
+
+    local mainFrame = ns.Addon:GetModule("MainFrame")
+    if mainFrame and mainFrame.frame and mainFrame.frame:IsShown() and mainFrame.activeViewId then
+        ns.Addon:Trace("spell_data.loaded", {
+            spellId = spellId,
+            view = mainFrame.activeViewId,
+        })
+        mainFrame:ShowView(mainFrame.activeViewId)
     end
 end
 
@@ -909,6 +1050,18 @@ function CombatTracker:HandleNormalizedEvent(eventRecord)
     self:UpdateSurvivalStats(session, eventRecord)
     self:UpdateAuraWindowContribution(session, eventRecord)
     self:AppendRawEvent(session, eventRecord)
+
+    -- Forward to ArenaRoundTracker for GUID resolution and pressure scoring.
+    -- Only meaningful during arena sessions but safe to call unconditionally.
+    if session.context == Constants.CONTEXT.ARENA then
+        local art = ns.Addon:GetModule("ArenaRoundTracker")
+        if art then art:HandleCombatLogEvent(eventRecord) end
+    end
+
+    -- Forward to SpellAttributionPipeline for enemy-source attribution.
+    -- Tracks incoming damage and summon ownership regardless of context.
+    local sap = ns.Addon:GetModule("SpellAttributionPipeline")
+    if sap then sap:HandleCombatLogEvent(session, eventRecord) end
 end
 
 function CombatTracker:CloseOpenAuras(session)
@@ -920,9 +1073,13 @@ function CombatTracker:CloseOpenAuras(session)
 end
 
 function CombatTracker:DeriveResult(session, explicitResult, reason)
-    if explicitResult then
+    -- Only trust explicit results that are definitive.
+    -- UNKNOWN explicit means event-based resolution failed; fall through to heuristics
+    -- so death/kill signals can still produce a meaningful result.
+    if explicitResult and explicitResult ~= Constants.SESSION_RESULT.UNKNOWN then
         return explicitResult
     end
+    -- A previously-set session.result takes priority if definitive.
     if session.result and session.result ~= Constants.SESSION_RESULT.UNKNOWN then
         return session.result
     end
@@ -971,18 +1128,67 @@ function CombatTracker:ResolveFinalDamageSource(session)
     return "damage_meter"
 end
 
-function CombatTracker:ResolveAnalysisConfidence(session)
-    local hasRawTimeline = #(session.rawEvents or {}) > 0
-    local identityConfidence = session.identity and session.identity.confidence or 0
-    local finalDamageSource = session.finalDamageSource or "damage_meter"
+-- ResolveDataConfidence: returns one of the Constants.ANALYSIS_CONFIDENCE values
+-- based on the richest available signal for this session.
+-- Priority:
+--   1. SpellAttributionPipeline reconciliation (has seen both CLEU and DamageMeter)
+--   2. CLEU-only (unrestricted session, no import needed)
+--   3. Restricted session (no per-event CLEU, DamageMeter only)
+--   4. Nothing useful captured → UNKNOWN
+function CombatTracker:ResolveDataConfidence(session)
+    local AC = Constants.ANALYSIS_CONFIDENCE
 
-    if not hasRawTimeline then
-        return "limited"
+    -- If SAP ran and produced a reconciliation confidence, use it as the primary signal.
+    -- For arenas, downgrade to PARTIAL_ROSTER if ArenaRoundTracker captured no slots —
+    -- that means opponent identity is unknown regardless of damage reconciliation.
+    if type(session.attribution) == "table" then
+        local rec = session.attribution.reconciliation
+        if rec and rec.confidence and rec.confidence ~= AC.UNKNOWN then
+            if session.context == Constants.CONTEXT.ARENA then
+                local arenaSlots = type(session.arena) == "table"
+                    and session.arena.slots or nil
+                local slotCount = 0
+                if arenaSlots then
+                    for _ in pairs(arenaSlots) do slotCount = slotCount + 1 end
+                end
+                -- Zero slots means no enemy identity data was captured at all.
+                if slotCount == 0 then
+                    return AC.PARTIAL_ROSTER
+                end
+            end
+            return rec.confidence
+        end
     end
-    if identityConfidence >= 90 and finalDamageSource == "local" then
+
+    -- Fallback: derive from what data is available.
+    local hasRawTimeline = #(session.rawEvents or {}) > 0
+    if not hasRawTimeline then
+        return AC.UNKNOWN
+    end
+
+    -- CLEU present, no DamageMeter reconciliation ran (e.g. training dummy with
+    -- restricted log would still have rawEvents from the unrestricted window).
+    if ApiCompat.IsCombatLogRestricted() then
+        return AC.RESTRICTED_RAW
+    end
+
+    return AC.FULL_RAW
+end
+
+-- ResolveAnalysisConfidence: maps the rich ANALYSIS_CONFIDENCE label to the
+-- legacy 3-tier "high"/"medium"/"limited" strings consumed by all UI components.
+-- Do not change these strings without updating all UI callers in Phase 5.
+function CombatTracker:ResolveAnalysisConfidence(session)
+    local AC = Constants.ANALYSIS_CONFIDENCE
+    local dc = session.dataConfidence or AC.UNKNOWN
+    if dc == AC.FULL_RAW or dc == AC.ENRICHED then
         return "high"
     end
-    return "medium"
+    if dc == AC.RESTRICTED_RAW or dc == AC.PARTIAL_ROSTER then
+        return "medium"
+    end
+    -- DEGRADED, UNKNOWN → "limited"
+    return "limited"
 end
 
 function CombatTracker:FinalizeSession(explicitResult, reason)
@@ -1063,7 +1269,17 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         ns.Addon:Debug("%s", errSuggestions)
     end
 
-    session.finalDamageSource = self:ResolveFinalDamageSource(session)
+    -- Export arena round metadata from ArenaRoundTracker into the session before
+    -- persisting. Must happen after DamageMeter import so primaryOpponent from
+    -- tracker can override the first-hit placeholder if pressure data is better.
+    if session.context == Constants.CONTEXT.ARENA then
+        local art = ns.Addon:GetModule("ArenaRoundTracker")
+        if art then art:CopyStateIntoSession(session) end
+    end
+
+    session.finalDamageSource  = self:ResolveFinalDamageSource(session)
+    -- dataConfidence must be set before ResolveAnalysisConfidence reads it.
+    session.dataConfidence     = self:ResolveDataConfidence(session)
     session.analysisConfidence = self:ResolveAnalysisConfidence(session)
     session.state = "finalized"
 
@@ -1075,6 +1291,7 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         importedDamage = session.importedTotals and session.importedTotals.damageDone or 0,
         finalDamage = session.totals and session.totals.damageDone or 0,
         finalDamageSource = session.finalDamageSource or "unknown",
+        dataConfidence = session.dataConfidence or "unknown",
         analysisConfidence = session.analysisConfidence or "unknown",
     })
 
@@ -1427,6 +1644,13 @@ function CombatTracker:HandlePlayerJoinedPvpMatch()
     local context = ApiCompat.IsMatchConsideredArena() and Constants.CONTEXT.ARENA or Constants.CONTEXT.BATTLEGROUND
     local subcontext = context == Constants.CONTEXT.ARENA and classifier:ResolveArenaSubcontext() or classifier:ResolveBattlegroundSubcontext()
     self:CreateOrRefreshMatch(context, subcontext)
+
+    -- Begin tracking arena round identity. ArenaRoundTracker owns match state
+    -- independently of the combat session so prep and inter-round data is not lost.
+    if context == Constants.CONTEXT.ARENA then
+        local art = ns.Addon:GetModule("ArenaRoundTracker")
+        if art then art:BeginMatch(context, subcontext) end
+    end
 end
 
 function CombatTracker:HandlePvpMatchActive()
@@ -1435,23 +1659,60 @@ function CombatTracker:HandlePvpMatchActive()
         matchRecord.state = "active"
         matchRecord.activatedAt = ApiCompat.GetServerTime()
     end
+    -- Open a round in the ArenaRoundTracker. This is the authoritative signal
+    -- that gates (round began) are now reliable.
+    local art = ns.Addon:GetModule("ArenaRoundTracker")
+    if art then art:BeginRound("pvp_match_active") end
 end
 
 function CombatTracker:HandlePvpMatchComplete(winner, duration)
+    -- NOTE: The event args (winner, duration) are not used for result derivation.
+    -- Blizzard's own PVP UI ignores them and queries C_PvP directly after the
+    -- event fires. GetActiveMatchWinner() returns an integer faction index
+    -- (0 = Horde, 1 = Alliance); GetBattlefieldArenaFaction() returns the
+    -- local player's team index. Compare to determine win/loss/draw.
+    local winnerTeam   = ApiCompat.GetActiveMatchWinner()
+    local playerTeam   = ApiCompat.GetBattlefieldArenaFaction()
+
+    local matchResult, sessionResult
+    if winnerTeam ~= nil and playerTeam ~= nil then
+        local enemyTeam = (playerTeam + 1) % 2
+        if winnerTeam == playerTeam then
+            matchResult   = Constants.MATCH_RESULT.WIN
+            sessionResult = Constants.SESSION_RESULT.WON
+        elseif winnerTeam == enemyTeam then
+            matchResult   = Constants.MATCH_RESULT.LOSS
+            sessionResult = Constants.SESSION_RESULT.LOST
+        else
+            matchResult   = Constants.MATCH_RESULT.DRAW
+            sessionResult = Constants.SESSION_RESULT.DRAW
+        end
+    else
+        matchResult   = Constants.MATCH_RESULT.UNKNOWN
+        sessionResult = Constants.SESSION_RESULT.UNKNOWN
+    end
+
     local matchRecord = self:GetCurrentMatch()
     if matchRecord then
-        matchRecord.state = "complete"
+        matchRecord.state       = "complete"
         matchRecord.completedAt = ApiCompat.GetServerTime()
-        matchRecord.result = Constants.MATCH_RESULT.UNKNOWN
-        matchRecord.metadata = matchRecord.metadata or {}
-        matchRecord.metadata.winner = winner
-        matchRecord.metadata.duration = duration
+        matchRecord.result      = matchResult
+        matchRecord.metadata    = matchRecord.metadata or {}
+        -- Store raw event args as fallback reference; do not use for result.
+        matchRecord.metadata.winnerArg  = winner
+        matchRecord.metadata.winnerTeam = winnerTeam
+        matchRecord.metadata.playerTeam = playerTeam
+        matchRecord.metadata.duration   = duration
     end
 
     local session = self:GetCurrentSession()
     if session then
-        session.result = Constants.SESSION_RESULT.UNKNOWN
+        session.result = sessionResult
     end
+
+    -- Close the active round with the resolved winner.
+    local art = ns.Addon:GetModule("ArenaRoundTracker")
+    if art then art:EndRound("pvp_match_complete", winnerTeam, duration) end
 end
 
 function CombatTracker:HandlePvpMatchInactive()
@@ -1459,6 +1720,11 @@ function CombatTracker:HandlePvpMatchInactive()
     if session then
         self:FinalizeSession(session.result ~= Constants.SESSION_RESULT.UNKNOWN and session.result or nil, "match_inactive")
     end
+
+    -- Close the match-level tracker state.
+    local art = ns.Addon:GetModule("ArenaRoundTracker")
+    if art then art:EndMatch() end
+
     self:SetCurrentMatch(nil)
 end
 
@@ -1475,15 +1741,43 @@ function CombatTracker:HandleArenaPrepOpponentSpecializations()
     if matchRecord then
         ns.Addon:GetModule("SnapshotService"):CaptureArenaPrep(matchRecord)
     end
+    -- Capture spec data into ArenaRoundTracker so it is available for
+    -- round key building even before any unit frames become visible.
+    local art = ns.Addon:GetModule("ArenaRoundTracker")
+    if art then art:CapturePrepSpecs() end
 end
 
 function CombatTracker:HandleArenaOpponentUpdate(unitToken, updateReason)
-    local session = self:GetCurrentSession()
+    -- IMPORTANT: ARENA_OPPONENT_UPDATE fires during prep phase, before any
+    -- combat session exists. The previous guard (if session then) dropped all
+    -- prep-phase roster data — the most reliable source of enemy spec/class.
+    -- Always update match-level state; gate session-level work on session.
     local snapshotService = ns.Addon:GetModule("SnapshotService")
+
+    local matchRecord = self:GetCurrentMatch()
+    if matchRecord then
+        matchRecord.metadata = matchRecord.metadata or {}
+        matchRecord.metadata.opponentSlots = matchRecord.metadata.opponentSlots or {}
+        -- Record slot visibility state so ArenaRoundTracker can reconcile GUIDs.
+        matchRecord.metadata.opponentSlots[unitToken] = {
+            unitToken   = unitToken,
+            reason      = updateReason,
+            updatedAt   = ApiCompat.GetServerTime(),
+            guid        = ApiCompat.GetUnitGUID(unitToken),
+            name        = ApiCompat.GetUnitName(unitToken),
+        }
+    end
+
+    local session = self:GetCurrentSession()
     if session then
         snapshotService:UpdateSessionActor(session, unitToken, "arena_opponent")
         self:AddTimelineMarker(session, "arena_opponent_update", { unitToken = unitToken, reason = updateReason })
     end
+
+    -- Forward to ArenaRoundTracker unconditionally — it manages slot state even
+    -- before and between sessions (prep phase, inter-round).
+    local art = ns.Addon:GetModule("ArenaRoundTracker")
+    if art then art:HandleArenaOpponentUpdate(unitToken, updateReason) end
 end
 
 function CombatTracker:HandleDuelRequested(playerName)

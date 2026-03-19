@@ -9,6 +9,9 @@ local DamageMeterService = {}
 local function createSpellAggregate(spellId)
     return {
         spellId = spellId,
+        name = nil,
+        iconID = nil,
+        schoolMask = nil,
         castCount = 0,
         executeCount = 0,
         hitCount = 0,
@@ -486,13 +489,21 @@ function DamageMeterService:GetCurrentPlayerSource(damageMeterType)
     return sessionSource, combatSource, combatSession
 end
 
+-- CollectEnemyDamageSnapshotForCurrent returns three values:
+--   1. totalAmount (number)
+--   2. flatSpellList  — merged across all sources (backward-compatible for callers
+--                       that only need a global spell breakdown)
+--   3. sources        — per-source list for SpellAttributionPipeline; each entry
+--                       is { combatSource = ..., sessionSource = ... }
+-- The flat spell list is kept to avoid breaking existing UI consumers.
 function DamageMeterService:CollectEnemyDamageSnapshotForCurrent()
     local combatSession = ApiCompat.GetCombatSessionFromType(Enum.DamageMeterSessionType.Current, Enum.DamageMeterType.EnemyDamageTaken)
     if not combatSession then
-        return 0, {}
+        return 0, {}, {}
     end
 
     local spellsById = {}
+    local sources    = {}
     for _, combatSource in ipairs(combatSession.combatSources or {}) do
         local sessionSource = ApiCompat.GetCombatSessionSourceFromType(
             Enum.DamageMeterSessionType.Current,
@@ -500,21 +511,28 @@ function DamageMeterService:CollectEnemyDamageSnapshotForCurrent()
             combatSource.sourceGUID,
             combatSource.sourceCreatureID
         )
+        -- Build the flat merged list (legacy path — merges within source scope
+        -- only, so each source's spells do not collide across sources).
+        local sourceSpellsById = {}
         for _, combatSpell in ipairs(sessionSource and sessionSource.combatSpells or {}) do
-            mergeCombatSpell(spellsById, combatSpell)
+            mergeCombatSpell(sourceSpellsById, combatSpell)
+            mergeCombatSpell(spellsById,       combatSpell)
         end
+        sources[#sources + 1] = { combatSource = combatSource, sessionSource = sessionSource }
     end
 
-    return combatSession.totalAmount or 0, buildMergedCombatSpellList(spellsById)
+    return combatSession.totalAmount or 0, buildMergedCombatSpellList(spellsById), sources
 end
 
+-- Same as above but for a historical session id.
 function DamageMeterService:CollectEnemyDamageSnapshotForSession(sessionId)
     local combatSession = ApiCompat.GetCombatSessionFromID(sessionId, Enum.DamageMeterType.EnemyDamageTaken)
     if not combatSession then
-        return 0, {}
+        return 0, {}, {}
     end
 
     local spellsById = {}
+    local sources    = {}
     for _, combatSource in ipairs(combatSession.combatSources or {}) do
         local sessionSource = ApiCompat.GetCombatSessionSourceFromID(
             sessionId,
@@ -522,12 +540,15 @@ function DamageMeterService:CollectEnemyDamageSnapshotForSession(sessionId)
             combatSource.sourceGUID,
             combatSource.sourceCreatureID
         )
+        local sourceSpellsById = {}
         for _, combatSpell in ipairs(sessionSource and sessionSource.combatSpells or {}) do
-            mergeCombatSpell(spellsById, combatSpell)
+            mergeCombatSpell(sourceSpellsById, combatSpell)
+            mergeCombatSpell(spellsById,       combatSpell)
         end
+        sources[#sources + 1] = { combatSource = combatSource, sessionSource = sessionSource }
     end
 
-    return combatSession.totalAmount or 0, buildMergedCombatSpellList(spellsById)
+    return combatSession.totalAmount or 0, buildMergedCombatSpellList(spellsById), sources
 end
 
 function DamageMeterService:BuildSnapshotFromSources(session, payload)
@@ -913,6 +934,11 @@ function DamageMeterService:MergeSpellTotals(session, damageMeterType, combatSpe
             if not shouldSkipDamageSpell then
                 session.spells[spellId] = session.spells[spellId] or createSpellAggregate(spellId)
                 local aggregate = session.spells[spellId]
+                local spellInfo = ns.ApiCompat.GetSpellInfo(spellId)
+                if spellInfo then
+                    aggregate.name = aggregate.name or spellInfo.name
+                    aggregate.iconID = aggregate.iconID or spellInfo.iconID
+                end
 
                 if damageMeterType == Enum.DamageMeterType.DamageDone or damageMeterType == Enum.DamageMeterType.EnemyDamageTaken then
                     aggregate.totalDamage = aggregate.totalDamage + (combatSpell.totalAmount or 0)
@@ -1113,6 +1139,21 @@ function DamageMeterService:ImportSession(session)
         end
     end
     self:ApplyPrimaryOpponent(session, sessionId)
+
+    -- Merge per-source enemy damage rows into SpellAttributionPipeline.
+    -- This must run after ApplyPrimaryOpponent so session.primaryOpponent is set,
+    -- and after the historical sessionId is resolved so we query the right session.
+    local sap = ns.Addon:GetModule("SpellAttributionPipeline")
+    if sap then
+        local _, _, enemySources = self:CollectEnemyDamageSnapshotForSession(sessionId)
+        for _, entry in ipairs(enemySources or {}) do
+            sap:MergeDamageMeterSource(session, entry.combatSource, entry.sessionSource)
+        end
+        local importedTotal = selectedCandidate.snapshot
+            and selectedCandidate.snapshot.enemyDamageTaken or 0
+        sap:FinalizeReconciliation(session, importedTotal, "historical")
+    end
+
     local classifier = ns.Addon:GetModule("SessionClassifier")
     if classifier and classifier.SyncSessionIdentityFromOpponent then
         classifier:SyncSessionIdentityFromOpponent(session, session.primaryOpponent, "damage_meter")

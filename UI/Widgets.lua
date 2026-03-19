@@ -596,4 +596,120 @@ function Widgets.CreateInsightCard(parent, width, height)
     return card
 end
 
+function Widgets.CreatePill(parent, width, height, backgroundColor, borderColor)
+    local pill = Widgets.CreateSurface(parent, width or 84, height or 18, backgroundColor or Widgets.THEME.accentSoft, borderColor or Widgets.THEME.borderStrong)
+
+    pill.text = pill:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    pill.text:SetPoint("CENTER", pill, "CENTER", 0, 0)
+    pill.text:SetTextColor(unpack(Widgets.THEME.text))
+
+    function pill:SetData(labelText, textColor, nextBackgroundColor, nextBorderColor)
+        Widgets.ApplyBackdrop(self, nextBackgroundColor or backgroundColor or Widgets.THEME.accentSoft, nextBorderColor or borderColor or Widgets.THEME.borderStrong)
+        self.text:SetText(labelText or "")
+        self.text:SetTextColor(unpack(textColor or Widgets.THEME.text))
+        self:Show()
+    end
+
+    return pill
+end
+
+function Widgets.CreateHistoryRow(parent, width, height)
+    local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    button:SetSize(width or 808, height or 64)
+    Widgets.ApplyBackdrop(button, Widgets.THEME.panel, Widgets.THEME.border)
+
+    button.accent = button:CreateTexture(nil, "ARTWORK")
+    button.accent:SetTexture("Interface\\Buttons\\WHITE8x8")
+    button.accent:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+    button.accent:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
+    button.accent:SetWidth(3)
+    button.accent:SetVertexColor(unpack(Widgets.THEME.accent))
+
+    button.title = button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    button.title:SetPoint("TOPLEFT", button, "TOPLEFT", 14, -10)
+    button.title:SetTextColor(unpack(Widgets.THEME.text))
+    button.title:SetJustifyH("LEFT")
+
+    button.timestamp = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    button.timestamp:SetPoint("TOPRIGHT", button, "TOPRIGHT", -14, -10)
+    button.timestamp:SetTextColor(unpack(Widgets.THEME.textMuted))
+    button.timestamp:SetJustifyH("RIGHT")
+
+    button.meta = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    button.meta:SetPoint("TOPLEFT", button.title, "BOTTOMLEFT", 0, -5)
+    button.meta:SetPoint("RIGHT", button, "RIGHT", -180, 0)
+    button.meta:SetTextColor(unpack(Widgets.THEME.textMuted))
+    button.meta:SetJustifyH("LEFT")
+
+    button.stats = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    button.stats:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 14, 11)
+    button.stats:SetPoint("RIGHT", button, "RIGHT", -160, 0)
+    button.stats:SetTextColor(unpack(Widgets.THEME.text))
+    button.stats:SetJustifyH("LEFT")
+
+    button.resultPill = Widgets.CreatePill(button, 78, 18, Widgets.THEME.panelAlt, Widgets.THEME.border)
+    button.resultPill:SetPoint("TOPRIGHT", button, "TOPRIGHT", -14, -34)
+
+    button.confidencePill = Widgets.CreatePill(button, 78, 18, Widgets.THEME.accentSoft, Widgets.THEME.borderStrong)
+    button.confidencePill:SetPoint("RIGHT", button.resultPill, "LEFT", -6, 0)
+
+    button.source = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    button.source:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -14, 11)
+    button.source:SetTextColor(unpack(Widgets.THEME.textMuted))
+    button.source:SetJustifyH("RIGHT")
+
+    local function getResultColors(result)
+        if result == "won" then
+            return Widgets.THEME.success, Widgets.THEME.success
+        end
+        if result == "lost" then
+            return Widgets.THEME.severityHigh, Widgets.THEME.warning
+        end
+        return Widgets.THEME.panelAlt, Widgets.THEME.border
+    end
+
+    local function getConfidenceColors(confidence)
+        if confidence == "high" then
+            return Widgets.THEME.severityLow, Widgets.THEME.borderStrong
+        end
+        if confidence == "medium" then
+            return Widgets.THEME.severityMedium, Widgets.THEME.warning
+        end
+        return Widgets.THEME.accentSoft, Widgets.THEME.borderStrong
+    end
+
+    button:SetScript("OnEnter", function(self)
+        Widgets.ApplyBackdrop(self, Widgets.THEME.panelHover, Widgets.THEME.borderStrong)
+    end)
+    button:SetScript("OnLeave", function(self)
+        Widgets.ApplyBackdrop(self, Widgets.THEME.panel, Widgets.THEME.border)
+    end)
+
+    function button:SetData(data)
+        data = data or {}
+        local resultBackground, resultBorder = getResultColors(data.result)
+        local confidenceBackground, confidenceBorder = getConfidenceColors(data.analysisConfidence)
+        local accentColor = Widgets.THEME.accent
+        if data.result == "won" then
+            accentColor = Widgets.THEME.success
+        elseif data.result == "lost" then
+            accentColor = Widgets.THEME.warning
+        elseif data.analysisConfidence == "limited" then
+            accentColor = Widgets.THEME.textMuted
+        end
+
+        self.accent:SetVertexColor(unpack(accentColor))
+        self.title:SetText(data.title or "Unknown Fight")
+        self.timestamp:SetText(data.timestamp or "")
+        self.meta:SetText(data.meta or "")
+        self.stats:SetText(data.stats or "")
+        self.source:SetText(data.source or "")
+        self.resultPill:SetData(string.upper(data.resultLabel or "log"), Widgets.THEME.text, resultBackground, resultBorder)
+        self.confidencePill:SetData(string.upper(data.confidenceLabel or "limited"), Widgets.THEME.text, confidenceBackground, confidenceBorder)
+        self:Show()
+    end
+
+    return button
+end
+
 ns.Widgets = Widgets

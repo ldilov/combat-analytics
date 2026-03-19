@@ -44,8 +44,8 @@ local function buildSpellRows(session, limit)
             local spellInfo = ns.ApiCompat.GetSpellInfo(spellId) or {}
             rows[#rows + 1] = {
                 spellId = spellId,
-                name = spellInfo.name or "Unknown Spell",
-                icon = spellInfo.iconID,
+                name = aggregate.name or spellInfo.name or (spellId == 0 and "Environmental") or string.format("Unknown Spell (%s)", tostring(spellId)),
+                icon = aggregate.iconID or spellInfo.iconID,
                 amount = amount,
                 damage = aggregate.totalDamage or 0,
                 healing = aggregate.totalHealing or 0,
@@ -157,8 +157,7 @@ function SummaryView:Build(parent)
     self.dummyNotice = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.dummyNotice:SetPoint("TOPLEFT", self.caption, "BOTTOMLEFT", 0, -6)
     self.dummyNotice:SetTextColor(unpack(Theme.warning))
-    self.dummyNotice:SetText("Note: Training dummy sessions may not appear reliably on the Summary dashboard, and PvP-style metrics are limited there.")
-    self.dummyNotice:SetText("Note: See the Dummy tab for dummy-specific analysis.")
+    self.dummyNotice:SetText("Note: Training dummy sessions may not appear reliably on Summary. See the Dummy tab for the most complete dummy-specific analysis.")
     self.dummyNotice:Hide()
 
     self.shell, self.scrollFrame, self.canvas = ns.Widgets.CreateScrollCanvas(self.frame, 808, 410)
@@ -250,7 +249,15 @@ end
 function SummaryView:Refresh(payload)
     local store = ns.Addon:GetModule("CombatStore")
     local characterKey = store:GetCurrentCharacterKey()
-    local session = payload and payload.sessionId and store:GetCombatById(payload.sessionId) or store:GetLatestSession(characterKey)
+    local requestedSessionId = payload and payload.sessionId or ns.Addon:GetReviewedSession() or ns.Addon.runtime.latestSummarySessionId
+    local session = requestedSessionId and store:GetCombatById(requestedSessionId) or nil
+    if not session then
+        session = store:GetLatestSession(characterKey)
+    end
+    local isPinnedReview = requestedSessionId ~= nil and session ~= nil and session.id == requestedSessionId
+    if payload and payload.sessionId and ns.Addon.SetReviewedSession then
+        ns.Addon:SetReviewedSession(payload.sessionId, "summary")
+    end
     if self.scrollFrame and self.scrollFrame.scrollBar then
         self.scrollFrame.scrollBar:SetValue(0)
     elseif self.scrollFrame and self.scrollFrame.SetVerticalScroll then
@@ -279,7 +286,9 @@ function SummaryView:Refresh(payload)
     end
 
     self.emptyState:Hide()
-    self.caption:SetText("Latest fight translated into explained scores, benchmark bars, and recognizable spell output.")
+    self.caption:SetText(isPinnedReview
+        and "Selected fight translated into explained scores, benchmark bars, and recognizable spell output."
+        or "Latest fight translated into explained scores, benchmark bars, and recognizable spell output.")
 
     local isDummy = session.context == ns.Constants.CONTEXT.TRAINING_DUMMY
     if self.dummyNotice then
@@ -318,10 +327,18 @@ function SummaryView:Refresh(payload)
     local openerFingerprint = session.openerFingerprint or {}
     local readQuality = formatDisplayLabel(session.analysisConfidence)
     local readSource = formatDisplayLabel(session.finalDamageSource)
+    -- Prefer the richer dataConfidence label in user-visible strings
+    -- (e.g. "Full Raw" instead of "High", "Partial Roster" instead of "Medium").
+    local richQuality = session.dataConfidence
+        and formatDisplayLabel(session.dataConfidence)
+        or readQuality
 
     self.caption:SetText(string.format(
-        "Latest fight translated into explained scores, benchmark bars, and recognizable spell output. Read quality: %s via %s.",
-        readQuality,
+        "%s Read quality: %s via %s.",
+        isPinnedReview
+            and "Selected fight translated into explained scores, benchmark bars, and recognizable spell output."
+            or "Latest fight translated into explained scores, benchmark bars, and recognizable spell output.",
+        richQuality,
         readSource
     ))
 
@@ -361,7 +378,7 @@ function SummaryView:Refresh(payload)
     self.metricCards[4]:SetData(
         string.format("%s ilvl", formatItemLevel(itemLevel)),
         "Fight Snapshot",
-        string.format("Mastery %s  |  Vers %s dmg / %s DR  |  Read %s", formatPercent(snapshot.masteryEffect), formatPercent(snapshot.versatilityDamageDone), formatPercent(snapshot.versatilityDamageTaken), readQuality),
+        string.format("Mastery %s  |  Vers %s dmg / %s DR  |  Read %s", formatPercent(snapshot.masteryEffect), formatPercent(snapshot.versatilityDamageDone), formatPercent(snapshot.versatilityDamageTaken), richQuality),
         Theme.text
     )
     self.metricCards[4]:Show()

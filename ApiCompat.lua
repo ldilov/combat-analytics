@@ -27,8 +27,11 @@ function ApiCompat.GetCombatLogEntryInfo()
 end
 
 function ApiCompat.IsCombatLogRestricted()
-    if C_CombatLog and C_CombatLog.IsCurrentEventInfoRestricted then
-        return C_CombatLog.IsCurrentEventInfoRestricted()
+    -- C_CombatLog.IsCombatLogRestricted() is the session-level gate introduced in Midnight.
+    -- IsCurrentEventInfoRestricted() is a per-event predicate and must NOT be used here —
+    -- it fires for restricted events even in unrestricted sessions.
+    if C_CombatLog and C_CombatLog.IsCombatLogRestricted then
+        return C_CombatLog.IsCombatLogRestricted()
     end
     return false
 end
@@ -457,10 +460,66 @@ function ApiCompat.GetServerTime()
     return GetServerTime and GetServerTime() or time()
 end
 
+function ApiCompat.GetSpellName(spellId)
+    if C_Spell and C_Spell.GetSpellName then
+        return C_Spell.GetSpellName(spellId)
+    end
+    if GetSpellInfo then
+        local name = GetSpellInfo(spellId)
+        return name
+    end
+    return nil
+end
+
+function ApiCompat.GetSpellTexture(spellId)
+    if C_Spell and C_Spell.GetSpellTexture then
+        local iconID = C_Spell.GetSpellTexture(spellId)
+        return iconID
+    end
+    if GetSpellInfo then
+        local _, _, icon = GetSpellInfo(spellId)
+        return icon
+    end
+    return nil
+end
+
+function ApiCompat.IsSpellDataCached(spellId)
+    if C_Spell and C_Spell.IsSpellDataCached then
+        return C_Spell.IsSpellDataCached(spellId)
+    end
+    return true
+end
+
+function ApiCompat.RequestLoadSpellData(spellId)
+    if C_Spell and C_Spell.RequestLoadSpellData and spellId and spellId > 0 then
+        C_Spell.RequestLoadSpellData(spellId)
+        return true
+    end
+    return false
+end
+
 function ApiCompat.GetSpellInfo(spellId)
     if C_Spell and C_Spell.GetSpellInfo then
-        return C_Spell.GetSpellInfo(spellId)
+        local spellInfo = C_Spell.GetSpellInfo(spellId)
+        if spellInfo then
+            return spellInfo
+        end
     end
+
+    local name = ApiCompat.GetSpellName(spellId)
+    local iconID = ApiCompat.GetSpellTexture(spellId)
+    if name or iconID then
+        return {
+            name = name,
+            iconID = iconID,
+            spellID = spellId,
+        }
+    end
+
+    if spellId and spellId > 0 and not ApiCompat.IsSpellDataCached(spellId) then
+        ApiCompat.RequestLoadSpellData(spellId)
+    end
+
     if GetSpellInfo then
         local name, _, icon, castTime, minRange, maxRange, spellID = GetSpellInfo(spellId)
         return {

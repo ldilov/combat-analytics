@@ -334,6 +334,47 @@ function CombatStore:Initialize()
         CombatAnalyticsDB.settings.showSummaryAfterCombat = false
         CombatAnalyticsDB.maintenance.stabilizationVersion = 1
     end
+    self:MigrateSchema(CombatAnalyticsDB)
+end
+
+-- MigrateSchema applies incremental upgrades to saved data.
+-- Design rules:
+--   • Each version gate is a forward-only, idempotent migration.
+--   • Never backfill derived fields that require live API data (GUIDs, specs).
+--   • Mark legacy sessions with version metadata so analytics can down-grade
+--     confidence rather than silently produce wrong results.
+--   • Bump Constants.SCHEMA_VERSION whenever a new gate is added.
+function CombatStore:MigrateSchema(db)
+    local version = db.schemaVersion or 0
+
+    -- v1 → v2: introduce rawEventVersion field, arena slot metadata, and
+    -- attribution stub on existing sessions. No data backfill — sessions
+    -- captured under v1 are marked as legacy raw events so confidence labels
+    -- reflect actual capture quality.
+    if version < 2 then
+        for _, sessionId in ipairs(db.combats.order or {}) do
+            local session = db.combats.byId[sessionId]
+            if session then
+                -- Tag raw event format; v1 sessions lack absorbed/resisted
+                -- fields in SWING_DAMAGE and several other subevent fields.
+                if not session.rawEventVersion then
+                    session.rawEventVersion = 1
+                end
+                -- Stub arena block; will be populated by ArenaRoundTracker
+                -- on sessions created under schema v2+.
+                if session.arena == nil then
+                    session.arena = false  -- false = not an arena session / unknown
+                end
+                -- Stub attribution block.
+                if session.attribution == nil then
+                    session.attribution = false  -- false = not yet computed
+                end
+            end
+        end
+        db.schemaVersion = 2
+    end
+
+    -- Future migrations go here as additional `if version < N then` blocks.
 end
 
 function CombatStore:GetDB()

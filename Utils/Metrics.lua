@@ -237,12 +237,44 @@ local function countCooldownUses(session, predicate)
     return total
 end
 
-local function countOpenerCasts(session, openerEnd)
+-- findCombatEngagementOffset: returns the timestampOffset of the first hostile
+-- PvP combat event in the session.
+--
+-- WHY THIS EXISTS: In arenas the CLEU starts recording during the prep phase
+-- (self-buffs, racials, food) before the gate opens. The gate can open 60-90s
+-- after session start. Anchoring the opener window at timestampOffset=0 would
+-- capture exclusively prep-phase activity and miss the actual opener entirely.
+-- Non-PvP sessions (training dummy, BG) have no prep phase, so this returns 0
+-- and the window behaves identically to the old code.
+local function findCombatEngagementOffset(session)
+    for _, ev in ipairs(session.rawEvents or {}) do
+        local t = ev.eventType
+        if t == "cast" or t == "damage" or t == "miss" then
+            -- Player initiates on a hostile player (opener cast or first hit).
+            if ev.sourceMine and ev.destHostilePlayer then
+                return ev.timestampOffset or 0
+            end
+            -- Hostile player hits the player (reactive engagement anchor).
+            if ev.destMine and ev.sourceHostilePlayer then
+                return ev.timestampOffset or 0
+            end
+        end
+    end
+    return 0
+end
+
+-- countOpenerCasts: count SPELL_CAST_SUCCESS events by the player inside the
+-- opener window [openerStart, openerEnd]. Intentionally excludes SPELL_CAST_START
+-- (cast begin, not completion) and SPELL_CAST_FAILED to avoid double-counting
+-- cast-time spells and inflating the count with misses.
+local function countOpenerCasts(session, openerStart, openerEnd)
     local count = 0
     for _, eventRecord in ipairs(session.rawEvents or {}) do
+        local offset = eventRecord.timestampOffset or 0
         if eventRecord.sourceMine
-            and eventRecord.eventType == "cast"
-            and (eventRecord.timestampOffset or 0) <= openerEnd
+            and eventRecord.subEvent == "SPELL_CAST_SUCCESS"
+            and offset >= openerStart
+            and offset <= openerEnd
         then
             count = count + 1
         end
@@ -250,46 +282,53 @@ local function countOpenerCasts(session, openerEnd)
     return count
 end
 
-local function collectOpenerSpellIds(session, openerEnd, limit)
-    local scored = {}
+-- collectOpenerSpellIds: returns opener spells in chronological cast order
+-- (first SPELL_CAST_SUCCESS per spellId, sorted by cast time).
+--
+-- WHY CHRONOLOGICAL: The opener sequence matters for PvP coaching. "Cheap Shot
+-- → Garrote → Kidney Shot" is meaningfully different from the reverse. The old
+-- damage-score ranking destroyed sequence information and biased toward damage
+-- dealers, missing setup/CC spells that define the opener pattern.
+local function collectOpenerSpellIds(session, openerStart, openerEnd, limit)
+    local firstSeenAt = {}
     for _, eventRecord in ipairs(session.rawEvents or {}) do
         local offset = eventRecord.timestampOffset or 0
-        if eventRecord.sourceMine and offset >= 0 and offset <= openerEnd and eventRecord.spellId then
-            local score = scored[eventRecord.spellId] or 0
-            score = score + (eventRecord.amount or 0)
-            if eventRecord.eventType == "cast" then
-                score = score + 100
-            end
-            scored[eventRecord.spellId] = score
+        if eventRecord.sourceMine
+            and eventRecord.subEvent == "SPELL_CAST_SUCCESS"
+            and offset >= openerStart
+            and offset <= openerEnd
+            and eventRecord.spellId
+            and not firstSeenAt[eventRecord.spellId]
+        then
+            firstSeenAt[eventRecord.spellId] = offset
         end
     end
 
-    local ranked = {}
-    for spellId, score in pairs(scored) do
-        ranked[#ranked + 1] = { spellId = spellId, score = score }
+    local ordered = {}
+    for spellId, offset in pairs(firstSeenAt) do
+        ordered[#ordered + 1] = { spellId = spellId, offset = offset }
     end
-    table.sort(ranked, function(left, right)
-        if (left.score or 0) == (right.score or 0) then
-            return (left.spellId or 0) < (right.spellId or 0)
-        end
-        return (left.score or 0) > (right.score or 0)
+    table.sort(ordered, function(a, b)
+        if a.offset == b.offset then return a.spellId < b.spellId end
+        return a.offset < b.offset
     end)
 
     local result = {}
-    for index = 1, math.min(limit or 3, #ranked) do
-        result[#result + 1] = ranked[index].spellId
+    for i = 1, math.min(limit or 5, #ordered) do
+        result[i] = ordered[i].spellId
     end
     return result
 end
 
-local function collectOpenerCooldownSpellIds(session, openerEnd, limit)
+-- collectOpenerCooldownSpellIds: cooldowns first used within [openerStart, openerEnd].
+-- openerStart filter prevents prep-phase cooldown uses (racials, trinkets popped
+-- before the gate opens) from being reported as opener cooldowns.
+local function collectOpenerCooldownSpellIds(session, openerStart, openerEnd, limit)
     local ranked = {}
     for spellId, cooldown in pairs(session.cooldowns or {}) do
-        if cooldown.firstUsedAt and cooldown.firstUsedAt <= openerEnd then
-            ranked[#ranked + 1] = {
-                spellId = spellId,
-                firstUsedAt = cooldown.firstUsedAt,
-            }
+        local firstUse = cooldown.firstUsedAt
+        if firstUse and firstUse >= openerStart and firstUse <= openerEnd then
+            ranked[#ranked + 1] = { spellId = spellId, firstUsedAt = firstUse }
         end
     end
     table.sort(ranked, function(left, right)
@@ -313,8 +352,9 @@ function Metrics.DeriveWindows(session)
     end
 
     local windows = {}
-    local openerEnd = math.min(session.duration or 0, Constants.WINDOW_OPENERS_SECONDS)
-    windows[#windows + 1] = summarizeWindow(session, Constants.WINDOW_TYPE.OPENER, 0, openerEnd)
+    local engagementAt = findCombatEngagementOffset(session)
+    local openerEnd = math.min(session.duration or 0, engagementAt + Constants.WINDOW_OPENERS_SECONDS)
+    windows[#windows + 1] = summarizeWindow(session, Constants.WINDOW_TYPE.OPENER, engagementAt, openerEnd)
 
     local burstWindow = findBurstWindow(session)
     if burstWindow then
@@ -359,16 +399,26 @@ function Metrics.ComputeDerivedMetrics(session)
     local limitedTimeline = not hasRawTimeline(session)
     local procConversionScore, procWindowsObserved, procWindowCastCount = computeProcConversion(session)
     local topOutputShare = computeTopOutputShare(session)
-    local openerEnd = math.min(session.duration or 0, Constants.WINDOW_OPENERS_SECONDS)
-    local openerCastCount = countOpenerCasts(session, openerEnd)
-    local openerSpellIds = collectOpenerSpellIds(session, openerEnd, 3)
-    local openerCooldownSpellIds = collectOpenerCooldownSpellIds(session, openerEnd, 3)
+    -- Anchor all opener calculations to the first hostile combat event.
+    -- For arenas this skips the prep phase; for duels/dummy sessions it is 0.
+    local engagementAt = findCombatEngagementOffset(session)
+    local openerEnd = math.min(session.duration or 0, engagementAt + Constants.WINDOW_OPENERS_SECONDS)
+    local openerCastCount = countOpenerCasts(session, engagementAt, openerEnd)
+    local openerSpellIds = collectOpenerSpellIds(session, engagementAt, openerEnd, 5)
+    local openerCooldownSpellIds = collectOpenerCooldownSpellIds(session, engagementAt, openerEnd, 3)
     local firstMajorOffensiveAt = findFirstCooldownAt(session, function(spellId)
         return isMajorOffensiveSpell(spellId)
     end)
     local firstMajorDefensiveAt = findFirstCooldownAt(session, function(spellId)
         return isMajorDefensiveSpell(spellId)
     end)
+    -- Engagement-relative versions: "seconds after gate open / first hit".
+    -- These are what the user sees in the UI. The absolute values are preserved
+    -- for backward-compatible baseline comparisons in CombatStore aggregates.
+    local firstMajorOffensiveRelative = firstMajorOffensiveAt
+        and Helpers.Round(math.max(0, firstMajorOffensiveAt - engagementAt), 2) or nil
+    local firstMajorDefensiveRelative = firstMajorDefensiveAt
+        and Helpers.Round(math.max(0, firstMajorDefensiveAt - engagementAt), 2) or nil
     local majorOffensiveCount = countCooldownUses(session, function(spellId)
         return isMajorOffensiveSpell(spellId)
     end)
@@ -408,11 +458,18 @@ function Metrics.ComputeDerivedMetrics(session)
     }
 
     session.openerFingerprint = {
+        -- engagementAt: timestampOffset of the first hostile combat event.
+        -- 0 for non-arena sessions (training dummy, duels with no prep).
+        engagementAt = Helpers.Round(engagementAt, 3),
         openerCastCount = openerCastCount,
         openerSpellIds = openerSpellIds,
         openerCooldownSpellIds = openerCooldownSpellIds,
+        -- Absolute timestampOffset values — kept for CombatStore baseline compat.
         firstMajorOffensiveAt = firstMajorOffensiveAt and Helpers.Round(firstMajorOffensiveAt, 2) or nil,
         firstMajorDefensiveAt = firstMajorDefensiveAt and Helpers.Round(firstMajorDefensiveAt, 2) or nil,
+        -- Engagement-relative values — used for display ("Xseconds after gate open").
+        firstMajorOffensiveRelative = firstMajorOffensiveRelative,
+        firstMajorDefensiveRelative = firstMajorDefensiveRelative,
     }
 
     return session.metrics

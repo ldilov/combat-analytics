@@ -68,10 +68,15 @@ local function buildEvidenceText(suggestion)
         return string.format("Proc windows: %d. Casts inside windows: %d.", evidence.procWindows or 0, evidence.castsDuringWindows or 0)
     end
     if suggestion.reasonCode == "LATE_FIRST_GO" then
-        return string.format("First major go at %.1fs versus %.1fs over %d similar sessions.", evidence.current or 0, evidence.baseline or 0, evidence.samples or 0)
+        -- Show the delta rather than absolute offsets — absolute values are
+        -- arena-relative and unintuitive (e.g. "78s vs 77s" for an arena session
+        -- with a 75s prep phase). The delta is always meaningful.
+        local delta = (evidence.current or 0) - (evidence.baseline or 0)
+        return string.format("First major go was %.1fs later than your usual timing for this matchup (%d session average).", delta, evidence.samples or 0)
     end
     if suggestion.reasonCode == "DEFENSIVE_DRIFT" then
-        return string.format("First defensive at %.1fs versus %.1fs norm. Damage taken %s.", evidence.current or 0, evidence.baseline or 0, ns.Helpers.FormatNumber(evidence.damageTaken or 0))
+        local delta = (evidence.current or 0) - (evidence.baseline or 0)
+        return string.format("First defensive was %.1fs later than your usual pacing. Damage taken %s.", delta, ns.Helpers.FormatNumber(evidence.damageTaken or 0))
     end
     if suggestion.reasonCode == "MIDNIGHT_SAFE_LIMITS" then
         return "Built from Blizzard's post-combat Damage Meter totals because raw CLEU timing is restricted."
@@ -99,32 +104,62 @@ local function buildTrustCard(store, session)
     local readQuality = session.analysisConfidence or "limited"
     local severity = readQuality == "high" and "low" or (readQuality == "medium" and "medium" or "high")
     local characterLabel = store:GetSessionCharacterLabel(session)
+    -- Rich label from the data confidence pipeline (e.g. "Full Raw", "Partial Roster").
+    local dataConf = session.dataConfidence or readQuality
+    local richLabel = formatDisplayLabel(dataConf)
 
     local body = string.format(
         "%s trust on %s. %s data is driving the read, and opponent identity confidence is %d.",
-        formatDisplayLabel(readQuality),
+        richLabel,
         characterLabel,
         formatDisplayLabel(session.finalDamageSource),
         identityConfidence
     )
 
     if readQuality == "high" then
+        if dataConf == "enriched" then
+            body = string.format(
+                "%s trust on %s. CLEU timeline and DamageMeter rows reconciled within tolerance — full attribution available.",
+                richLabel,
+                characterLabel
+            )
+        else
+            body = string.format(
+                "%s trust on %s. Raw timeline exists and fight identity resolved cleanly enough for stronger coaching.",
+                richLabel,
+                characterLabel
+            )
+        end
+    elseif dataConf == "partial_roster" then
         body = string.format(
-            "%s trust on %s. Raw timeline exists and the fight identity resolved cleanly enough for stronger coaching.",
-            formatDisplayLabel(readQuality),
+            "%s trust on %s. Damage data is solid but not all arena opponents were identified — roster-specific advice is limited.",
+            richLabel,
+            characterLabel
+        )
+    elseif dataConf == "restricted_raw" then
+        body = string.format(
+            "%s trust on %s. CLEU is restricted for this session; coaching relies on DamageMeter totals only.",
+            richLabel,
+            characterLabel
+        )
+    elseif dataConf == "degraded" then
+        body = string.format(
+            "%s trust on %s. DamageMeter delta exceeded tolerance — damage totals may be unreliable. Timing advice suppressed.",
+            richLabel,
             characterLabel
         )
     elseif readQuality == "limited" then
         body = string.format(
             "%s trust on %s. This read leans on post-combat totals, so timing-heavy advice is intentionally conservative.",
-            formatDisplayLabel(readQuality),
+            richLabel,
             characterLabel
         )
     end
 
     local evidence = string.format(
-        "Source %s | capture %s | raw timeline %s | identity %d | import %d",
+        "Source %s | data %s | capture %s | raw timeline %s | identity %d | import %d",
         formatDisplayLabel(session.finalDamageSource),
+        richLabel,
         session.captureSource or "unknown",
         rawAvailable and "yes" or "no",
         identityConfidence,
@@ -189,7 +224,7 @@ local function buildFightStory(store, session, characterKey)
             "medium",
             "Fight Story",
             "Momentum windows showed up, but the follow-through inside those windows was lighter than the fight needed.",
-            string.format("Proc windows %d | casts inside %d | first go %s", session.metrics.procWindowsObserved or 0, session.metrics.procWindowCastCount or 0, openerFingerprint.firstMajorOffensiveAt and string.format("%.1fs", openerFingerprint.firstMajorOffensiveAt) or "--")
+            string.format("Proc windows %d | casts inside %d | first go %s", session.metrics.procWindowsObserved or 0, session.metrics.procWindowCastCount or 0, (openerFingerprint.firstMajorOffensiveRelative or openerFingerprint.firstMajorOffensiveAt) and string.format("%.1fs", openerFingerprint.firstMajorOffensiveRelative or openerFingerprint.firstMajorOffensiveAt) or "--")
     end
 
     if session.result == ns.Constants.SESSION_RESULT.WON then
@@ -204,7 +239,7 @@ local function buildFightStory(store, session, characterKey)
         "medium",
         "Fight Story",
         "This session ended without one single obvious failure point, so the cleaner read is to review opener pacing and first trade timing together.",
-        string.format("Opener %s | first offensive %s | first defensive %s", ns.Helpers.FormatNumber(session.metrics.openerDamage or 0), openerFingerprint.firstMajorOffensiveAt and string.format("%.1fs", openerFingerprint.firstMajorOffensiveAt) or "--", openerFingerprint.firstMajorDefensiveAt and string.format("%.1fs", openerFingerprint.firstMajorDefensiveAt) or "--")
+        string.format("Opener %s | first offensive %s | first defensive %s", ns.Helpers.FormatNumber(session.metrics.openerDamage or 0), (openerFingerprint.firstMajorOffensiveRelative or openerFingerprint.firstMajorOffensiveAt) and string.format("%.1fs", openerFingerprint.firstMajorOffensiveRelative or openerFingerprint.firstMajorOffensiveAt) or "--", (openerFingerprint.firstMajorDefensiveRelative or openerFingerprint.firstMajorDefensiveAt) and string.format("%.1fs", openerFingerprint.firstMajorDefensiveRelative or openerFingerprint.firstMajorDefensiveAt) or "--")
 end
 
 local function buildMatchupCard(store, session, characterKey)
