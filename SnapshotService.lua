@@ -334,24 +334,35 @@ function SnapshotService:CreateActorSnapshotFromUnit(unitToken, sourceType)
         return nil
     end
 
-    local localizedClass, englishClass, classId = ApiCompat.GetUnitClass(unitToken)
-    local localizedRace, englishRace, raceId = ApiCompat.GetUnitRace(unitToken)
-    return {
-        guid = ApiCompat.GetUnitGUID(unitToken),
-        name = ApiCompat.GetUnitName(unitToken),
-        unitToken = unitToken,
-        sourceType = sourceType or "unit",
-        capturedAt = ApiCompat.GetServerTime(),
-        isPlayer = ApiCompat.UnitIsPlayer(unitToken),
-        className = localizedClass,
-        classFile = englishClass,
-        classId = classId,
-        raceName = localizedRace,
-        raceFile = englishRace,
-        raceId = raceId,
-        level = ApiCompat.GetUnitLevel(unitToken),
-        healthMax = ApiCompat.UnitHealthMax(unitToken),
-    }
+    -- Wrap in pcall: Midnight returns secret values for arena enemy units
+    -- during PvP combat.  The ApiCompat Safe wrappers handle most cases, but
+    -- pcall provides a final safety net against any remaining taint leaks.
+    local ok, snapshot = pcall(function()
+        local guid = ApiCompat.GetUnitGUID(unitToken)
+        if not guid then return nil end
+
+        local localizedClass, englishClass, classId = ApiCompat.GetUnitClass(unitToken)
+        local localizedRace, englishRace, raceId = ApiCompat.GetUnitRace(unitToken)
+        return {
+            guid = guid,
+            name = ApiCompat.GetUnitName(unitToken),
+            unitToken = unitToken,
+            sourceType = sourceType or "unit",
+            capturedAt = ApiCompat.GetServerTime(),
+            isPlayer = ApiCompat.UnitIsPlayer(unitToken),
+            className = localizedClass,
+            classFile = englishClass,
+            classId = classId,
+            raceName = localizedRace,
+            raceFile = englishRace,
+            raceId = raceId,
+            level = ApiCompat.GetUnitLevel(unitToken),
+            healthMax = ApiCompat.UnitHealthMax(unitToken),
+        }
+    end)
+
+    if not ok then return nil end
+    return snapshot
 end
 
 function SnapshotService:UpdateSessionActor(session, unitToken, sourceType)
@@ -364,11 +375,17 @@ function SnapshotService:UpdateSessionActor(session, unitToken, sourceType)
         return nil
     end
 
+    -- Guard: if guid is somehow still secret (should not happen after
+    -- CreateActorSnapshotFromUnit pcall, but belt-and-suspenders).
+    if ApiCompat.IsSecretValue(snapshot.guid) then
+        return nil
+    end
+
     session.actors = session.actors or {}
     session.actors[snapshot.guid] = session.actors[snapshot.guid] or snapshot
     local current = session.actors[snapshot.guid]
     for key, value in pairs(snapshot) do
-        if value ~= nil then
+        if value ~= nil and not ApiCompat.IsSecretValue(value) then
             current[key] = value
         end
     end

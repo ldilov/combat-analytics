@@ -613,6 +613,59 @@ function Widgets.CreatePill(parent, width, height, backgroundColor, borderColor)
     return pill
 end
 
+-- Confidence badge: 10x10 colored circle indicator based on dataConfidence level.
+-- Colors: green (full_raw/enriched), yellow (restricted_raw), orange (partial_roster),
+-- red (degraded), grey (unknown).
+local CONFIDENCE_BADGE_COLORS = {
+    full_raw       = { 0.44, 0.82, 0.60, 1.0 },  -- green
+    enriched       = { 0.44, 0.82, 0.60, 1.0 },  -- green
+    restricted_raw = { 0.96, 0.86, 0.38, 1.0 },  -- yellow
+    partial_roster = { 0.96, 0.62, 0.30, 1.0 },  -- orange
+    degraded       = { 0.90, 0.30, 0.25, 1.0 },  -- red
+    unknown        = { 0.50, 0.54, 0.58, 1.0 },  -- grey
+}
+local CONFIDENCE_BADGE_TOOLTIPS = {
+    full_raw       = "Full Raw — unrestricted CLEU data with high fidelity.",
+    enriched       = "Enriched — CLEU + DamageMeter data merged.",
+    restricted_raw = "Restricted Raw — DamageMeter primary, limited event detail.",
+    partial_roster = "Partial Roster — incomplete arena slot coverage.",
+    degraded       = "Degraded — significant data gaps detected.",
+    unknown        = "Unknown — confidence level could not be determined.",
+}
+
+function Widgets.CreateConfidenceBadge(parent, size)
+    size = size or 10
+    local badge = CreateFrame("Frame", nil, parent)
+    badge:SetSize(size, size)
+
+    badge.dot = badge:CreateTexture(nil, "ARTWORK")
+    badge.dot:SetTexture("Interface\\Buttons\\WHITE8x8")
+    badge.dot:SetAllPoints()
+    badge.dot:SetVertexColor(unpack(CONFIDENCE_BADGE_COLORS.unknown))
+
+    badge._confidence = "unknown"
+
+    function badge:SetConfidence(confidence)
+        confidence = confidence or "unknown"
+        self._confidence = confidence
+        local color = CONFIDENCE_BADGE_COLORS[confidence] or CONFIDENCE_BADGE_COLORS.unknown
+        self.dot:SetVertexColor(unpack(color))
+    end
+
+    badge:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Data Confidence", 1, 1, 1)
+        local tip = CONFIDENCE_BADGE_TOOLTIPS[self._confidence] or CONFIDENCE_BADGE_TOOLTIPS.unknown
+        GameTooltip:AddLine(tip, 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    badge:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    return badge
+end
+
 function Widgets.CreateHistoryRow(parent, width, height)
     local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
     button:SetSize(width or 808, height or 64)
@@ -625,8 +678,11 @@ function Widgets.CreateHistoryRow(parent, width, height)
     button.accent:SetWidth(3)
     button.accent:SetVertexColor(unpack(Widgets.THEME.accent))
 
+    button.confidenceBadge = Widgets.CreateConfidenceBadge(button, 10)
+    button.confidenceBadge:SetPoint("TOPLEFT", button, "TOPLEFT", 14, -13)
+
     button.title = button:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    button.title:SetPoint("TOPLEFT", button, "TOPLEFT", 14, -10)
+    button.title:SetPoint("LEFT", button.confidenceBadge, "RIGHT", 6, 0)
     button.title:SetTextColor(unpack(Widgets.THEME.text))
     button.title:SetJustifyH("LEFT")
 
@@ -706,10 +762,66 @@ function Widgets.CreateHistoryRow(parent, width, height)
         self.source:SetText(data.source or "")
         self.resultPill:SetData(string.upper(data.resultLabel or "log"), Widgets.THEME.text, resultBackground, resultBorder)
         self.confidencePill:SetData(string.upper(data.confidenceLabel or "limited"), Widgets.THEME.text, confidenceBackground, confidenceBorder)
+
+        -- Confidence badge (colored dot) gated by showConfidenceBadges setting.
+        local showBadge = ns.Addon and ns.Addon.GetSetting and ns.Addon:GetSetting("showConfidenceBadges")
+        if showBadge ~= false and self.confidenceBadge then
+            self.confidenceBadge:SetConfidence(data.dataConfidence or "unknown")
+            self.confidenceBadge:Show()
+        elseif self.confidenceBadge then
+            self.confidenceBadge:Hide()
+        end
+
         self:Show()
     end
 
     return button
+end
+
+-- Slot row for opponent composition panel.
+-- Shows: class-color dot, spec name, archetype label, threat tags.
+function Widgets.CreateSlotRow(parent, width, height)
+    local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    row:SetSize(width or 750, height or 24)
+
+    row.dot = row:CreateTexture(nil, "ARTWORK")
+    row.dot:SetTexture("Interface\\Buttons\\WHITE8x8")
+    row.dot:SetSize(8, 8)
+    row.dot:SetPoint("LEFT", row, "LEFT", 4, 0)
+    row.dot:SetVertexColor(unpack(Widgets.THEME.textMuted))
+
+    row.specLabel = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.specLabel:SetPoint("LEFT", row.dot, "RIGHT", 8, 0)
+    row.specLabel:SetTextColor(unpack(Widgets.THEME.text))
+    row.specLabel:SetJustifyH("LEFT")
+
+    row.archetype = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.archetype:SetPoint("LEFT", row.specLabel, "RIGHT", 12, 0)
+    row.archetype:SetTextColor(unpack(Widgets.THEME.textMuted))
+    row.archetype:SetJustifyH("LEFT")
+
+    row.threat = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.threat:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+    row.threat:SetTextColor(unpack(Widgets.THEME.warning))
+    row.threat:SetJustifyH("RIGHT")
+
+    function row:SetSlotData(data)
+        data = data or {}
+        -- Class-color dot via RAID_CLASS_COLORS global.
+        local classFile = data.classFile
+        if classFile and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile] then
+            local cc = RAID_CLASS_COLORS[classFile]
+            self.dot:SetVertexColor(cc.r, cc.g, cc.b, 1)
+        else
+            self.dot:SetVertexColor(unpack(Widgets.THEME.textMuted))
+        end
+        self.specLabel:SetText(data.specName or data.name or "Unknown")
+        self.archetype:SetText(data.archetypeLabel or "")
+        self.threat:SetText(data.threatTag or "")
+        self:Show()
+    end
+
+    return row
 end
 
 ns.Widgets = Widgets

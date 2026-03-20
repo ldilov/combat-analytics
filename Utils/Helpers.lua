@@ -211,4 +211,34 @@ function Helpers.GetResultBucket(result)
     return "other"
 end
 
+-- Resolve the best available opponent display name from a session.
+-- Walks through primary opponent fields, arena slots, and post-match
+-- scoreboard to find a non-nil human-readable name.
+function Helpers.ResolveOpponentName(session, fallback)
+    fallback = fallback or "Unknown"
+    if session.primaryOpponent then
+        local po = session.primaryOpponent
+        if po.name then return po.name end
+        if po.specName then return po.specName end
+        if po.className then return po.className end
+        if po.guid then return po.guid end
+    end
+    if session.arena and session.arena.slots then
+        for _, slot in pairs(session.arena.slots) do
+            if slot.name then return slot.name end
+            if slot.prepSpecName then return slot.prepSpecName end
+        end
+    end
+    if session.postMatchScores then
+        local ApiCompat = ns.ApiCompat
+        local myGuid = ApiCompat and ApiCompat.GetPlayerGUID() or nil
+        for _, entry in ipairs(session.postMatchScores) do
+            if entry.guid ~= myGuid and entry.name then
+                return entry.name
+            end
+        end
+    end
+    return fallback
+end
+
 ns.Helpers = Helpers

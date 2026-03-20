@@ -2,7 +2,7 @@ local ADDON_NAME, ns = ...
 
 ns.Constants = {
     ADDON_NAME = ADDON_NAME,
-    SCHEMA_VERSION = 2,
+    SCHEMA_VERSION = 5,
     RAW_EVENT_VERSION = 2,
     MAX_RAW_EVENTS_PER_SESSION = 25000,
     RAW_EVENT_WARNING_THRESHOLD = 500000,
@@ -60,6 +60,8 @@ ns.Constants = {
         -- queue states, unrecognised brawl types). Prevents false RATED_ARENA
         -- labels on skirmishes and brawls.
         UNKNOWN_ARENA = "unknown_arena",
+        WARGAME = "wargame",
+        TRAINING_GROUNDS = "training_grounds",
     },
     -- Analysis confidence labels attached to session.captureQuality.
     -- Used by the UI confidence badge and by the suggestion engine.
@@ -86,6 +88,16 @@ ns.Constants = {
         CONTEXT = "context",
         DAILY = "daily",
         WEEKLY = "weekly",
+        RATING_HISTORY = "ratingHistory",
+        BUILD_EFFECTIVENESS = "buildEffectiveness",
+        SPEC_DAMAGE_SIGNATURES = "specDamageSignatures",
+    },
+    MMR_BANDS = {
+        { label = "<1400",     min = 0,    max = 1399  },
+        { label = "1400-1600", min = 1400, max = 1599  },
+        { label = "1600-1800", min = 1600, max = 1799  },
+        { label = "1800-2100", min = 1800, max = 2099  },
+        { label = "2100+",     min = 2100, max = 99999 },
     },
     CAPTURE_QUALITY = {
         OK = "ok",
@@ -120,6 +132,9 @@ ns.Constants = {
         "PLAYER_LOGIN",
         "PLAYER_ENTERING_WORLD",
         "TRAIT_CONFIG_LIST_UPDATED",
+        -- COMBAT_LOG_EVENT_UNFILTERED intentionally omitted: registering this
+        -- event on an addon frame is restricted in Midnight and raises
+        -- ADDON_ACTION_BLOCKED.  CLEU is consumed via C_CombatLog callbacks.
         "PLAYER_REGEN_DISABLED",
         "PLAYER_REGEN_ENABLED",
         "DAMAGE_METER_COMBAT_SESSION_UPDATED",
@@ -144,6 +159,14 @@ ns.Constants = {
         "DUEL_OUTOFBOUNDS",
         "DUEL_FINISHED",
         "PLAYER_PVP_TALENT_UPDATE",
+        "ARENA_CROWD_CONTROL_SPELL_UPDATE",
+        "INSPECT_READY",
+        "CHAT_MSG_ADDON",
+        "UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED",
+        "LOSS_OF_CONTROL_ADDED",
+        "LOSS_OF_CONTROL_UPDATE",
+        "PLAYER_CONTROL_LOST",
+        "PLAYER_CONTROL_GAINED",
     },
     DEFAULT_SETTINGS = {
         showSummaryAfterCombat = false,
@@ -156,6 +179,29 @@ ns.Constants = {
         minimapAngle = 225,
         themePreset = "modern_steel_ember",
         showConfidenceBadges = true,
+        showPreMatchAdvisory = true,
+        enablePartySync = false,
+    },
+    -- ──────────────────────────────────────────────────────────────────────────
+    -- Combat Log Object Flags (Midnight-native, replaces deprecated globals)
+    -- ──────────────────────────────────────────────────────────────────────────
+    -- These are authoritative values from Enum.CombatLogObject. The old globals
+    -- (COMBATLOG_OBJECT_AFFILIATION_MINE, etc.) only exist when the CVar
+    -- "loadDeprecationFallbacks" is true, which is false by default in Midnight.
+    CLEU_FLAGS = {
+        AFFILIATION_MINE     = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.AffiliationMine) or 1,
+        AFFILIATION_PARTY    = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.AffiliationParty) or 2,
+        AFFILIATION_RAID     = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.AffiliationRaid) or 4,
+        AFFILIATION_OUTSIDER = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.AffiliationOutsider) or 8,
+        REACTION_FRIENDLY    = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.ReactionFriendly) or 16,
+        REACTION_NEUTRAL     = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.ReactionNeutral) or 32,
+        REACTION_HOSTILE     = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.ReactionHostile) or 64,
+        CONTROL_PLAYER       = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.ControlPlayer) or 256,
+        CONTROL_NPC          = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.ControlNpc) or 512,
+        TYPE_PLAYER          = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.TypePlayer) or 1024,
+        TYPE_NPC             = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.TypeNpc) or 2048,
+        TYPE_PET             = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.TypePet) or 4096,
+        TYPE_GUARDIAN        = (Enum and Enum.CombatLogObject and Enum.CombatLogObject.TypeGuardian) or 8192,
     },
     TRAINING_DUMMY_PATTERNS = {
         "training dummy",

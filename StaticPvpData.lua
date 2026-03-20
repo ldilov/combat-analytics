@@ -3,6 +3,9 @@ local _, ns = ...
 local Helpers = ns.Helpers
 local Constants = ns.Constants
 local generated = ns.GeneratedSeedData or {}
+local seedMaps             = ns.SeedMaps             or {}
+local seedCompArchetypes   = ns.SeedCompArchetypes   or {}
+local seedMetricThresholds = ns.SeedMetricThresholds or {}
 
 local function normalizeName(name)
     local value = string.lower(Helpers.Trim(tostring(name or "")) or "")
@@ -78,6 +81,9 @@ ns.StaticPvpData = {
     DUMMY_CATALOG = dummyCatalog,
     SPEC_ARCHETYPES = specArchetypes,
     ARENA_CONTROL = arenaControl,
+    MAPS               = seedMaps,
+    COMP_ARCHETYPES    = seedCompArchetypes,
+    METRIC_THRESHOLDS  = seedMetricThresholds,
 }
 
 function ns.StaticPvpData.GetDummyInfo(creatureId)
@@ -86,6 +92,43 @@ end
 
 function ns.StaticPvpData.GetSpecArchetype(specId)
     return specId and ns.StaticPvpData.SPEC_ARCHETYPES[specId] or nil
+end
+
+function ns.StaticPvpData.GetCCFamiliesForSpec(specId)
+    if not specId then return {} end
+    return ns.StaticPvpData.ARENA_CONTROL.specCCLists and
+           ns.StaticPvpData.ARENA_CONTROL.specCCLists[specId] or {}
+end
+
+function ns.StaticPvpData.GetImmunities()
+    -- Returns the immunityTags table (shared, not per-spec)
+    return ns.StaticPvpData.ARENA_CONTROL.immunityTags or {}
+end
+
+function ns.StaticPvpData.GetCCFamily(spellId)
+    if not spellId then return nil end
+    local families = ns.StaticPvpData.ARENA_CONTROL.ccFamilies
+    if not families then return nil end
+    for family, spells in pairs(families) do
+        for _, entry in ipairs(spells) do
+            if entry.spellId == spellId then
+                return family
+            end
+        end
+    end
+    return nil
+end
+
+function ns.StaticPvpData.GetSpellInfo(spellId)
+    return spellId and spellIntelligence[spellId] or nil
+end
+
+function ns.StaticPvpData.GetMapInfo(mapId)
+    if not mapId then return nil end
+    local m = ns.StaticPvpData.MAPS
+    return (m.arenas       and m.arenas[mapId])
+        or (m.battlegrounds and m.battlegrounds[mapId])
+        or nil
 end
 
 function ns.StaticPvpData.IsTrainingDummyName(name)
@@ -108,6 +151,19 @@ for spellId, info in pairs(ns.StaticPvpData.SPELL_INTELLIGENCE) do
         Constants.SPELL_CATEGORIES[spellId] = info.category
     end
 end
+
+ns.StaticPvpData.BG_STAT_NAMES = {
+    [156] = "Flag Captures",
+    [157] = "Flag Returns",
+    [679] = "Bases Assaulted",
+    [682] = "Bases Defended",
+    [114] = "Honorable Kills",
+    [115] = "Deaths",
+    [692] = "Demolishers Destroyed",
+    [693] = "Gates Destroyed",
+    [218] = "Orb Possessions",
+    [219] = "Victory Points",
+}
 
 for creatureId in pairs(ns.StaticPvpData.DUMMY_CATALOG) do
     Constants.TRAINING_DUMMY_CREATURE_IDS[creatureId] = true

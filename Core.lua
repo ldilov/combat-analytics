@@ -395,6 +395,31 @@ function Addon:HandleCommand(input)
         return
     end
 
+    if command == "export" then
+        local store = self:GetModule("CombatStore")
+        local serializer = self:GetModule("ExportSerializer")
+        if not store or not serializer then
+            self:PrintWarning("Export module not available.")
+            return
+        end
+        local sessionId = self.runtime.reviewedSessionId
+        local session = nil
+        if sessionId then
+            session = store:GetSessionById(sessionId)
+        end
+        if not session then
+            local characterKey = store:GetCurrentCharacterKey()
+            session = store:GetLatestSession(characterKey)
+        end
+        if not session then
+            self:PrintWarning("No session to export.")
+            return
+        end
+        local text = serializer.Serialize(session)
+        self:ShowExportFrame(text)
+        return
+    end
+
     if command == "stats" then
         local store = self:GetModule("CombatStore")
         local dbStats = store and store:GetStorageStats() or {}
@@ -450,6 +475,7 @@ function Addon:InitializeRuntime()
     safeModuleCall(self, "CombatTracker", "Initialize")
     safeModuleCall(self, "SnapshotService", "Initialize")
     safeModuleCall(self, "DamageMeterService", "Initialize")
+    safeModuleCall(self, "PartySyncService", "Initialize")
 
     self.runtimeInitialized = true
     self.initialized = true
@@ -458,6 +484,56 @@ function Addon:InitializeRuntime()
         self.runtime.loginBannerShown = true
         self:PrintCommandHelp()
     end
+end
+
+function Addon:ShowExportFrame(text)
+    if not self.exportFrame then
+        local f = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+        f:SetSize(520, 160)
+        f:SetPoint("CENTER")
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", f.StartMoving)
+        f:SetScript("OnDragStop", f.StopMovingOrSizing)
+        f:SetFrameStrata("DIALOG")
+        if f.SetBackdrop then
+            f:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 16, insets = { left = 4, right = 4, top = 4, bottom = 4 } })
+            f:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+        end
+
+        local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        title:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -12)
+        title:SetText("CombatAnalytics Export")
+
+        local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+        close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -2)
+
+        local editBox = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+        editBox:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -36)
+        editBox:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 40)
+        editBox:SetMultiLine(true)
+        editBox:SetAutoFocus(false)
+        editBox:SetFontObject("ChatFontNormal")
+        editBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        f.editBox = editBox
+
+        local selectBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        selectBtn:SetSize(100, 22)
+        selectBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, 10)
+        selectBtn:SetText("Select All")
+        selectBtn:SetScript("OnClick", function()
+            editBox:SetFocus()
+            editBox:HighlightText()
+        end)
+
+        self.exportFrame = f
+    end
+
+    self.exportFrame.editBox:SetText(text or "")
+    self.exportFrame:Show()
+    self.exportFrame.editBox:SetFocus()
+    self.exportFrame.editBox:HighlightText()
 end
 
 Addon:RegisterModule("Core", Addon)

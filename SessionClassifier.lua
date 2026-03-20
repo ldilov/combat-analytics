@@ -246,6 +246,9 @@ function SessionClassifier:IsPlayerEngagement(eventRecord)
 end
 
 function SessionClassifier:ResolveArenaSubcontext()
+    if ApiCompat.IsWargame() then
+        return Constants.SUBCONTEXT.WARGAME
+    end
     if ApiCompat.IsSoloShuffle() then
         return Constants.SUBCONTEXT.SOLO_SHUFFLE
     end
@@ -266,6 +269,9 @@ function SessionClassifier:ResolveArenaSubcontext()
 end
 
 function SessionClassifier:ResolveBattlegroundSubcontext()
+    if ApiCompat.IsWargame() then
+        return Constants.SUBCONTEXT.WARGAME
+    end
     if ApiCompat.IsRatedSoloRBG() or ApiCompat.IsSoloRBG() then
         return Constants.SUBCONTEXT.SOLO_RBG
     end
@@ -697,7 +703,11 @@ function SessionClassifier:ResolveContext(eventRecord)
     end
 
     if self:IsTrainingDummyEvent(eventRecord) then
-        return Constants.CONTEXT.TRAINING_DUMMY, nil
+        local subcontext = nil
+        if ApiCompat.AreTrainingGroundsEnabled() then
+            subcontext = Constants.SUBCONTEXT.TRAINING_GROUNDS
+        end
+        return Constants.CONTEXT.TRAINING_DUMMY, subcontext
     end
 
     if self:IsWorldPvpEvent(eventRecord) then

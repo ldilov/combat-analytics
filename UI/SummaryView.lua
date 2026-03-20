@@ -20,6 +20,18 @@ local SUGGESTION_TITLES = {
     DEFENSIVE_DRIFT = "Defensive timing drifted later than your norm",
     MIDNIGHT_SAFE_LIMITS = "Timing detail is limited on Midnight-safe mode",
     RAW_EVENT_OVERFLOW = "Raw event storage hit its emergency cap",
+    DIED_IN_CC = "You died while crowd-controlled",
+    TRINKET_TIMING_POOR = "Trinket was late or unused during CC",
+    HIGH_CC_UPTIME = "Excessive time spent under crowd control",
+    SPEC_WINRATE_DEFICIT = "Struggling against this spec historically",
+    SPEC_WINRATE_STRENGTH = "Strong historical performance against this spec",
+    SPEC_SCALING_NOTABLE = "PvP Scaling Note",
+    REACTIVE_DEFENSIVE_LATE = "Defensive cooldown used late into CC",
+    SUBOPTIMAL_OPENER_SEQUENCE = "Opener sequence has low win rate vs this spec",
+    POOR_INTERRUPT_RATE = "Low interrupt success rate",
+    LOW_HEALER_PRESSURE = "Healer received little damage",
+    TILT_WARNING = "Performance dip detected (possible tilt)",
+    COMP_DEFICIT = "Low win rate vs this opponent composition",
 }
 
 local function formatPercent(value)
@@ -106,6 +118,37 @@ local function buildSuggestionEvidence(suggestion)
     if suggestion.reasonCode == "RAW_EVENT_OVERFLOW" then
         return string.format("Stored %d raw events against a cap of %d.", evidence.rawEvents or 0, evidence.max or 0)
     end
+    if suggestion.reasonCode == "DIED_IN_CC" then
+        return string.format("CC spell ID %d. Burst damage taken: %s from %d sources.", evidence.ccSpellId or 0, Helpers.FormatNumber(evidence.totalBurstDamage or 0), evidence.killingSpellCount or 0)
+    end
+    if suggestion.reasonCode == "TRINKET_TIMING_POOR" then
+        return string.format("CC spell ID %d lasted %.1fs. Trinket lag: %.1fs.", evidence.ccSpellId or 0, evidence.ccDuration or 0, evidence.lagSeconds or 0)
+    end
+    if suggestion.reasonCode == "HIGH_CC_UPTIME" then
+        return string.format("CC uptime %.1f%%. Time under CC: %.1fs.", (evidence.ccUptimePct or 0) * 100, evidence.timeUnderCC or 0)
+    end
+    if suggestion.reasonCode == "SPEC_WINRATE_DEFICIT" then
+        return string.format("Win rate %.0f%% against %s over %d sessions.", (evidence.winRate or 0) * 100, evidence.specName or "this spec", evidence.fights or 0)
+    end
+    if suggestion.reasonCode == "SPEC_WINRATE_STRENGTH" then
+        return string.format("Win rate %.0f%% against %s over %d sessions.", (evidence.winRate or 0) * 100, evidence.specName or "this spec", evidence.fights or 0)
+    end
+    if suggestion.reasonCode == "SPEC_SCALING_NOTABLE" then
+        local scalingInfo = evidence.scalingInfo or {}
+        local dmgMod = scalingInfo.damageModifier and string.format("Damage modifier: %.2f", scalingInfo.damageModifier) or ""
+        local healMod = scalingInfo.healingModifier and string.format("Healing modifier: %.2f", scalingInfo.healingModifier) or ""
+        local sep = (dmgMod ~= "" and healMod ~= "") and ". " or ""
+        return string.format("Spec %s has notable PvP scaling. %s%s%s", tostring(evidence.specId or ""), dmgMod, sep, healMod)
+    end
+    if suggestion.reasonCode == "REACTIVE_DEFENSIVE_LATE" then
+        return string.format("Defensive (spell %d) used %.1fs into CC (spell %d). Earlier use reduces burst taken.",
+            evidence.cooldownSpellId or 0, evidence.latencySeconds or 0, evidence.ccSpellId or 0)
+    end
+    if suggestion.reasonCode == "SUBOPTIMAL_OPENER_SEQUENCE" then
+        return string.format("Current opener win rate %.0f%% over %d attempts vs %s. A better opener has %.0f%% over %d attempts.",
+            (evidence.currentWinRate or 0) * 100, evidence.currentAttempts or 0, evidence.specName or "this spec",
+            (evidence.betterWinRate or 0) * 100, evidence.betterAttempts or 0)
+    end
 
     if evidence.samples then
         return string.format("Backed by %d stored sessions.", evidence.samples)
@@ -152,6 +195,9 @@ function SummaryView:Build(parent)
     self.frame:SetAllPoints()
 
     self.title = ns.Widgets.CreateSectionTitle(self.frame, "PvP Performance Dashboard", "TOPLEFT", self.frame, "TOPLEFT", 16, -16)
+    self.confidenceBadge = ns.Widgets.CreateConfidenceBadge(self.frame, 10)
+    self.confidenceBadge:SetPoint("LEFT", self.title, "RIGHT", 8, 0)
+    self.confidenceBadge:Hide()
     self.caption = ns.Widgets.CreateCaption(self.frame, "Latest fight translated into explained scores, benchmark bars, and recognizable spell output.", "TOPLEFT", self.title, "BOTTOMLEFT", 0, -4)
 
     self.dummyNotice = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -228,6 +274,64 @@ function SummaryView:Build(parent)
         self.spellRows[index] = row
     end
 
+    -- Opponent composition panel (arena sessions only).
+    self.compTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Enemy Composition", "TOPLEFT", self.spellRows[#self.spellRows], "BOTTOMLEFT", 0, -22)
+    self.compCaption = ns.Widgets.CreateCaption(self.canvas, "Arena opponent slots with class, spec, and archetype threat profile.", "TOPLEFT", self.compTitle, "BOTTOMLEFT", 0, -4)
+    self.compTitle:Hide()
+    self.compCaption:Hide()
+
+    self.compSlotRows = {}
+    for index = 1, 5 do
+        local slotRow = ns.Widgets.CreateSlotRow(self.canvas, 750, 24)
+        if index == 1 then
+            slotRow:SetPoint("TOPLEFT", self.compCaption, "BOTTOMLEFT", 0, -8)
+        else
+            slotRow:SetPoint("TOPLEFT", self.compSlotRows[index - 1], "BOTTOMLEFT", 0, -4)
+        end
+        slotRow:Hide()
+        self.compSlotRows[index] = slotRow
+    end
+
+    -- BG Objectives section (battleground sessions only).
+    self.bgStatsTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Objectives", "TOPLEFT", self.compSlotRows[#self.compSlotRows], "BOTTOMLEFT", 0, -22)
+    self.bgStatsCaption = ns.Widgets.CreateCaption(self.canvas, "Battleground objective stats from the post-match scoreboard.", "TOPLEFT", self.bgStatsTitle, "BOTTOMLEFT", 0, -4)
+    self.bgStatsTitle:Hide()
+    self.bgStatsCaption:Hide()
+
+    self.bgStatRows = {}
+    for index = 1, 6 do
+        local row = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        if index == 1 then
+            row:SetPoint("TOPLEFT", self.bgStatsCaption, "BOTTOMLEFT", 0, -8)
+        else
+            row:SetPoint("TOPLEFT", self.bgStatRows[index - 1], "BOTTOMLEFT", 0, -4)
+        end
+        row:SetTextColor(unpack(Theme.text))
+        row:Hide()
+        self.bgStatRows[index] = row
+    end
+
+    -- Post-match scoreboard section (arena/BG rated sessions).
+    self.scoreboardTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Match Scoreboard", "TOPLEFT", self.bgStatRows[#self.bgStatRows], "BOTTOMLEFT", 0, -22)
+    self.scoreboardCaption = ns.Widgets.CreateCaption(self.canvas, "Per-player stats from the post-match scoreboard.", "TOPLEFT", self.scoreboardTitle, "BOTTOMLEFT", 0, -4)
+    self.scoreboardTitle:Hide()
+    self.scoreboardCaption:Hide()
+
+    self.scoreboardRows = {}
+    for index = 1, 10 do
+        local row = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        if index == 1 then
+            row:SetPoint("TOPLEFT", self.scoreboardCaption, "BOTTOMLEFT", 0, -8)
+        else
+            row:SetPoint("TOPLEFT", self.scoreboardRows[index - 1], "BOTTOMLEFT", 0, -3)
+        end
+        row:SetTextColor(unpack(Theme.text))
+        row:Hide()
+        self.scoreboardRows[index] = row
+    end
+
+    -- Anchor insights below the comp panel (or spells if comp is hidden).
+    -- Adjusted dynamically in Refresh.
     self.insightsTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Actionable Insights", "TOPLEFT", self.spellRows[#self.spellRows], "BOTTOMLEFT", 0, -22)
     self.insightsCaption = ns.Widgets.CreateCaption(self.canvas, "History-backed takeaways, translated into plain language instead of raw reason codes.", "TOPLEFT", self.insightsTitle, "BOTTOMLEFT", 0, -4)
 
@@ -240,6 +344,25 @@ function SummaryView:Build(parent)
             card:SetPoint("TOPLEFT", self.insightCards[index - 1], "BOTTOMLEFT", 0, -10)
         end
         self.insightCards[index] = card
+    end
+
+    -- Party Sync peer sessions section.
+    self.partyTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Party Session Data", "TOPLEFT", self.insightCards[#self.insightCards], "BOTTOMLEFT", 0, -22)
+    self.partyCaption = ns.Widgets.CreateCaption(self.canvas, "Summaries received from party members via addon messaging.", "TOPLEFT", self.partyTitle, "BOTTOMLEFT", 0, -4)
+    self.partyTitle:Hide()
+    self.partyCaption:Hide()
+
+    self.partyPeerRows = {}
+    for index = 1, 5 do
+        local row = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        if index == 1 then
+            row:SetPoint("TOPLEFT", self.partyCaption, "BOTTOMLEFT", 0, -8)
+        else
+            row:SetPoint("TOPLEFT", self.partyPeerRows[index - 1], "BOTTOMLEFT", 0, -4)
+        end
+        row:SetTextColor(unpack(Theme.text))
+        row:Hide()
+        self.partyPeerRows[index] = row
     end
 
     ns.Widgets.SetCanvasHeight(self.canvas, 1300)
@@ -282,10 +405,35 @@ function SummaryView:Refresh(payload)
         self.spellsCaption:Hide()
         self.insightsTitle:Hide()
         self.insightsCaption:Hide()
+        if self.compTitle then self.compTitle:Hide() end
+        if self.compCaption then self.compCaption:Hide() end
+        for _, slotRow in ipairs(self.compSlotRows or {}) do slotRow:Hide() end
+        if self.confidenceBadge then self.confidenceBadge:Hide() end
+        if self.bgStatsTitle then self.bgStatsTitle:Hide() end
+        if self.bgStatsCaption then self.bgStatsCaption:Hide() end
+        for _, row in ipairs(self.bgStatRows or {}) do row:Hide() end
+        if self.scoreboardTitle then self.scoreboardTitle:Hide() end
+        if self.scoreboardCaption then self.scoreboardCaption:Hide() end
+        for _, row in ipairs(self.scoreboardRows or {}) do row:Hide() end
+        if self.partyTitle then self.partyTitle:Hide() end
+        if self.partyCaption then self.partyCaption:Hide() end
+        for _, peerRow in ipairs(self.partyPeerRows or {}) do peerRow:Hide() end
         return
     end
 
     self.emptyState:Hide()
+
+    -- Confidence badge next to title (gated by setting).
+    if self.confidenceBadge then
+        local showBadge = ns.Addon and ns.Addon.GetSetting and ns.Addon:GetSetting("showConfidenceBadges")
+        if showBadge ~= false then
+            self.confidenceBadge:SetConfidence(session.dataConfidence or "unknown")
+            self.confidenceBadge:Show()
+        else
+            self.confidenceBadge:Hide()
+        end
+    end
+
     self.caption:SetText(isPinnedReview
         and "Selected fight translated into explained scores, benchmark bars, and recognizable spell output."
         or "Latest fight translated into explained scores, benchmark bars, and recognizable spell output.")
@@ -316,7 +464,7 @@ function SummaryView:Refresh(payload)
 
     local snapshot = session.playerSnapshot or {}
     characterKey = store:GetSessionCharacterKey(session)
-    local opponent = session.primaryOpponent and (session.primaryOpponent.name or session.primaryOpponent.guid) or "Unknown Opponent"
+    local opponent = ns.Helpers.ResolveOpponentName(session, "Unknown Opponent")
     local itemLevel = snapshot.equippedItemLevel or snapshot.averageItemLevel or snapshot.pvpItemLevel or 0
     local buildHash = snapshot.buildHash or "unknown"
     local contextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
@@ -539,6 +687,129 @@ function SummaryView:Refresh(payload)
         end
     end
 
+    -- Opponent composition panel (arena sessions only).
+    local arenaSlots = session.arena and session.arena.slots or {}
+    local compSlotCount = 0
+    if next(arenaSlots) then
+        self.compTitle:Show()
+        self.compCaption:Show()
+        for _, slotData in pairs(arenaSlots) do
+            compSlotCount = compSlotCount + 1
+            if compSlotCount <= #self.compSlotRows then
+                local specId = slotData.prepSpecId
+                local archetype = specId and ns.StaticPvpData and ns.StaticPvpData.GetSpecArchetype(specId) or nil
+                local archetypeLabel = archetype and archetype.label or ""
+                local threatTag = archetype and archetype.threatTags and archetype.threatTags[1] or ""
+                self.compSlotRows[compSlotCount]:SetSlotData({
+                    classFile = slotData.classFile or slotData.prepClassFile,
+                    specName = slotData.prepSpecName or slotData.name or "Unknown",
+                    name = slotData.name,
+                    archetypeLabel = archetypeLabel,
+                    threatTag = threatTag,
+                })
+            end
+        end
+    else
+        self.compTitle:Hide()
+        self.compCaption:Hide()
+    end
+    for index = compSlotCount + 1, #self.compSlotRows do
+        self.compSlotRows[index]:Hide()
+    end
+
+    -- BG Objectives panel (battleground sessions only).
+    local bgStatCount = 0
+    local bgStats = session.bgStats
+    if session.context == ns.Constants.CONTEXT.BATTLEGROUND and bgStats and type(bgStats) == "table" and #bgStats > 0 then
+        self.bgStatsTitle:Show()
+        self.bgStatsCaption:Show()
+        for _, stat in ipairs(bgStats) do
+            if stat.pvpStatValue and stat.pvpStatValue > 0 then
+                bgStatCount = bgStatCount + 1
+                if bgStatCount <= #self.bgStatRows then
+                    local statName = ns.StaticPvpData and ns.StaticPvpData.BG_STAT_NAMES and ns.StaticPvpData.BG_STAT_NAMES[stat.pvpStatID]
+                        or string.format("Stat %d", stat.pvpStatID or 0)
+                    self.bgStatRows[bgStatCount]:SetText(string.format("%s: %d", statName, stat.pvpStatValue))
+                    self.bgStatRows[bgStatCount]:Show()
+                end
+            end
+        end
+    end
+    if bgStatCount == 0 then
+        self.bgStatsTitle:Hide()
+        self.bgStatsCaption:Hide()
+    end
+    -- Re-anchor BG stats section below comp panel (or spells if no comp).
+    self.bgStatsTitle:ClearAllPoints()
+    if compSlotCount > 0 then
+        self.bgStatsTitle:SetPoint("TOPLEFT", self.compSlotRows[compSlotCount], "BOTTOMLEFT", 0, -22)
+    else
+        self.bgStatsTitle:SetPoint("TOPLEFT", self.spellRows[#self.spellRows], "BOTTOMLEFT", 0, -22)
+    end
+    for index = bgStatCount + 1, #self.bgStatRows do
+        self.bgStatRows[index]:Hide()
+    end
+
+    -- Post-match scoreboard (arena/BG rated sessions).
+    local scoreboardCount = 0
+    local postScores = session.postMatchScores
+    local playerGuid = ns.ApiCompat.GetPlayerGUID()
+    if postScores and type(postScores) == "table" and #postScores > 0 then
+        self.scoreboardTitle:Show()
+        self.scoreboardCaption:Show()
+        for _, entry in ipairs(postScores) do
+            scoreboardCount = scoreboardCount + 1
+            if scoreboardCount <= #self.scoreboardRows then
+                local ratingStr = ""
+                if entry.ratingChange and entry.ratingChange ~= 0 then
+                    ratingStr = entry.ratingChange > 0
+                        and string.format("  |cff70d196+%d|r", entry.ratingChange)
+                        or string.format("  |cffe64d40%d|r", entry.ratingChange)
+                end
+                local isMe = entry.guid == playerGuid
+                local nameColor = isMe and "|cff59a5f5" or "|cffffffff"
+                self.scoreboardRows[scoreboardCount]:SetText(string.format(
+                    "%s%s|r  —  %s dmg  |  %s heal  |  %d KB  |  %d D%s",
+                    nameColor, entry.name or "Unknown",
+                    Helpers.FormatNumber(entry.damageDone or 0),
+                    Helpers.FormatNumber(entry.healingDone or 0),
+                    entry.killingBlows or 0,
+                    entry.deaths or 0,
+                    ratingStr
+                ))
+                self.scoreboardRows[scoreboardCount]:Show()
+            end
+        end
+    end
+    if scoreboardCount == 0 then
+        self.scoreboardTitle:Hide()
+        self.scoreboardCaption:Hide()
+    end
+    -- Re-anchor scoreboard below BG stats (or comp, or spells).
+    self.scoreboardTitle:ClearAllPoints()
+    if bgStatCount > 0 then
+        self.scoreboardTitle:SetPoint("TOPLEFT", self.bgStatRows[bgStatCount], "BOTTOMLEFT", 0, -22)
+    elseif compSlotCount > 0 then
+        self.scoreboardTitle:SetPoint("TOPLEFT", self.compSlotRows[compSlotCount], "BOTTOMLEFT", 0, -22)
+    else
+        self.scoreboardTitle:SetPoint("TOPLEFT", self.spellRows[#self.spellRows], "BOTTOMLEFT", 0, -22)
+    end
+    for index = scoreboardCount + 1, #self.scoreboardRows do
+        self.scoreboardRows[index]:Hide()
+    end
+
+    -- Re-anchor insights section below scoreboard (or comp, or spells).
+    self.insightsTitle:ClearAllPoints()
+    local insightsAnchor = self.spellRows[#self.spellRows]
+    if scoreboardCount > 0 then
+        insightsAnchor = self.scoreboardRows[scoreboardCount]
+    elseif bgStatCount > 0 then
+        insightsAnchor = self.bgStatRows[bgStatCount]
+    elseif compSlotCount > 0 then
+        insightsAnchor = self.compSlotRows[compSlotCount]
+    end
+    self.insightsTitle:SetPoint("TOPLEFT", insightsAnchor, "BOTTOMLEFT", 0, -22)
+
     local suggestions = session.suggestions or {}
     for index, card in ipairs(self.insightCards) do
         local suggestion = suggestions[index]
@@ -561,7 +832,52 @@ function SummaryView:Refresh(payload)
         end
     end
 
-    ns.Widgets.SetCanvasHeight(self.canvas, 1280)
+    -- Party Sync peer session panel.
+    local sync = ns.Addon:GetModule("PartySyncService")
+    local peers = sync and sync:GetPeerSessions() or {}
+    local peerCount = 0
+    local now = Helpers.Now()
+    for sender, peer in pairs(peers) do
+        -- Only show peers received within the last 5 minutes.
+        if (now - (peer.receivedAt or 0)) < 300 then
+            peerCount = peerCount + 1
+            if peerCount <= #self.partyPeerRows then
+                local specInfo = peer.specId and peer.specId > 0 and ns.ApiCompat.GetSpecializationInfoByID(peer.specId) or nil
+                local specLabel = specInfo and specInfo.name or string.format("Spec %d", peer.specId or 0)
+                self.partyPeerRows[peerCount]:SetText(string.format(
+                    "%s  |  %s  |  %s  |  %s dmg  |  P:%.1f  B:%.1f  |  %s",
+                    tostring(sender),
+                    specLabel,
+                    Helpers.FormatDuration(peer.duration or 0),
+                    Helpers.FormatNumber(peer.damageDone or 0),
+                    peer.pressureScore or 0,
+                    peer.burstScore or 0,
+                    peer.result or "unknown"
+                ))
+                self.partyPeerRows[peerCount]:Show()
+            end
+        end
+    end
+
+    if peerCount > 0 then
+        self.partyTitle:Show()
+        self.partyCaption:Show()
+        self.partyTitle:ClearAllPoints()
+        self.partyTitle:SetPoint("TOPLEFT", self.insightCards[#self.insightCards], "BOTTOMLEFT", 0, -22)
+    else
+        self.partyTitle:Hide()
+        self.partyCaption:Hide()
+    end
+    for index = peerCount + 1, #self.partyPeerRows do
+        self.partyPeerRows[index]:Hide()
+    end
+
+    local extraHeight = 0
+    extraHeight = extraHeight + (peerCount > 0 and (60 + peerCount * 18) or 0)
+    extraHeight = extraHeight + (bgStatCount > 0 and (60 + bgStatCount * 20) or 0)
+    extraHeight = extraHeight + (scoreboardCount > 0 and (60 + scoreboardCount * 16) or 0)
+    local baseHeight = compSlotCount > 0 and 1440 or 1280
+    ns.Widgets.SetCanvasHeight(self.canvas, baseHeight + extraHeight)
 end
 
 ns.Addon:RegisterModule("SummaryView", SummaryView)
