@@ -72,6 +72,19 @@ local function responsibleGuid(state, sourceGuid)
     return state.summons[sourceGuid] or sourceGuid
 end
 
+-- Check whether the given timestampOffset falls inside any CC window.
+local function isDuringCC(session, offset)
+    if not session.ccTimeline or #session.ccTimeline == 0 then return false end
+    for _, cc in ipairs(session.ccTimeline) do
+        local ccStart = cc.startOffset or 0
+        local ccEnd   = ccStart + (cc.duration or 0)
+        if offset >= ccStart and offset <= ccEnd then
+            return true
+        end
+    end
+    return false
+end
+
 -- ──────────────────────────────────────────────────────────────────────────────
 -- Attribution state initialization
 -- ──────────────────────────────────────────────────────────────────────────────
@@ -236,6 +249,14 @@ function SpellAttributionPipeline:HandleCombatLogEvent(session, eventRecord)
         tgt.totalAmount = (tgt.totalAmount or 0) + amount
         state.reconciliation.localDamage =
             (state.reconciliation.localDamage or 0) + amount
+
+        -- Task 1.6: Tag damage taken during CC and accumulate per-source + session total.
+        if isDuringCC(session, eventRecord.timestampOffset or 0) then
+            eventRecord.duringCC = true
+            src.damageDuringCC = (src.damageDuringCC or 0) + amount
+            srcSpell.damageDuringCC = (srcSpell.damageDuringCC or 0) + amount
+            session.totals.damageTakenDuringCC = (session.totals.damageTakenDuringCC or 0) + amount
+        end
     elseif eventRecord.eventType == "miss" then
         applyMiss(srcSpell,    eventRecord)
         applyMiss(srcTgtSpell, eventRecord)

@@ -70,6 +70,31 @@ function MinimapButton:EnsureButton()
         GameTooltip:SetText("CombatAnalytics", 0.90, 0.94, 0.98)
         GameTooltip:AddLine("Left-click: Open addon UI", 0.60, 0.69, 0.78)
         GameTooltip:AddLine("Right-click: Command hint", 0.60, 0.69, 0.78)
+
+        local store = ns.Addon:GetModule("CombatStore")
+        if store then
+            local characterKey = store:GetCurrentCharacterKey()
+            local session = store:GetLatestSession(characterKey)
+            if session and session.timestamp and (GetTime() - (session.timestamp or 0) < 1800) then
+                local result = session.result and string.lower(tostring(session.result)) or "unknown"
+                local opponentName = session.primaryOpponent and session.primaryOpponent.name or "Unknown"
+                local duration = ns.Helpers.FormatDuration(session.duration or 0)
+                local damage = ns.Helpers.FormatNumber(session.totals and session.totals.damageDone or 0)
+                local r, g, b = 0.60, 0.69, 0.78
+                if result == "won" then
+                    r, g, b = 0.44, 0.82, 0.60
+                elseif result == "lost" then
+                    r, g, b = 0.90, 0.30, 0.25
+                end
+                local resultLabel = result == "won" and "Won" or result == "lost" and "Lost" or "Draw"
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(
+                    string.format("Last: %s vs %s — %s — %s dmg", resultLabel, opponentName, duration, damage),
+                    r, g, b
+                )
+            end
+        end
+
         GameTooltip:Show()
     end)
 

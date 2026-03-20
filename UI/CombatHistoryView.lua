@@ -6,6 +6,8 @@ local CombatHistoryView = {
     viewId = "history",
     page = 1,
     rowCount = 6,
+    filterResult = nil, -- nil = all, "won", "lost"
+    filterContext = nil, -- nil = all, or a Constants.CONTEXT value
 }
 
 local function prettifyToken(value)
@@ -37,6 +39,35 @@ function CombatHistoryView:Build(parent)
     self.title = ns.Widgets.CreateSectionTitle(self.frame, "Combat History", "TOPLEFT", self.frame, "TOPLEFT", 16, -16)
     self.caption = ns.Widgets.CreateCaption(self.frame, "Chronological record of finalized sessions. Click a row to inspect the full detail view.", "TOPLEFT", self.title, "BOTTOMLEFT", 0, -4)
 
+    -- Result filter buttons: All / Won / Lost
+    self.filterAllButton = ns.Widgets.CreateButton(self.frame, "All", 60, 22)
+    self.filterAllButton:SetPoint("TOPLEFT", self.caption, "BOTTOMLEFT", 0, -10)
+    self.filterAllButton:SetActive(true)
+    self.filterAllButton:SetScript("OnClick", function()
+        self.filterResult = nil
+        self.page = 1
+        self:UpdateFilterButtons()
+        self:Refresh()
+    end)
+
+    self.filterWonButton = ns.Widgets.CreateButton(self.frame, "Won", 60, 22)
+    self.filterWonButton:SetPoint("LEFT", self.filterAllButton, "RIGHT", 6, 0)
+    self.filterWonButton:SetScript("OnClick", function()
+        self.filterResult = "won"
+        self.page = 1
+        self:UpdateFilterButtons()
+        self:Refresh()
+    end)
+
+    self.filterLostButton = ns.Widgets.CreateButton(self.frame, "Lost", 60, 22)
+    self.filterLostButton:SetPoint("LEFT", self.filterWonButton, "RIGHT", 6, 0)
+    self.filterLostButton:SetScript("OnClick", function()
+        self.filterResult = "lost"
+        self.page = 1
+        self:UpdateFilterButtons()
+        self:Refresh()
+    end)
+
     self.prevButton = ns.Widgets.CreateButton(self.frame, "Prev", 80, 22)
     self.prevButton:SetPoint("TOPRIGHT", self.frame, "TOPRIGHT", -112, -12)
     self.prevButton:SetScript("OnClick", function()
@@ -56,7 +87,7 @@ function CombatHistoryView:Build(parent)
     self.pageText:SetTextColor(unpack(ns.Widgets.THEME.textMuted))
 
     self.shell, self.scrollFrame, self.canvas = ns.Widgets.CreateScrollCanvas(self.frame, 808, 390)
-    self.shell:SetPoint("TOPLEFT", self.caption, "BOTTOMLEFT", 0, -18)
+    self.shell:SetPoint("TOPLEFT", self.filterAllButton, "BOTTOMLEFT", 0, -10)
     self.shell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 16)
 
     self.rows = {}
@@ -83,6 +114,12 @@ function CombatHistoryView:Build(parent)
     return self.frame
 end
 
+function CombatHistoryView:UpdateFilterButtons()
+    self.filterAllButton:SetActive(self.filterResult == nil)
+    self.filterWonButton:SetActive(self.filterResult == "won")
+    self.filterLostButton:SetActive(self.filterResult == "lost")
+end
+
 function CombatHistoryView:Refresh()
     local store = ns.Addon:GetModule("CombatStore")
     local characterKey = store:GetCurrentCharacterKey()
@@ -92,11 +129,18 @@ function CombatHistoryView:Refresh()
     else
         self.caption:SetText("Chronological record of finalized sessions for the current character. Click a row to inspect the full detail view.")
     end
-    local sessions, total = store:ListCombats(self.page, self.rowCount, nil, characterKey)
+    local filters = {}
+    if self.filterResult then
+        filters.result = self.filterResult
+    end
+    if self.filterContext then
+        filters.context = self.filterContext
+    end
+    local sessions, total = store:ListCombats(self.page, self.rowCount, filters, characterKey)
     local totalPages = math.max(1, math.ceil(total / self.rowCount))
     if self.page > totalPages then
         self.page = totalPages
-        sessions, total = store:ListCombats(self.page, self.rowCount, nil, characterKey)
+        sessions, total = store:ListCombats(self.page, self.rowCount, filters, characterKey)
     end
 
     self.pageText:SetText(string.format("Page %d / %d", self.page, totalPages))
@@ -112,7 +156,7 @@ function CombatHistoryView:Refresh()
         if session then
             row:Show()
             row.sessionId = session.id
-            local opponent = session.primaryOpponent and (session.primaryOpponent.name or session.primaryOpponent.guid) or "Unknown"
+            local opponent = ns.Helpers.ResolveOpponentName(session, "Unknown")
             local subcontext = session.subcontext and prettifyToken(session.subcontext) or nil
             local contextLabel = prettifyToken(session.context)
             if subcontext then
@@ -147,6 +191,7 @@ function CombatHistoryView:Refresh()
                 resultLabel = prettifyToken(session.result),
                 analysisConfidence = session.analysisConfidence or "limited",
                 confidenceLabel = richLabel,
+                dataConfidence = session.dataConfidence or nil,
             })
         else
             row:Hide()

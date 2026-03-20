@@ -73,6 +73,13 @@ local function buildUnitSnapshot(unitToken)
     }
 end
 
+-- Known non-"unseen" reasons for ARENA_OPPONENT_UPDATE. Any value outside
+-- this set is still treated as "visible" (safe fallback), but an unknown
+-- reason is recorded in the trace log so it can be investigated.
+local KNOWN_VISIBLE_UPDATE_REASONS = {
+    seen = true,
+}
+
 -- ──────────────────────────────────────────────────────────────────────────────
 -- Key builders
 -- ──────────────────────────────────────────────────────────────────────────────
@@ -157,6 +164,9 @@ end
 
 function ArenaRoundTracker:Initialize()
     self.currentMatch = nil
+    self.inspectQueue = {}
+    self.inspectBusy = false
+    self.inspectElapsed = 0
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────
@@ -190,6 +200,11 @@ end
 
 function ArenaRoundTracker:GetCurrentRound()
     return self.currentMatch and self.currentMatch.currentRound or nil
+end
+
+function ArenaRoundTracker:GetSlots()
+    local round = self:GetCurrentRound()
+    return round and round.slots or {}
 end
 
 function ArenaRoundTracker:EndMatch()
@@ -364,6 +379,15 @@ function ArenaRoundTracker:HandleArenaOpponentUpdate(unitToken, updateReason)
         s.visible  = false
         s.hiddenAt = s.lastUpdateAt
     else
+        -- Negative-space: trace any updateReason that is not in the known-visible
+        -- set. The existing logic is still correct (treat as visible), but the
+        -- unknown value is surfaced in the trace log for investigation.
+        if not KNOWN_VISIBLE_UPDATE_REASONS[updateReason] then
+            ns.Addon:Trace("arena_round.opponent.unknown_reason", {
+                unit   = unitToken,
+                reason = tostring(updateReason),
+            })
+        end
         local snapshot = buildUnitSnapshot(unitToken)
         if snapshot then
             s.visible    = true
@@ -397,7 +421,131 @@ function ArenaRoundTracker:HandleArenaOpponentUpdate(unitToken, updateReason)
     -- Recompute round keys after any slot change.
     round.rosterSignature = buildRosterSignature(round.slots)
     round.roundKey        = buildRoundKey(self.currentMatch.matchKey, round.roundIndex, round.slots)
+
+    -- Queue inspect for PvP talent capture (Task 1.4)
+    if s.visible and updateReason ~= "unseen" then
+        self:QueueInspect(unitToken)
+    end
+
     return s
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Opponent PvP Talent Inspect (Task 1.4)
+-- FIFO queue, one inspect per 0.5s via OnUpdate polling.
+-- ──────────────────────────────────────────────────────────────────────────────
+
+function ArenaRoundTracker:QueueInspect(unitToken)
+    if not unitToken or not ApiCompat.UnitExists(unitToken) then return end
+    -- Avoid duplicates
+    for _, queued in ipairs(self.inspectQueue) do
+        if queued == unitToken then return end
+    end
+    self.inspectQueue[#self.inspectQueue + 1] = unitToken
+end
+
+function ArenaRoundTracker:ProcessInspectQueue(elapsed)
+    self.inspectElapsed = (self.inspectElapsed or 0) + elapsed
+    if self.inspectElapsed < 0.5 then return end
+    self.inspectElapsed = 0
+
+    if self.inspectBusy then return end
+    if #self.inspectQueue == 0 then return end
+
+    -- Never call NotifyInspect while in combat lockdown.  On Midnight the
+    -- inspect action is restricted during active combat and calling it from
+    -- addon code triggers ADDON_ACTION_BLOCKED.  We keep the queue intact
+    -- and retry on the next OnUpdate tick once combat ends.
+    if InCombatLockdown and InCombatLockdown() then return end
+
+    local unitToken = table.remove(self.inspectQueue, 1)
+    if not ApiCompat.UnitExists(unitToken) then return end
+
+    self.inspectBusy = true
+    self.inspectTarget = unitToken
+    ApiCompat.NotifyInspect(unitToken)
+end
+
+function ArenaRoundTracker:HandleInspectReady()
+    self.inspectBusy = false
+    local unitToken = self.inspectTarget
+    self.inspectTarget = nil
+    if not unitToken then return end
+
+    local round = self:GetCurrentRound()
+    if not round then return end
+
+    local slot = parseArenaSlot(unitToken)
+    if not slot or not round.slots[slot] then return end
+
+    -- Capture PvP talents via inspect API.  Wrap in pcall: arena unit
+    -- tokens may return secret values from inspect APIs during combat.
+    local pvpTalents = {}
+    if C_SpecializationInfo and C_SpecializationInfo.GetInspectSelectedPvpTalent then
+        for talentIndex = 1, 4 do
+            local ok, talentId = pcall(C_SpecializationInfo.GetInspectSelectedPvpTalent, unitToken, talentIndex)
+            if ok and talentId and not ApiCompat.IsSecretValue(talentId) and talentId > 0 then
+                pvpTalents[#pvpTalents + 1] = talentId
+            end
+        end
+    end
+
+    if #pvpTalents > 0 then
+        round.slots[slot].pvpTalents = pvpTalents
+        ns.Addon:Trace("arena_round.inspect.pvp_talents", {
+            slot = slot,
+            unit = unitToken,
+            talents = table.concat(pvpTalents, ","),
+        })
+    end
+
+    -- Task 2.3: Capture opponent talent build import string via C_Traits.
+    if C_Traits and C_Traits.GenerateInspectImportString then
+        local okImport, importString = pcall(C_Traits.GenerateInspectImportString, unitToken)
+        if okImport and importString and type(importString) == "string" and importString ~= "" then
+            round.slots[slot].talentImportString = importString
+            ns.Addon:Trace("arena_round.inspect.talent_import", {
+                slot = slot,
+                unit = unitToken,
+                length = #importString,
+            })
+        end
+    end
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Native DR tracking (Task 2.1 — C_SpellDiminish)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+--- Handle UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED.
+--- Stores native DR state per arena unit per category into the current round.
+--- @param unitTarget string — e.g. "arena1"
+--- @param trackerInfo table — {category, startTime, duration, showCountdown, isImmune}
+function ArenaRoundTracker:HandleDiminishStateUpdated(unitTarget, trackerInfo)
+    if not unitTarget or not trackerInfo then return end
+    local slot = parseArenaSlot(unitTarget)
+    if not slot then return end
+
+    local round = self:GetCurrentRound()
+    if not round or not round.slots[slot] then return end
+
+    round.slots[slot].drState = round.slots[slot].drState or {}
+    local category = trackerInfo.category
+    if category == nil then return end
+
+    round.slots[slot].drState[category] = {
+        startTime    = trackerInfo.startTime,
+        duration     = trackerInfo.duration,
+        isImmune     = trackerInfo.isImmune or false,
+        showCountdown = trackerInfo.showCountdown or false,
+    }
+
+    ns.Addon:Trace("arena_round.dr_updated", {
+        slot     = slot,
+        unit     = unitTarget,
+        category = category,
+        immune   = trackerInfo.isImmune and "true" or "false",
+    })
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────
@@ -531,6 +679,13 @@ function ArenaRoundTracker:CopyStateIntoSession(session)
             session.arena.unresolvedGuids[guid] = shallowCopy(unresolved)
         end
     end
+
+    -- Task 1.3: accumulate total CC duration received by the player
+    local totalCcDuration = 0
+    for _, cc in ipairs(session.ccReceived or {}) do
+        totalCcDuration = totalCcDuration + (cc.duration or 0)
+    end
+    session.arena.ccDurationReceived = totalCcDuration
 
     -- Overlay primaryOpponent from weighted pressure data.
     local primary = self:GetPrimaryEnemy()

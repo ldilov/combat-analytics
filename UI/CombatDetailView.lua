@@ -9,6 +9,106 @@ local CombatDetailView = {
     sessionId = nil,
 }
 
+-- Timeline replay constants
+local TIMELINE_HEIGHT = 120
+local TIMELINE_BAR_WIDTH = 2
+local TIMELINE_CC_ALPHA = 0.3
+local TIMELINE_DEATH_WIDTH = 3
+local TIMELINE_MAX_EVENTS = 500
+local TIMELINE_MARGIN_LEFT = 8
+local TIMELINE_MARGIN_RIGHT = 8
+
+local TIMELINE_COLORS = {
+    damageDealt = { 0.35, 0.55, 0.90, 0.8 },
+    damageTaken = { 0.90, 0.30, 0.25, 0.8 },
+    ccWindow    = { 0.95, 0.65, 0.15, TIMELINE_CC_ALPHA },
+    healing     = { 0.44, 0.82, 0.60, 0.8 },
+    death       = { 1.0, 0.0, 0.0, 1.0 },
+    centerLine  = { 0.5, 0.5, 0.5, 0.3 },
+}
+
+-- Texture pool: acquire a hidden texture from the pool or create a new one.
+local function acquireTexture(pool, parent)
+    for index = 1, #pool do
+        local tex = pool[index]
+        if not tex._inUse then
+            tex._inUse = true
+            tex:SetParent(parent)
+            tex:ClearAllPoints()
+            tex:Show()
+            return tex
+        end
+    end
+    local tex = parent:CreateTexture(nil, "ARTWORK")
+    tex:SetTexture("Interface\\Buttons\\WHITE8x8")
+    tex._inUse = true
+    pool[#pool + 1] = tex
+    return tex
+end
+
+-- Release all textures in the pool (hide and mark free).
+local function releaseAllTextures(pool)
+    for index = 1, #pool do
+        pool[index]._inUse = false
+        pool[index]:Hide()
+    end
+end
+
+-- Tooltip hitbox pool: acquire a hidden button from the pool or create a new one.
+local function acquireHitbox(pool, parent)
+    for index = 1, #pool do
+        local btn = pool[index]
+        if not btn._inUse then
+            btn._inUse = true
+            btn:SetParent(parent)
+            btn:ClearAllPoints()
+            btn:Show()
+            return btn
+        end
+    end
+    local btn = CreateFrame("Button", nil, parent)
+    btn:EnableMouse(true)
+    btn:RegisterForClicks("AnyUp")
+    btn:SetScript("OnEnter", function(self)
+        if self._tooltipLines and #self._tooltipLines > 0 then
+            GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+            GameTooltip:AddLine("Timeline Events", 1, 1, 1)
+            for _, line in ipairs(self._tooltipLines) do
+                GameTooltip:AddLine(line.text, line.r, line.g, line.b, true)
+            end
+            GameTooltip:Show()
+        end
+    end)
+    btn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    btn._inUse = true
+    pool[#pool + 1] = btn
+    return btn
+end
+
+local function releaseAllHitboxes(pool)
+    for index = 1, #pool do
+        pool[index]._inUse = false
+        pool[index]._tooltipLines = nil
+        pool[index]:Hide()
+    end
+end
+
+-- Downsample an event list to at most maxCount entries using uniform stride.
+local function downsampleEvents(events, maxCount)
+    if #events <= maxCount then
+        return events
+    end
+    local sampled = {}
+    local stride = #events / maxCount
+    for i = 1, maxCount do
+        local idx = math.floor((i - 1) * stride) + 1
+        sampled[#sampled + 1] = events[idx]
+    end
+    return sampled
+end
+
 local function findWindowByType(session, windowType)
     for _, windowRecord in ipairs(session.windows or {}) do
         if windowRecord.windowType == windowType then
@@ -90,7 +190,7 @@ local function buildOverviewText(session)
     local importInfo = session.import or {}
     local openerFingerprint = session.openerFingerprint or {}
     local snapshot = session.playerSnapshot or {}
-    local opponent = session.primaryOpponent and (session.primaryOpponent.name or session.primaryOpponent.guid) or "Unknown Opponent"
+    local opponent = ns.Helpers.ResolveOpponentName(session, "Unknown Opponent")
     local contextLabel = prettifyToken(session.context)
     if session.subcontext then
         contextLabel = string.format("%s • %s", contextLabel, prettifyToken(session.subcontext))
@@ -304,7 +404,106 @@ function CombatDetailView:Build(parent)
         self.spellRows[index] = row
     end
 
-    self.rawTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Raw Timeline", "TOPLEFT", self.spellRows[#self.spellRows], "BOTTOMLEFT", 0, -22)
+    -- Timeline Replay section
+    self.timelineTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Timeline Replay", "TOPLEFT", self.spellRows[#self.spellRows], "BOTTOMLEFT", 0, -22)
+    self.timelineCaption = ns.Widgets.CreateCaption(self.canvas, "Graphical event timeline. Damage dealt rises above center, damage taken drops below. CC windows and death markers are overlaid.", "TOPLEFT", self.timelineTitle, "BOTTOMLEFT", 0, -4)
+
+    self.timelineContainer = ns.Widgets.CreateSurface(self.canvas, 750, TIMELINE_HEIGHT, Theme.panel, Theme.border)
+    self.timelineContainer:SetPoint("TOPLEFT", self.timelineCaption, "BOTTOMLEFT", 0, -12)
+
+    -- Center line divider
+    self.timelineCenterLine = self.timelineContainer:CreateTexture(nil, "BACKGROUND", nil, 1)
+    self.timelineCenterLine:SetTexture("Interface\\Buttons\\WHITE8x8")
+    self.timelineCenterLine:SetPoint("LEFT", self.timelineContainer, "LEFT", TIMELINE_MARGIN_LEFT, 0)
+    self.timelineCenterLine:SetPoint("RIGHT", self.timelineContainer, "RIGHT", -TIMELINE_MARGIN_RIGHT, 0)
+    self.timelineCenterLine:SetHeight(1)
+    self.timelineCenterLine:SetVertexColor(unpack(TIMELINE_COLORS.centerLine))
+
+    -- Time axis labels
+    self.timelineStartLabel = self.timelineContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.timelineStartLabel:SetPoint("BOTTOMLEFT", self.timelineContainer, "BOTTOMLEFT", TIMELINE_MARGIN_LEFT, 2)
+    self.timelineStartLabel:SetTextColor(unpack(Theme.textMuted))
+    self.timelineStartLabel:SetText("0s")
+
+    self.timelineEndLabel = self.timelineContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.timelineEndLabel:SetPoint("BOTTOMRIGHT", self.timelineContainer, "BOTTOMRIGHT", -TIMELINE_MARGIN_RIGHT, 2)
+    self.timelineEndLabel:SetTextColor(unpack(Theme.textMuted))
+    self.timelineEndLabel:SetText("0s")
+
+    self.timelineEmptyLabel = self.timelineContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    self.timelineEmptyLabel:SetPoint("CENTER", self.timelineContainer, "CENTER", 0, 0)
+    self.timelineEmptyLabel:SetTextColor(unpack(Theme.textMuted))
+    self.timelineEmptyLabel:SetText("No raw events recorded for this session.")
+    self.timelineEmptyLabel:Hide()
+
+    -- Legend row beneath the timeline
+    self.timelineLegend = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.timelineLegend:SetPoint("TOPLEFT", self.timelineContainer, "BOTTOMLEFT", 0, -6)
+    self.timelineLegend:SetTextColor(unpack(Theme.textMuted))
+    self.timelineLegend:SetText("Blue = Damage Dealt  |  Red = Damage Taken  |  Green = Healing  |  Amber = CC Window  |  Red Line = Death")
+
+    -- Texture and hitbox pools for timeline
+    self.timelineTexturePool = self.timelineTexturePool or {}
+    self.timelineHitboxPool = self.timelineHitboxPool or {}
+
+    -- CC Received section
+    self.ccTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Crowd Control Received", "TOPLEFT", self.timelineLegend, "BOTTOMLEFT", 0, -22)
+    self.ccCaption = ns.Widgets.CreateCaption(self.canvas, "CC events that landed on you during this session, with total uptime.", "TOPLEFT", self.ccTitle, "BOTTOMLEFT", 0, -4)
+    self.ccSummary = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.ccSummary:SetPoint("TOPLEFT", self.ccCaption, "BOTTOMLEFT", 0, -10)
+    self.ccSummary:SetTextColor(unpack(Theme.textMuted))
+    self.ccRows = {}
+    for index = 1, 8 do
+        local row = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        if index == 1 then
+            row:SetPoint("TOPLEFT", self.ccSummary, "BOTTOMLEFT", 0, -8)
+        else
+            row:SetPoint("TOPLEFT", self.ccRows[index - 1], "BOTTOMLEFT", 0, -4)
+        end
+        row:SetJustifyH("LEFT")
+        row:SetTextColor(unpack(Theme.text))
+        self.ccRows[index] = row
+    end
+
+    -- Defensive Timing section
+    local ccLastAnchor = self.ccRows[#self.ccRows]
+    self.defTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Defensive Timing", "TOPLEFT", ccLastAnchor, "BOTTOMLEFT", 0, -22)
+    self.defCaption = ns.Widgets.CreateCaption(self.canvas, "How quickly defensive cooldowns were used relative to incoming crowd control.", "TOPLEFT", self.defTitle, "BOTTOMLEFT", 0, -4)
+    self.defRows = {}
+    for index = 1, 6 do
+        local row = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        if index == 1 then
+            row:SetPoint("TOPLEFT", self.defCaption, "BOTTOMLEFT", 0, -10)
+        else
+            row:SetPoint("TOPLEFT", self.defRows[index - 1], "BOTTOMLEFT", 0, -4)
+        end
+        row:SetJustifyH("LEFT")
+        row:SetTextColor(unpack(Theme.text))
+        self.defRows[index] = row
+    end
+
+    -- Death Analysis section
+    local defLastAnchor = self.defRows[#self.defRows]
+    self.deathTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Death Analysis", "TOPLEFT", defLastAnchor, "BOTTOMLEFT", 0, -22)
+    self.deathCaption = ns.Widgets.CreateCaption(self.canvas, "Breakdown of each death: who killed you, the burst window, and the kill chain.", "TOPLEFT", self.deathTitle, "BOTTOMLEFT", 0, -4)
+    self.deathFrames = {}
+    for index = 1, 4 do
+        local row = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        if index == 1 then
+            row:SetPoint("TOPLEFT", self.deathCaption, "BOTTOMLEFT", 0, -10)
+        else
+            row:SetPoint("TOPLEFT", self.deathFrames[index - 1], "BOTTOMLEFT", 0, -6)
+        end
+        row:SetJustifyH("LEFT")
+        row:SetWidth(740)
+        row:SetWordWrap(true)
+        row:SetTextColor(unpack(Theme.text))
+        self.deathFrames[index] = row
+    end
+
+    -- Raw Timeline section (text dump), now anchored below the death analysis section
+    local deathLastAnchor = self.deathFrames[#self.deathFrames]
+    self.rawTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Raw Timeline", "TOPLEFT", deathLastAnchor, "BOTTOMLEFT", 0, -22)
     self.rawCaption = ns.Widgets.CreateCaption(self.canvas, "Filtered raw events stay available here, but they are now the support layer instead of the whole screen.", "TOPLEFT", self.rawTitle, "BOTTOMLEFT", 0, -4)
     self.rawMeta = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.rawMeta:SetPoint("TOPLEFT", self.rawCaption, "BOTTOMLEFT", 0, -10)
@@ -313,8 +512,278 @@ function CombatDetailView:Build(parent)
     self.rawShell, self.rawContent, self.rawText = ns.Widgets.CreateBodyText(self.canvas, 750, 210)
     self.rawShell:SetPoint("TOPLEFT", self.rawMeta, "BOTTOMLEFT", 0, -8)
 
-    ns.Widgets.SetCanvasHeight(self.canvas, 1520)
+    ns.Widgets.SetCanvasHeight(self.canvas, 2240)
     return self.frame
+end
+
+-- Render the graphical timeline for a given session.
+function CombatDetailView:BuildTimeline(session)
+    -- Release all pooled resources
+    releaseAllTextures(self.timelineTexturePool)
+    releaseAllHitboxes(self.timelineHitboxPool)
+
+    local rawEvents = session.rawEvents or {}
+    local duration = math.max(session.duration or 0, 0.1)
+
+    -- If no raw events, show empty label and bail
+    if #rawEvents == 0 then
+        self.timelineEmptyLabel:Show()
+        self.timelineCenterLine:Hide()
+        self.timelineStartLabel:Hide()
+        self.timelineEndLabel:Hide()
+        self.timelineLegend:Hide()
+        return
+    end
+
+    self.timelineEmptyLabel:Hide()
+    self.timelineCenterLine:Show()
+    self.timelineStartLabel:Show()
+    self.timelineEndLabel:Show()
+    self.timelineLegend:Show()
+
+    self.timelineStartLabel:SetText("0s")
+    self.timelineEndLabel:SetText(string.format("%.0fs", duration))
+
+    local containerWidth = self.timelineContainer:GetWidth() or 750
+    local drawWidth = containerWidth - TIMELINE_MARGIN_LEFT - TIMELINE_MARGIN_RIGHT
+    if drawWidth < 10 then
+        drawWidth = 750 - TIMELINE_MARGIN_LEFT - TIMELINE_MARGIN_RIGHT
+    end
+    local halfHeight = (TIMELINE_HEIGHT - 14) / 2  -- leave room for axis labels at bottom
+
+    -- Classify raw events and find maximum amounts for scaling
+    local damageDealtEvents = {}
+    local damageTakenEvents = {}
+    local healingEvents = {}
+    local maxDamageDealt = 1
+    local maxDamageTaken = 1
+    local maxHealing = 1
+
+    for _, evt in ipairs(rawEvents) do
+        local evtType = evt.eventType
+        local amount = evt.amount or 0
+        if amount > 0 then
+            if evtType == "damage" and evt.sourceMine then
+                damageDealtEvents[#damageDealtEvents + 1] = evt
+                if amount > maxDamageDealt then
+                    maxDamageDealt = amount
+                end
+            elseif evtType == "damage" and evt.destMine then
+                damageTakenEvents[#damageTakenEvents + 1] = evt
+                if amount > maxDamageTaken then
+                    maxDamageTaken = amount
+                end
+            elseif evtType == "healing" and evt.sourceMine then
+                healingEvents[#healingEvents + 1] = evt
+                if amount > maxHealing then
+                    maxHealing = amount
+                end
+            end
+        end
+    end
+
+    -- Downsample if too many events across all categories combined
+    local totalEvents = #damageDealtEvents + #damageTakenEvents + #healingEvents
+    if totalEvents > TIMELINE_MAX_EVENTS then
+        local ratio = TIMELINE_MAX_EVENTS / totalEvents
+        local dealtCap = math.max(1, math.floor(#damageDealtEvents * ratio))
+        local takenCap = math.max(1, math.floor(#damageTakenEvents * ratio))
+        local healCap = math.max(1, math.floor(#healingEvents * ratio))
+        damageDealtEvents = downsampleEvents(damageDealtEvents, dealtCap)
+        damageTakenEvents = downsampleEvents(damageTakenEvents, takenCap)
+        healingEvents = downsampleEvents(healingEvents, healCap)
+    end
+
+    local container = self.timelineContainer
+
+    -- Helper to map timestamp offset to x pixel
+    local function timeToX(offset)
+        return TIMELINE_MARGIN_LEFT + (offset / duration) * drawWidth
+    end
+
+    -- Helper to build tooltip clusters.
+    -- We divide the timeline into horizontal buckets and group events per bucket.
+    local BUCKET_WIDTH = 12
+    local bucketCount = math.max(1, math.floor(drawWidth / BUCKET_WIDTH))
+    local buckets = {}
+    for i = 1, bucketCount do
+        buckets[i] = {}
+    end
+
+    local function addToBucket(evt, label, color)
+        local offset = evt.timestampOffset or 0
+        local bucketIdx = math.floor((offset / duration) * (bucketCount - 1)) + 1
+        bucketIdx = math.max(1, math.min(bucketIdx, bucketCount))
+        buckets[bucketIdx][#buckets[bucketIdx] + 1] = {
+            text = label,
+            r = color[1],
+            g = color[2],
+            b = color[3],
+        }
+    end
+
+    -- 1) Render CC windows (below everything, BACKGROUND layer)
+    local ccTimeline = session.ccTimeline or {}
+    for _, cc in ipairs(ccTimeline) do
+        local startOffset = cc.startOffset or 0
+        local ccDuration = cc.duration or 0
+        if ccDuration > 0 then
+            local x1 = timeToX(startOffset)
+            local x2 = timeToX(math.min(startOffset + ccDuration, duration))
+            local ccWidth = math.max(2, x2 - x1)
+
+            local tex = acquireTexture(self.timelineTexturePool, container)
+            tex:SetDrawLayer("BACKGROUND", 2)
+            tex:SetPoint("TOPLEFT", container, "TOPLEFT", x1, -2)
+            tex:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", x1, 14)
+            tex:SetWidth(ccWidth)
+            tex:SetVertexColor(unpack(TIMELINE_COLORS.ccWindow))
+
+            local spellInfo = cc.spellId and ns.ApiCompat.GetSpellInfo(cc.spellId) or {}
+            local spellName = spellInfo.name or tostring(cc.spellId or "CC")
+            -- Add to multiple buckets spanning the CC window
+            local bucketStart = math.floor((startOffset / duration) * (bucketCount - 1)) + 1
+            local bucketEnd = math.floor((math.min(startOffset + ccDuration, duration) / duration) * (bucketCount - 1)) + 1
+            bucketStart = math.max(1, math.min(bucketStart, bucketCount))
+            bucketEnd = math.max(1, math.min(bucketEnd, bucketCount))
+            for bi = bucketStart, bucketEnd do
+                local existing = false
+                for _, line in ipairs(buckets[bi]) do
+                    if line.text == string.format("CC: %s (%.1fs)", spellName, ccDuration) then
+                        existing = true
+                        break
+                    end
+                end
+                if not existing then
+                    buckets[bi][#buckets[bi] + 1] = {
+                        text = string.format("CC: %s (%.1fs)", spellName, ccDuration),
+                        r = TIMELINE_COLORS.ccWindow[1],
+                        g = TIMELINE_COLORS.ccWindow[2],
+                        b = TIMELINE_COLORS.ccWindow[3],
+                    }
+                end
+            end
+        end
+    end
+
+    -- 2) Render damage dealt bars (upward from center line)
+    for _, evt in ipairs(damageDealtEvents) do
+        local offset = evt.timestampOffset or 0
+        local amount = evt.amount or 0
+        local barHeight = math.max(1, (amount / maxDamageDealt) * halfHeight)
+        local x = timeToX(offset)
+
+        local tex = acquireTexture(self.timelineTexturePool, container)
+        tex:SetDrawLayer("ARTWORK", 1)
+        tex:SetWidth(TIMELINE_BAR_WIDTH)
+        tex:SetHeight(barHeight)
+        tex:SetPoint("BOTTOMLEFT", container, "LEFT", x, 0)
+        tex:SetVertexColor(unpack(TIMELINE_COLORS.damageDealt))
+
+        local spellInfo = evt.spellId and ns.ApiCompat.GetSpellInfo(evt.spellId) or {}
+        local spellName = spellInfo.name or tostring(evt.spellId or "Melee")
+        addToBucket(evt, string.format("Dealt: %s %s%s", spellName, ns.Helpers.FormatNumber(amount), evt.critical and " (crit)" or ""), TIMELINE_COLORS.damageDealt)
+    end
+
+    -- 3) Render damage taken bars (downward from center line)
+    for _, evt in ipairs(damageTakenEvents) do
+        local offset = evt.timestampOffset or 0
+        local amount = evt.amount or 0
+        local barHeight = math.max(1, (amount / maxDamageTaken) * halfHeight)
+        local x = timeToX(offset)
+
+        local tex = acquireTexture(self.timelineTexturePool, container)
+        tex:SetDrawLayer("ARTWORK", 1)
+        tex:SetWidth(TIMELINE_BAR_WIDTH)
+        tex:SetHeight(barHeight)
+        tex:SetPoint("TOPLEFT", container, "LEFT", x, 0)
+        tex:SetVertexColor(unpack(TIMELINE_COLORS.damageTaken))
+
+        local spellInfo = evt.spellId and ns.ApiCompat.GetSpellInfo(evt.spellId) or {}
+        local spellName = spellInfo.name or tostring(evt.spellId or "Melee")
+        addToBucket(evt, string.format("Taken: %s %s%s", spellName, ns.Helpers.FormatNumber(amount), evt.critical and " (crit)" or ""), TIMELINE_COLORS.damageTaken)
+    end
+
+    -- 4) Render healing bars (upward from center line, on top of damage dealt)
+    for _, evt in ipairs(healingEvents) do
+        local offset = evt.timestampOffset or 0
+        local amount = evt.amount or 0
+        local barHeight = math.max(1, (amount / maxHealing) * halfHeight * 0.8)
+        local x = timeToX(offset)
+
+        local tex = acquireTexture(self.timelineTexturePool, container)
+        tex:SetDrawLayer("ARTWORK", 2)
+        tex:SetWidth(TIMELINE_BAR_WIDTH)
+        tex:SetHeight(barHeight)
+        tex:SetPoint("BOTTOMLEFT", container, "LEFT", x, 0)
+        tex:SetVertexColor(unpack(TIMELINE_COLORS.healing))
+
+        local spellInfo = evt.spellId and ns.ApiCompat.GetSpellInfo(evt.spellId) or {}
+        local spellName = spellInfo.name or tostring(evt.spellId or "Heal")
+        addToBucket(evt, string.format("Heal: %s %s", spellName, ns.Helpers.FormatNumber(amount)), TIMELINE_COLORS.healing)
+    end
+
+    -- 5) Render death markers
+    local deathCauses = session.deathCauses or {}
+    local deathOffsets = {}
+
+    -- Gather from deathCauses
+    for _, cause in ipairs(deathCauses) do
+        if cause.timestampOffset then
+            deathOffsets[#deathOffsets + 1] = cause.timestampOffset
+        end
+    end
+
+    -- Fallback: scan rawEvents for death events if deathCauses is empty
+    if #deathOffsets == 0 then
+        for _, evt in ipairs(rawEvents) do
+            if evt.eventType == "death" and evt.destMine then
+                deathOffsets[#deathOffsets + 1] = evt.timestampOffset or 0
+            end
+        end
+    end
+
+    for _, offset in ipairs(deathOffsets) do
+        local x = timeToX(offset)
+        local tex = acquireTexture(self.timelineTexturePool, container)
+        tex:SetDrawLayer("OVERLAY", 1)
+        tex:SetWidth(TIMELINE_DEATH_WIDTH)
+        tex:SetPoint("TOPLEFT", container, "TOPLEFT", x, -2)
+        tex:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", x, 14)
+        tex:SetVertexColor(unpack(TIMELINE_COLORS.death))
+
+        local bucketIdx = math.floor((offset / duration) * (bucketCount - 1)) + 1
+        bucketIdx = math.max(1, math.min(bucketIdx, bucketCount))
+        buckets[bucketIdx][#buckets[bucketIdx] + 1] = {
+            text = string.format("DEATH at %.1fs", offset),
+            r = TIMELINE_COLORS.death[1],
+            g = TIMELINE_COLORS.death[2],
+            b = TIMELINE_COLORS.death[3],
+        }
+    end
+
+    -- 6) Create tooltip hitboxes for non-empty buckets
+    for i = 1, bucketCount do
+        if #buckets[i] > 0 then
+            local hitbox = acquireHitbox(self.timelineHitboxPool, container)
+            local bucketX = TIMELINE_MARGIN_LEFT + (i - 1) * BUCKET_WIDTH
+            hitbox:SetPoint("TOPLEFT", container, "TOPLEFT", bucketX, -2)
+            hitbox:SetSize(BUCKET_WIDTH, TIMELINE_HEIGHT - 14)
+            hitbox:SetFrameLevel(container:GetFrameLevel() + 5)
+
+            -- Cap tooltip lines to keep GameTooltip manageable
+            local lines = buckets[i]
+            if #lines > 8 then
+                local capped = {}
+                for li = 1, 7 do
+                    capped[li] = lines[li]
+                end
+                capped[8] = { text = string.format("... and %d more events", #lines - 7), r = 0.6, g = 0.6, b = 0.6 }
+                lines = capped
+            end
+            hitbox._tooltipLines = lines
+        end
+    end
 end
 
 function CombatDetailView:FilterRawEvents(session)
@@ -374,6 +843,20 @@ function CombatDetailView:Refresh(payload)
         self.scoreCaption:Hide()
         self.spellsTitle:Hide()
         self.spellsCaption:Hide()
+        self.timelineTitle:Hide()
+        self.timelineCaption:Hide()
+        self.timelineContainer:Hide()
+        self.timelineLegend:Hide()
+        self.ccTitle:Hide()
+        self.ccCaption:Hide()
+        self.ccSummary:Hide()
+        for _, row in ipairs(self.ccRows) do row:Hide() end
+        self.defTitle:Hide()
+        self.defCaption:Hide()
+        for _, row in ipairs(self.defRows) do row:Hide() end
+        self.deathTitle:Hide()
+        self.deathCaption:Hide()
+        for _, row in ipairs(self.deathFrames) do row:Hide() end
         self.rawTitle:Hide()
         self.rawCaption:Hide()
         self.rawMeta:Hide()
@@ -388,7 +871,7 @@ function CombatDetailView:Refresh(payload)
     self.emptyState:Hide()
     self.sessionId = session.id
     self.lastRenderedSessionId = session.id
-    self.title:SetText(string.format("Combat Detail • %s", session.primaryOpponent and (session.primaryOpponent.name or "Unknown Opponent") or "Selected Fight"))
+    self.title:SetText(string.format("Combat Detail • %s", ns.Helpers.ResolveOpponentName(session, "Selected Fight")))
     self.caption:SetText(string.format(
         "%s fight review with visual sections for scores, spells, and opener timing. Character: %s.",
         prettifyToken(session.context),
@@ -402,12 +885,16 @@ function CombatDetailView:Refresh(payload)
     self.scoreCaption:Show()
     self.spellsTitle:Show()
     self.spellsCaption:Show()
+    self.timelineTitle:Show()
+    self.timelineCaption:Show()
+    self.timelineContainer:Show()
+    self.timelineLegend:Show()
     self.rawTitle:Show()
     self.rawCaption:Show()
     self.rawMeta:Show()
     self.rawShell:Show()
 
-    local opponent = session.primaryOpponent and (session.primaryOpponent.name or session.primaryOpponent.guid) or "Unknown Opponent"
+    local opponent = ns.Helpers.ResolveOpponentName(session, "Unknown Opponent")
     local readQuality = formatDisplayLabel(session.analysisConfidence or "limited")
     local readSource = formatDisplayLabel(session.finalDamageSource or "damage_meter")
     -- Rich label from the data confidence pipeline (e.g. "Full Raw", "Enriched").
@@ -477,6 +964,140 @@ function CombatDetailView:Refresh(payload)
         end
     end
 
+    -- Render graphical timeline
+    self:BuildTimeline(session)
+
+    -- CC Received section
+    local ccReceived = session.ccReceived or {}
+    if #ccReceived > 0 then
+        self.ccTitle:Show()
+        self.ccCaption:Show()
+        self.ccSummary:Show()
+        local ccUptime = session.metrics and session.metrics.ccUptimePct or 0
+        local timeUnderCC = session.metrics and session.metrics.timeUnderCC or 0
+        self.ccSummary:SetText(string.format(
+            "Total CC uptime: %.1f%%  |  Time under CC: %s",
+            ccUptime,
+            ns.Helpers.FormatDuration(timeUnderCC)
+        ))
+        for index, row in ipairs(self.ccRows) do
+            local entry = ccReceived[index]
+            if entry then
+                row:SetText(string.format(
+                    "%s  —  %.1fs  —  from %s",
+                    entry.spellName or "Unknown",
+                    entry.duration or 0,
+                    entry.sourceName or "Unknown"
+                ))
+                row:Show()
+            else
+                row:Hide()
+            end
+        end
+    else
+        self.ccTitle:Hide()
+        self.ccCaption:Hide()
+        self.ccSummary:Hide()
+        for _, row in ipairs(self.ccRows) do row:Hide() end
+    end
+
+    -- Defensive Timing section
+    local cdSequence = session.cdSequence or {}
+    if #cdSequence > 0 then
+        self.defTitle:Show()
+        self.defCaption:Show()
+        for index, row in ipairs(self.defRows) do
+            local entry = cdSequence[index]
+            if entry then
+                local classification = entry.classification or "no_cc_context"
+                local colorR, colorG, colorB
+                if classification == "preemptive" then
+                    colorR, colorG, colorB = unpack(Theme.success)
+                elseif classification == "reactive_early" then
+                    colorR, colorG, colorB = unpack(Theme.warning)
+                elseif classification == "reactive_late" then
+                    colorR, colorG, colorB = 0.90, 0.30, 0.25
+                else
+                    colorR, colorG, colorB = unpack(Theme.textMuted)
+                end
+                row:SetText(string.format(
+                    "%s  —  %s  —  %.2fs lag",
+                    entry.spellName or "Unknown",
+                    prettifyToken(classification),
+                    entry.lagSeconds or 0
+                ))
+                row:SetTextColor(colorR, colorG, colorB, 1.0)
+                row:Show()
+            else
+                row:Hide()
+            end
+        end
+    else
+        self.defTitle:Hide()
+        self.defCaption:Hide()
+        for _, row in ipairs(self.defRows) do row:Hide() end
+    end
+
+    -- Death Analysis section
+    local deathCauses = session.deathCauses or {}
+    if #deathCauses > 0 then
+        self.deathTitle:Show()
+        self.deathCaption:Show()
+        for index, frame in ipairs(self.deathFrames) do
+            local cause = deathCauses[index]
+            if cause then
+                local sourceName = cause.sourceName or "Unknown"
+                local burstWindow = cause.burstWindow or 0
+                local totalBurst = cause.totalBurst or 0
+                local recentDamage = cause.recentDamage or {}
+                local chainParts = {}
+                for _, dmg in ipairs(recentDamage) do
+                    chainParts[#chainParts + 1] = dmg.spellName or "Unknown"
+                end
+                local chainText = #chainParts > 0
+                    and table.concat(chainParts, " \226\134\146 ")
+                    or "no spells recorded"
+                local line = string.format(
+                    "Killed by %s in %.1fs burst window. Kill chain: %s (total: %sk damage).",
+                    sourceName,
+                    burstWindow,
+                    chainText,
+                    ns.Helpers.FormatNumber(totalBurst)
+                )
+                if cause.wasCCed then
+                    local ccName = cause.ccSpellName or "Unknown CC"
+                    line = line .. string.format(
+                        "  |cffee5544WARNING: You were CCed by %s during the kill window.|r",
+                        ccName
+                    )
+                end
+                frame:SetText(line)
+                frame:SetTextColor(0.90, 0.30, 0.25, 1.0)
+                frame:Show()
+            else
+                frame:Hide()
+            end
+        end
+    else
+        self.deathTitle:Hide()
+        self.deathCaption:Hide()
+        for _, frame in ipairs(self.deathFrames) do frame:Hide() end
+    end
+
+    -- Show raw events only if there are rawEvents
+    local hasRawEvents = session.rawEvents and #session.rawEvents > 0
+    if hasRawEvents then
+        self.rawTitle:Show()
+        self.rawCaption:Show()
+        self.rawMeta:Show()
+        self.rawShell:Show()
+    else
+        self.rawTitle:Hide()
+        self.rawCaption:Hide()
+        self.rawMeta:Hide()
+        self.rawShell:Hide()
+    end
+
     local filteredRawEvents = self:FilterRawEvents(session)
     local totalPages = math.max(1, math.ceil(#filteredRawEvents / Constants.DETAIL_RAW_PAGE_SIZE))
     if self.rawPage > totalPages then
@@ -496,7 +1117,7 @@ function CombatDetailView:Refresh(payload)
     )
     self.rawMeta:SetText(filterLine)
     ns.Widgets.SetBodyText(self.rawContent, self.rawText, rawText)
-    ns.Widgets.SetCanvasHeight(self.canvas, 1520)
+    ns.Widgets.SetCanvasHeight(self.canvas, 2240)
 end
 
 ns.Addon:RegisterModule("CombatDetailView", CombatDetailView)

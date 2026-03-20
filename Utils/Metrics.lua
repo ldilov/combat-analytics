@@ -345,6 +345,75 @@ local function collectOpenerCooldownSpellIds(session, openerStart, openerEnd, li
     return result
 end
 
+-- Task 7.5: Compute per-CC-family diminishing-returns state from ccTimeline.
+-- DR tiers: full (100%) → half (50%) → quarter (25%) → immune (0%).
+-- DR resets after an 18-second gap with no CC of the same family.
+local DR_RESET_SECONDS = 18
+local DR_TIERS = { "full", "half", "quarter", "immune" }
+
+local function computeCCDRState(session)
+    if not session.ccTimeline or #session.ccTimeline == 0 then
+        return nil
+    end
+
+    local GetCCFamily = ns.StaticPvpData and ns.StaticPvpData.GetCCFamily
+    if not GetCCFamily then
+        return nil
+    end
+
+    -- ccTimeline is already sorted by startOffset
+    local families = {}
+    for _, cc in ipairs(session.ccTimeline) do
+        local family = GetCCFamily(cc.spellId)
+        if family then
+            local state = families[family]
+            if not state then
+                state = {
+                    applications = 0,
+                    currentTier = "full",
+                    immuneAt = nil,
+                    totalDuration = 0,
+                    _tierIndex = 1,
+                    _lastEndOffset = nil,
+                }
+                families[family] = state
+            end
+
+            local startOffset = cc.startOffset or 0
+            local duration = cc.duration or 0
+
+            -- Reset DR if gap since last CC end exceeds 18s
+            if state._lastEndOffset and (startOffset - state._lastEndOffset) > DR_RESET_SECONDS then
+                state._tierIndex = 1
+                state.currentTier = DR_TIERS[1]
+                state.immuneAt = nil
+            end
+
+            state.applications = state.applications + 1
+            state.currentTier = DR_TIERS[state._tierIndex]
+            state.totalDuration = state.totalDuration + duration
+            state._lastEndOffset = startOffset + duration
+
+            -- Advance DR tier for next application
+            if state._tierIndex < #DR_TIERS then
+                state._tierIndex = state._tierIndex + 1
+            else
+                -- Already at immune; record that this application was wasted
+                state.immuneAt = state.immuneAt or startOffset
+                state.wastedApplications = (state.wastedApplications or 0) + 1
+            end
+        end
+    end
+
+    -- Strip internal tracking fields before storing
+    for _, state in pairs(families) do
+        state._tierIndex = nil
+        state._lastEndOffset = nil
+    end
+
+    return families
+end
+
 function Metrics.DeriveWindows(session)
     if not hasRawTimeline(session) then
         session.windows = {}
@@ -375,6 +444,83 @@ function Metrics.DeriveWindows(session)
 
     session.windows = windows
     return windows
+end
+
+-- Task 2.5: Cooldown Sequencing vs Enemy Offense
+-- Compares player defensive cooldown usage against CC windows.
+function Metrics.DeriveCoordination(session)
+    if not session or not session.cooldowns or not session.ccTimeline then return end
+    if #session.ccTimeline == 0 then return end
+
+    local cdSequence = {}
+
+    for spellId, cd in pairs(session.cooldowns) do
+        if cd.firstUsedAt then
+            -- Find the nearest CC window to this defensive usage
+            local bestCCDist = math.huge
+            local bestCC = nil
+            for _, cc in ipairs(session.ccTimeline) do
+                local ccStart = cc.startOffset or 0
+                local ccEnd = ccStart + (cc.duration or 0)
+                local dist = cd.firstUsedAt - ccStart
+                if math.abs(dist) < math.abs(bestCCDist) then
+                    bestCCDist = dist
+                    bestCC = cc
+                end
+            end
+
+            local classification = "no_cc_context"
+            if bestCC then
+                local ccStart = bestCC.startOffset or 0
+                local ccEnd = ccStart + (bestCC.duration or 0)
+                if cd.firstUsedAt < ccStart then
+                    classification = "preemptive"
+                elseif cd.firstUsedAt <= ccStart + 1.0 then
+                    classification = "reactive_early"
+                elseif cd.firstUsedAt <= ccEnd then
+                    classification = "reactive_late"
+                else
+                    classification = "after_cc"
+                end
+            end
+
+            cdSequence[#cdSequence + 1] = {
+                spellId = spellId,
+                usedAt = cd.firstUsedAt,
+                classification = classification,
+                ccSpellId = bestCC and bestCC.spellId or nil,
+                lagSeconds = bestCC and (cd.firstUsedAt - (bestCC.startOffset or 0)) or nil,
+            }
+        end
+    end
+
+    if #cdSequence == 0 then return end
+
+    session.cdSequence = cdSequence
+
+    -- Compute coordination score (0-100)
+    -- Higher = better defensive timing
+    local totalWeight = 0
+    local weightedScore = 0
+    for _, entry in ipairs(cdSequence) do
+        local score = 50 -- neutral default
+        if entry.classification == "preemptive" then
+            score = 90
+        elseif entry.classification == "reactive_early" then
+            score = 75
+        elseif entry.classification == "reactive_late" then
+            score = 35
+        elseif entry.classification == "no_cc_context" then
+            score = 60
+        elseif entry.classification == "after_cc" then
+            score = 45
+        end
+        totalWeight = totalWeight + 1
+        weightedScore = weightedScore + score
+    end
+
+    session.metrics = session.metrics or {}
+    session.metrics.coordinationScore = Helpers.Round(totalWeight > 0 and (weightedScore / totalWeight) or 50, 1)
 end
 
 function Metrics.ComputeDerivedMetrics(session)
@@ -431,8 +577,22 @@ function Metrics.ComputeDerivedMetrics(session)
 
     local pressureScore = limitedTimeline and Helpers.Clamp((sustainedDps / 100), 0, 100) or Helpers.Clamp(((sustainedDps * 0.6) + (burstDps * 0.4)) / 100, 0, 100)
     local burstScore = limitedTimeline and Helpers.Clamp(concentrationProxy + sustainedBurstProxy + procBurstProxy, 0, 100) or Helpers.Clamp((burstDamage / math.max(outgoing, 1)) * 100, 0, 100)
+    -- Task 2.2: Time-under-CC metrics
+    local timeUnderCC = 0
+    for _, cc in ipairs(session.ccTimeline or {}) do
+        timeUnderCC = timeUnderCC + (cc.duration or 0)
+    end
+    local ccUptimePct = timeUnderCC / duration
+
     local survivabilityScore = Helpers.Clamp(((healing + 1) / math.max(incoming, 1)) * 65 + ((session.survival.defensivesUsed or 0) * 5), 0, 100)
+    -- Task 2.2: Surviving while CC'd is harder; bonus when CC uptime exceeds 30%
+    if ccUptimePct > 0.3 then
+        survivabilityScore = Helpers.Clamp(survivabilityScore + Helpers.Clamp(ccUptimePct * 15, 0, 15), 0, 100)
+    end
     local utilityEfficiency = Helpers.Clamp(((session.utility.successfulInterrupts or 0) * 12) + ((session.utility.dispels or 0) * 4) + ((session.utility.ccApplied or 0) * 2), 0, 100)
+
+    -- Task 7.5: CC Diminishing Returns state
+    local ccDRState = computeCCDRState(session)
 
     session.metrics = {
         sustainedDps = Helpers.Round(sustainedDps, 2),
@@ -455,7 +615,46 @@ function Metrics.ComputeDerivedMetrics(session)
         majorOffensiveCount = majorOffensiveCount,
         majorDefensiveCount = majorDefensiveCount,
         limitedBySource = limitedTimeline,
+        timeUnderCC = Helpers.Round(timeUnderCC, 2),
+        ccUptimePct = Helpers.Round(ccUptimePct, 4),
+        ccDRState = ccDRState,
     }
+
+    -- Greed death rate: proportion of deaths where a major defensive was available.
+    local greedDeaths      = (session.survival and session.survival.greedDeaths) or 0
+    local totalDeaths      = (session.survival and session.survival.deaths)      or 0
+    session.metrics.greedDeathRate = totalDeaths > 0 and (greedDeaths / totalDeaths) or 0
+
+    -- Defensive overlap rate: overlapping defensive activations / total defensive uses.
+    local overlapCount           = (session.survival and session.survival.defensiveOverlapCount) or 0
+    local defensivesUsed         = (session.survival and session.survival.defensivesUsed)        or 0
+    session.metrics.defensiveOverlapRate = defensivesUsed > 0 and (overlapCount / defensivesUsed) or 0
+
+    -- Burst waste rate: major offensive uses wasted into active enemy defensives.
+    local burstWasteCount = (session.survival and session.survival.burstWasteCount) or 0
+    local majorOffCount    = (session.metrics and session.metrics.majorOffensiveCount) or 0
+    session.metrics.burstWasteRate = majorOffCount > 0 and (burstWasteCount / majorOffCount) or 0
+
+    -- Kill window conversion rate.
+    local totalWindows = session.killWindows and #session.killWindows or 0
+    local converted    = session.killWindowConversions or 0
+    session.metrics.killWindowConversionRate = totalWindows > 0 and (converted / totalWindows) or 0
+    session.metrics.killWindowCount          = totalWindows
+
+    -- DR waste rate: applications that landed at immune tier / total CC applications.
+    -- wastedApplications is incremented in computeCCDRState each time an application
+    -- resolves at immune tier, regardless of DR resets within the session.
+    local drWasteCount        = 0
+    local drTotalApplications = 0
+    for _, familyState in pairs(session.metrics.ccDRState or {}) do
+        drTotalApplications = drTotalApplications + (familyState.applications or 0)
+        if familyState.wastedApplications and familyState.wastedApplications > 0 then
+            drWasteCount = drWasteCount + familyState.wastedApplications
+        end
+    end
+    session.metrics.drWasteCount = drWasteCount
+    session.metrics.drWasteRate  = drTotalApplications > 0
+        and (drWasteCount / drTotalApplications) or 0
 
     session.openerFingerprint = {
         -- engagementAt: timestampOffset of the first hostile combat event.

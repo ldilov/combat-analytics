@@ -6,9 +6,12 @@ local MainFrame = {
         { id = "history", label = "History", module = "CombatHistoryView" },
         { id = "detail", label = "Detail", module = "CombatDetailView" },
         { id = "opponents", label = "Opponent", module = "OpponentStatsView" },
-        { id = "classspec", label = "Class/Spec", module = "ClassSpecView" },
+        { id = "classspec", label = "Specs", module = "ClassSpecView" },
+        { id = "matchup", label = "Matchup", module = "MatchupDetailView", hidden = true },
         { id = "dummy", label = "Dummy", module = "DummyBenchmarkView" },
+        { id = "rating", label = "Rating", module = "RatingView" },
         { id = "insights", label = "Insights", module = "SuggestionsView" },
+        { id = "counterguide", label = "Counters", module = "CounterGuideView" },
         { id = "cleanup", label = "Cleanup", module = "CleanupView" },
     },
 }
@@ -113,32 +116,34 @@ function MainFrame:Initialize()
 
     local previousButton = nil
     for _, tab in ipairs(self.tabs) do
-        local width = math.max(92, 34 + (string.len(tab.label) * 8))
-        local button = ns.Widgets.CreateButton(self.tabStrip, tab.label, width, 24)
-        if previousButton then
-            button:SetPoint("TOPLEFT", previousButton, "TOPRIGHT", 6, 0)
-        else
-            button:SetPoint("TOPLEFT", self.tabStrip, "TOPLEFT", 0, 0)
-        end
-        button:SetScript("OnClick", function()
-            self:ShowView(tab.id)
-        end)
-        self.buttons[tab.id] = button
-        previousButton = button
-
+        -- Build the view regardless of whether the tab button is visible.
         local viewModule = ns.Addon:GetModule(tab.module)
+        local viewAvailable = false
         if viewModule then
             if runViewMethod(viewModule, "Build", self.content) and viewModule.frame then
-                button.isViewAvailable = true
+                viewAvailable = true
                 self.views[tab.id] = viewModule
                 viewModule.frame:Hide()
+            end
+        end
+
+        if not tab.hidden then
+            local width = math.max(72, 24 + (string.len(tab.label) * 7))
+            local button = ns.Widgets.CreateButton(self.tabStrip, tab.label, width, 24)
+            if previousButton then
+                button:SetPoint("TOPLEFT", previousButton, "TOPRIGHT", 4, 0)
             else
-                button.isViewAvailable = false
+                button:SetPoint("TOPLEFT", self.tabStrip, "TOPLEFT", 0, 0)
+            end
+            button:SetScript("OnClick", function()
+                self:ShowView(tab.id)
+            end)
+            button.isViewAvailable = viewAvailable
+            if not viewAvailable then
                 button:SetEnabled(false)
             end
-        else
-            button.isViewAvailable = false
-            button:SetEnabled(false)
+            self.buttons[tab.id] = button
+            previousButton = button
         end
     end
 end
@@ -196,6 +201,15 @@ function MainFrame:ShowView(viewId, payload)
             else
                 view.frame:Hide()
             end
+        end
+    end
+
+    -- When navigating to a hidden tab (e.g. matchup drill-down),
+    -- deactivate all visible tab buttons since none of them match.
+    local activeHasButton = self.buttons[self.activeViewId] ~= nil
+    if not activeHasButton then
+        for tabId, button in pairs(self.buttons) do
+            button:SetActive(false)
         end
     end
 end

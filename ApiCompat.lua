@@ -10,11 +10,21 @@ local function callIfPresent(func, ...)
 end
 
 function ApiCompat.GetCombatLogEventInfo()
+    -- Priority 1: C_CombatLog namespace — undocumented but referenced in
+    -- Blizzard_DeprecatedCombatLog as the canonical CLEU data source.
+    -- Works during COMBAT_LOG_EVENT_UNFILTERED.
     if C_CombatLog and C_CombatLog.GetCurrentEventInfo then
         return C_CombatLog.GetCurrentEventInfo()
     end
+    -- Priority 2: Deprecated global (only when loadDeprecationFallbacks CVar is true).
     if CombatLogGetCurrentEventInfo then
         return CombatLogGetCurrentEventInfo()
+    end
+    -- Priority 3: Internal API — only as last resort. Documented with its own
+    -- event (COMBAT_LOG_EVENT_INTERNAL_UNFILTERED) and may not return data
+    -- during COMBAT_LOG_EVENT_UNFILTERED. Not used by any Blizzard addon.
+    if C_CombatLogInternal and C_CombatLogInternal.GetCurrentEventInfo then
+        return C_CombatLogInternal.GetCurrentEventInfo()
     end
     return nil
 end
@@ -78,19 +88,86 @@ function ApiCompat.GetCombatSessionSourceFromType(sessionType, damageMeterType, 
     return nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Secret value protection (Midnight taint model)
+-- ---------------------------------------------------------------------------
+-- In Midnight (11.2+), Unit* APIs return **secret** values for arena enemy
+-- units during PvP combat.  Secret strings/numbers cannot be used as table
+-- keys, compared, concatenated, or stored without propagating taint that
+-- eventually crashes Blizzard UI code.
+--
+-- IsSecretValue(v) returns true when `v` is a tainted secret.
+-- The Safe* wrappers return nil/false instead of secret values so that all
+-- downstream code can rely on normal Lua values.
+-- ---------------------------------------------------------------------------
+
+local function isSecretValue(val)
+    if val == nil then return false end
+    -- Attempt a trivial operation.  If the value is secret the operation
+    -- raises an error that pcall catches.
+    local ok = pcall(function()
+        -- tostring on a secret string errors with "secret value" in Midnight.
+        local _ = tostring(val) .. ""
+    end)
+    return not ok
+end
+
+ApiCompat.IsSecretValue = isSecretValue
+
+-- Safely extract a number from a potentially secret value.
+-- Returns 0 if the value is secret, nil, or non-numeric.
+function ApiCompat.SanitizeNumber(val)
+    if val == nil then return 0 end
+    if isSecretValue(val) then return 0 end
+    return tonumber(val) or 0
+end
+
+-- Safely extract a string from a potentially secret value.
+-- Returns nil if the value is secret.
+function ApiCompat.SanitizeString(val)
+    if val == nil then return nil end
+    if isSecretValue(val) then return nil end
+    if type(val) ~= "string" then return tostring(val) end
+    return val
+end
+
+-- Safely extract a boolean-ish value from a potentially secret value.
+function ApiCompat.SanitizeBool(val)
+    if val == nil then return false end
+    if isSecretValue(val) then return false end
+    return val and true or false
+end
+
+-- Returns true when the unit token refers to an arena enemy slot.
+local function isArenaUnit(unit)
+    return unit and type(unit) == "string" and unit:find("^arena") ~= nil
+end
+
+ApiCompat.IsArenaUnit = isArenaUnit
+
 function ApiCompat.GetUnitGUID(unit)
-    return UnitGUID and UnitGUID(unit) or nil
+    if not UnitGUID then return nil end
+    local ok, guid = pcall(UnitGUID, unit)
+    if not ok or isSecretValue(guid) then return nil end
+    return guid
 end
 
 function ApiCompat.GetUnitName(unit)
-    return GetUnitName and GetUnitName(unit, true) or (UnitName and UnitName(unit))
+    local fn = GetUnitName or UnitName
+    if not fn then return nil end
+    local ok, name = pcall(fn, unit, true)
+    if not ok or isSecretValue(name) then return nil end
+    return name
 end
 
 function ApiCompat.GetUnitClass(unit)
     if not UnitClass then
         return nil, nil, nil
     end
-    local localized, english, classId = UnitClass(unit)
+    local ok, localized, english, classId = pcall(UnitClass, unit)
+    if not ok or isSecretValue(localized) then
+        return nil, nil, nil
+    end
     return localized, english, classId
 end
 
@@ -98,44 +175,74 @@ function ApiCompat.GetUnitRace(unit)
     if not UnitRace then
         return nil, nil, nil
     end
-    local localized, english, raceId = UnitRace(unit)
+    local ok, localized, english, raceId = pcall(UnitRace, unit)
+    if not ok or isSecretValue(localized) then
+        return nil, nil, nil
+    end
     return localized, english, raceId
 end
 
 function ApiCompat.GetUnitLevel(unit)
-    return UnitLevel and UnitLevel(unit) or nil
+    if not UnitLevel then return nil end
+    local ok, level = pcall(UnitLevel, unit)
+    if not ok or isSecretValue(level) then return nil end
+    return level
 end
 
 function ApiCompat.UnitIsPlayer(unit)
-    return UnitIsPlayer and UnitIsPlayer(unit) or false
+    if not UnitIsPlayer then return false end
+    local ok, result = pcall(UnitIsPlayer, unit)
+    if not ok then return false end
+    return result or false
 end
 
 function ApiCompat.UnitCanAttack(attacker, target)
-    return UnitCanAttack and UnitCanAttack(attacker, target) or false
+    if not UnitCanAttack then return false end
+    local ok, result = pcall(UnitCanAttack, attacker, target)
+    if not ok then return false end
+    return result or false
 end
 
 function ApiCompat.UnitIsEnemy(unitA, unitB)
-    return UnitIsEnemy and UnitIsEnemy(unitA, unitB) or false
+    if not UnitIsEnemy then return false end
+    local ok, result = pcall(UnitIsEnemy, unitA, unitB)
+    if not ok then return false end
+    return result or false
 end
 
 function ApiCompat.UnitExists(unit)
-    return UnitExists and UnitExists(unit) or false
+    if not UnitExists then return false end
+    local ok, result = pcall(UnitExists, unit)
+    if not ok then return false end
+    return result or false
 end
 
 function ApiCompat.UnitAffectingCombat(unit)
-    return UnitAffectingCombat and UnitAffectingCombat(unit) or false
+    if not UnitAffectingCombat then return false end
+    local ok, result = pcall(UnitAffectingCombat, unit)
+    if not ok then return false end
+    return result or false
 end
 
 function ApiCompat.UnitHealth(unit)
-    return UnitHealth and UnitHealth(unit) or 0
+    if not UnitHealth then return 0 end
+    local ok, result = pcall(UnitHealth, unit)
+    if not ok or isSecretValue(result) then return 0 end
+    return result or 0
 end
 
 function ApiCompat.UnitHealthMax(unit)
-    return UnitHealthMax and UnitHealthMax(unit) or 0
+    if not UnitHealthMax then return 0 end
+    local ok, result = pcall(UnitHealthMax, unit)
+    if not ok or isSecretValue(result) then return 0 end
+    return result or 0
 end
 
 function ApiCompat.UnitPower(unit, powerType)
-    return UnitPower and UnitPower(unit, powerType) or 0
+    if not UnitPower then return 0 end
+    local ok, result = pcall(UnitPower, unit, powerType)
+    if not ok or isSecretValue(result) then return 0 end
+    return result or 0
 end
 
 function ApiCompat.GetBestMapForUnit(unit)
@@ -167,6 +274,10 @@ end
 
 function ApiCompat.IsInBrawl()
     return C_PvP and C_PvP.IsInBrawl and C_PvP.IsInBrawl() or false
+end
+
+function ApiCompat.IsWargame()
+    return C_PvP and C_PvP.IsWargame and C_PvP.IsWargame() or false
 end
 
 function ApiCompat.IsBrawlSoloShuffle()
@@ -234,15 +345,27 @@ function ApiCompat.GetTeamInfo(team)
 end
 
 function ApiCompat.GetScoreInfo(index)
-    return C_PvP and C_PvP.GetScoreInfo and C_PvP.GetScoreInfo(index) or nil
+    -- SecretInActivePvPMatch = true: call only after PVP_MATCH_INACTIVE.
+    -- pcall as a last-resort guard; callers must sanitize all returned fields.
+    if not (C_PvP and C_PvP.GetScoreInfo) then return nil end
+    local ok, result = pcall(C_PvP.GetScoreInfo, index)
+    if not ok then return nil end
+    return result
 end
 
 function ApiCompat.GetScoreInfoByPlayerGUID(guid)
-    return C_PvP and C_PvP.GetScoreInfoByPlayerGuid and C_PvP.GetScoreInfoByPlayerGuid(guid) or nil
+    if not (C_PvP and C_PvP.GetScoreInfoByPlayerGuid) then return nil end
+    local ok, result = pcall(C_PvP.GetScoreInfoByPlayerGuid, guid)
+    if not ok then return nil end
+    return result
 end
 
 function ApiCompat.GetArenaCrowdControlInfo(unitToken)
-    return C_PvP and C_PvP.GetArenaCrowdControlInfo and C_PvP.GetArenaCrowdControlInfo(unitToken) or nil
+    -- SecretWhenLossOfControlInfoRestricted / SecretArguments in Midnight.
+    if not (C_PvP and C_PvP.GetArenaCrowdControlInfo) then return nil, nil, nil end
+    local ok, a, b, c = pcall(C_PvP.GetArenaCrowdControlInfo, unitToken)
+    if not ok then return nil, nil, nil end
+    return a, b, c
 end
 
 function ApiCompat.RequestCrowdControlSpell(unitToken)
@@ -365,7 +488,10 @@ end
 
 function ApiCompat.GenerateInspectImportString(unit)
     if C_Traits and C_Traits.GenerateInspectImportString then
-        return C_Traits.GenerateInspectImportString(unit)
+        local ok, result = pcall(C_Traits.GenerateInspectImportString, unit)
+        if ok and result and not isSecretValue(result) then
+            return result
+        end
     end
     return nil
 end
@@ -414,12 +540,15 @@ function ApiCompat.GetItemInfoInstant(item)
 end
 
 function ApiCompat.CanInspect(unit)
-    return CanInspect and CanInspect(unit) or false
+    if not CanInspect then return false end
+    local ok, result = pcall(CanInspect, unit)
+    if not ok then return false end
+    return result or false
 end
 
 function ApiCompat.NotifyInspect(unit)
     if NotifyInspect then
-        NotifyInspect(unit)
+        pcall(NotifyInspect, unit)
     end
 end
 
@@ -581,6 +710,108 @@ end
 
 function ApiCompat.CallIfPresent(func, ...)
     return callIfPresent(func, ...)
+end
+
+function ApiCompat.GetPVPActiveMatchPersonalRatedInfo()
+    if C_PvP and C_PvP.GetPVPActiveMatchPersonalRatedInfo then
+        return C_PvP.GetPVPActiveMatchPersonalRatedInfo()
+    end
+    return nil
+end
+
+function ApiCompat.DoesMatchOutcomeAffectRating()
+    if C_PvP and C_PvP.DoesMatchOutcomeAffectRating then
+        return C_PvP.DoesMatchOutcomeAffectRating()
+    end
+    return false
+end
+
+function ApiCompat.GetGlobalPvpScalingInfoForSpecID(specId)
+    if C_PvP and C_PvP.GetGlobalPvpScalingInfoForSpecID then
+        return C_PvP.GetGlobalPvpScalingInfoForSpecID(specId)
+    end
+    return nil
+end
+
+function ApiCompat.GetPersonalRatedSoloShuffleSpecStats()
+    if C_PvP and C_PvP.GetPersonalRatedSoloShuffleSpecStats then
+        return C_PvP.GetPersonalRatedSoloShuffleSpecStats()
+    end
+    return nil
+end
+
+function ApiCompat.GetPersonalRatedBGBlitzSpecStats()
+    if C_PvP and C_PvP.GetPersonalRatedBGBlitzSpecStats then
+        return C_PvP.GetPersonalRatedBGBlitzSpecStats()
+    end
+    return nil
+end
+
+function ApiCompat.GetPostMatchItemRewards()
+    if C_PvP and C_PvP.GetPostMatchItemRewards then
+        return C_PvP.GetPostMatchItemRewards()
+    end
+    return nil
+end
+
+function ApiCompat.GetPostMatchCurrencyRewards()
+    if C_PvP and C_PvP.GetPostMatchCurrencyRewards then
+        return C_PvP.GetPostMatchCurrencyRewards()
+    end
+    return nil
+end
+
+function ApiCompat.GetWeeklyChestInfo()
+    if C_PvP and C_PvP.GetWeeklyChestInfo then
+        return C_PvP.GetWeeklyChestInfo()
+    end
+    return nil
+end
+
+function ApiCompat.AreTrainingGroundsEnabled()
+    if C_PvP and C_PvP.AreTrainingGroundsEnabled then
+        return C_PvP.AreTrainingGroundsEnabled()
+    end
+    return false
+end
+
+function ApiCompat.GetTrainingGrounds()
+    if C_PvP and C_PvP.GetTrainingGrounds then
+        return C_PvP.GetTrainingGrounds()
+    end
+    return nil
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- C_SpellDiminish wrappers (Task 2.1)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+function ApiCompat.IsSpellDiminishSupported()
+    if not C_SpellDiminish or not C_SpellDiminish.IsSystemSupported then return false end
+    local ok, result = pcall(C_SpellDiminish.IsSystemSupported)
+    return ok and result or false
+end
+
+function ApiCompat.GetAllDiminishCategories(ruleset)
+    if not C_SpellDiminish or not C_SpellDiminish.GetAllSpellDiminishCategories then return nil end
+    local ok, result = pcall(C_SpellDiminish.GetAllSpellDiminishCategories, ruleset)
+    return ok and result or nil
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- C_LossOfControl wrappers (Task 2.2)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+function ApiCompat.GetActiveLossOfControlData(unit, index)
+    if not C_LossOfControl or not C_LossOfControl.GetActiveLossOfControlDataByUnit then return nil end
+    local ok, result = pcall(C_LossOfControl.GetActiveLossOfControlDataByUnit, unit, index)
+    return ok and result or nil
+end
+
+function ApiCompat.GetActiveLossOfControlDataCount(unit)
+    if not C_LossOfControl or not C_LossOfControl.GetActiveLossOfControlDataCountByUnit then return 0 end
+    local ok, result = pcall(C_LossOfControl.GetActiveLossOfControlDataCountByUnit, unit)
+    return ok and result or 0
 end
 
 ns.ApiCompat = ApiCompat
