@@ -64,11 +64,10 @@ local function buildSpecList()
 end
 
 local function getSpecWinLoss(store, specId)
-    if not store or not store.GetAggregateBuckets then return 0, 0 end
-    local buckets = store:GetAggregateBuckets("specs")
-    local key     = tostring(specId)
-    if not buckets or not buckets[key] then return 0, 0 end
-    return buckets[key].wins or 0, buckets[key].losses or 0
+    if not store or not store.GetAggregateBucketByKey then return 0, 0 end
+    local bucket = store:GetAggregateBucketByKey("specs", specId)
+    if not bucket then return 0, 0 end
+    return bucket.wins or 0, bucket.losses or 0
 end
 
 local function hideElements(pool)
@@ -194,7 +193,7 @@ function CounterGuideView:RefreshDetail()
     end
 
     local store          = ns.Addon:GetModule("CombatStore")
-    local snapshot       = ns.Addon.runtime and ns.Addon.runtime.playerSnapshot or nil
+    local snapshot       = ns.Addon:GetLatestPlayerSnapshot()
     local buildHash      = snapshot and snapshot.buildHash or nil
     local characterKey   = store and store:GetCurrentCharacterKey() or nil
     local strategyEngine = ns.Addon:GetModule("StrategyEngine")
