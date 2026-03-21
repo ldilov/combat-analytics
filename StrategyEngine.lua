@@ -141,6 +141,7 @@ function StrategyEngine.GetCounterGuide(specId, playerBuildHash, characterKey)
             end
         end
     end
+    local baselineThreat = ComputeBaselineThreatScore(specId)
 
     -- Top opponent spells (from specDamageSignatures).
     local topSpellsFromOpponent = {}
@@ -179,6 +180,7 @@ function StrategyEngine.GetCounterGuide(specId, playerBuildHash, characterKey)
         topSpellsFromOpponent = topSpellsFromOpponent,
         historicalWinRate = specWinRate,
         historicalFights = specFights,
+        baselineThreatScore  = baselineThreat,   -- NEW
         winRateByMMRBand = winRateByMMR,
         bestBuildVsSpec = bestBuild,
         currentBuildEffectiveness = buildEffectiveness,
