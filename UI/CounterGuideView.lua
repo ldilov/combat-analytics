@@ -1,87 +1,120 @@
 local _, ns = ...
 
-local Constants = ns.Constants
-local Helpers = ns.Helpers
-local Theme = ns.Widgets.THEME
+local ApiCompat = ns.ApiCompat
+local Helpers   = ns.Helpers
+local Theme     = ns.Widgets.THEME
 
 local CounterGuideView = {
-    viewId = "counterguide",
+    viewId         = "counterguide",
     selectedSpecId = nil,
 }
 
--- Ordered spec list grouped by class for the left panel.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- CC-family colour palette and display labels
+-- ─────────────────────────────────────────────────────────────────────────────
+local CC_COLORS = {
+    stun         = { 0.95, 0.40, 0.10, 1.0 },
+    incapacitate = { 0.95, 0.75, 0.10, 1.0 },
+    polymorph    = { 0.45, 0.45, 1.00, 1.0 },
+    root         = { 0.25, 0.85, 0.25, 1.0 },
+    fear         = { 0.70, 0.20, 0.85, 1.0 },
+    silence      = { 0.60, 0.60, 0.60, 1.0 },
+    disorient    = { 0.90, 0.55, 0.15, 1.0 },
+    sleep        = { 0.20, 0.65, 0.90, 1.0 },
+    disarm       = { 0.80, 0.50, 0.20, 1.0 },
+    knockback    = { 0.55, 0.90, 0.40, 1.0 },
+}
+
+local CC_LABEL = {
+    stun         = "Stun",
+    incapacitate = "Incap",
+    polymorph    = "Poly",
+    root         = "Root",
+    fear         = "Fear",
+    silence      = "Silence",
+    disorient    = "Disorient",
+    sleep        = "Sleep",
+    disarm       = "Disarm",
+    knockback    = "Knockback",
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Helpers
+-- ─────────────────────────────────────────────────────────────────────────────
 local function buildSpecList()
     local archetypes = ns.StaticPvpData and ns.StaticPvpData.SPEC_ARCHETYPES or {}
-    local byClass = {}
+    local byClass    = {}
     for specId, data in pairs(archetypes) do
-        local classFile = data.classFile or "UNKNOWN"
-        byClass[classFile] = byClass[classFile] or {}
-        byClass[classFile][#byClass[classFile] + 1] = {
-            specId = specId,
-            specName = data.specName or "Unknown",
-            classFile = classFile,
+        local cf = data.classFile or "UNKNOWN"
+        byClass[cf] = byClass[cf] or {}
+        byClass[cf][#byClass[cf] + 1] = {
+            specId    = specId,
+            specName  = data.specName or "Unknown",
+            classFile = cf,
             archetype = data.archetype,
         }
     end
-
-    -- Sort specs within each class alphabetically.
     local classList = {}
-    for classFile, specs in pairs(byClass) do
+    for cf, specs in pairs(byClass) do
         table.sort(specs, function(a, b) return a.specName < b.specName end)
-        classList[#classList + 1] = { classFile = classFile, specs = specs }
+        classList[#classList + 1] = { classFile = cf, specs = specs }
     end
     table.sort(classList, function(a, b) return a.classFile < b.classFile end)
     return classList
 end
 
+local function getSpecWinLoss(store, specId)
+    if not store or not store.GetAggregateBuckets then return 0, 0 end
+    local buckets = store:GetAggregateBuckets("specs")
+    local key     = tostring(specId)
+    if not buckets or not buckets[key] then return 0, 0 end
+    return buckets[key].wins or 0, buckets[key].losses or 0
+end
+
+local function hideElements(pool)
+    for _, e in ipairs(pool) do
+        if e and e.Hide then e:Hide() end
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Build (frame construction)
+-- ─────────────────────────────────────────────────────────────────────────────
 function CounterGuideView:Build(parent)
     self.frame = CreateFrame("Frame", nil, parent)
     self.frame:SetAllPoints()
 
-    self.title = ns.Widgets.CreateSectionTitle(self.frame, "Counter Guides", "TOPLEFT", self.frame, "TOPLEFT", 16, -16)
-    self.caption = ns.Widgets.CreateCaption(self.frame, "Select a spec to see matchup data and counter advice.", "TOPLEFT", self.title, "BOTTOMLEFT", 0, -4)
+    self.title   = ns.Widgets.CreateSectionTitle(self.frame, "Counter Guides", "TOPLEFT", self.frame, "TOPLEFT", 16, -16)
+    self.caption = ns.Widgets.CreateCaption(self.frame,
+        "Select a spec to see threat assessment, CC families, key spells, and counter strategy.",
+        "TOPLEFT", self.title, "BOTTOMLEFT", 0, -4)
 
-    -- Left panel: spec list.
     self.listShell, self.listScroll, self.listCanvas = ns.Widgets.CreateScrollCanvas(self.frame, 220, 400)
-    self.listShell:SetPoint("TOPLEFT", self.caption, "BOTTOMLEFT", 0, -12)
-    self.listShell:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", 16, 16)
+    self.listShell:SetPoint("TOPLEFT",    self.caption, "BOTTOMLEFT", 0, -12)
+    self.listShell:SetPoint("BOTTOMLEFT", self.frame,   "BOTTOMLEFT", 16, 16)
 
-    -- Right panel: detail card.
     self.detailShell, self.detailScroll, self.detailCanvas = ns.Widgets.CreateScrollCanvas(self.frame, 540, 400)
-    self.detailShell:SetPoint("TOPLEFT", self.listShell, "TOPRIGHT", 12, 0)
-    self.detailShell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 16)
+    self.detailShell:SetPoint("TOPLEFT",     self.listShell, "TOPRIGHT",    12, 0)
+    self.detailShell:SetPoint("BOTTOMRIGHT", self.frame,     "BOTTOMRIGHT", -16, 16)
 
-    self.specButtons = {}
+    self.specButtons    = {}
     self.detailElements = {}
 
     return self.frame
 end
 
-local function getSpecWinLoss(store, specId)
-    if not store or not store.GetAggregateBuckets then return 0, 0 end
-    local specBuckets = store:GetAggregateBuckets("specs")
-    local specKey = tostring(specId)
-    if not specBuckets or not specBuckets[specKey] then return 0, 0 end
-    return specBuckets[specKey].wins or 0, specBuckets[specKey].losses or 0
-end
-
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Refresh — spec list (left panel)
+-- ─────────────────────────────────────────────────────────────────────────────
 function CounterGuideView:Refresh()
     local store = ns.Addon:GetModule("CombatStore")
-    local characterKey = store and store:GetCurrentCharacterKey() or nil
-    local strategyEngine = ns.Addon:GetModule("StrategyEngine")
-
-    -- Build spec list in left panel.
     local classList = buildSpecList()
 
-    -- Release old buttons.
-    for _, btn in ipairs(self.specButtons) do
-        btn:Hide()
-    end
+    for _, btn in ipairs(self.specButtons) do btn:Hide() end
     self.specButtons = {}
 
     local yOffset = 0
     for _, classGroup in ipairs(classList) do
-        -- Class header.
         local header = self.listCanvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         header:SetPoint("TOPLEFT", self.listCanvas, "TOPLEFT", 4, -yOffset)
         header:SetText(classGroup.classFile)
@@ -95,160 +128,452 @@ function CounterGuideView:Refresh()
 
         for _, spec in ipairs(classGroup.specs) do
             local btn = CreateFrame("Button", nil, self.listCanvas)
-            btn:SetSize(200, 20)
+            btn:SetSize(200, 22)
             btn:SetPoint("TOPLEFT", self.listCanvas, "TOPLEFT", 8, -yOffset)
 
+            -- Small spec icon
+            local iconTex = btn:CreateTexture(nil, "ARTWORK")
+            iconTex:SetSize(16, 16)
+            iconTex:SetPoint("LEFT", btn, "LEFT", 0, 0)
+            local _, _, _, iconId = ApiCompat.GetSpecializationInfoByID(spec.specId)
+            if iconId then
+                iconTex:SetTexture(iconId)
+                iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            else
+                iconTex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+            end
+
             btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            btn.label:SetPoint("LEFT", btn, "LEFT", 0, 0)
+            btn.label:SetPoint("LEFT", iconTex, "RIGHT", 4, 0)
             btn.label:SetTextColor(unpack(Theme.text))
 
             local wins, losses = getSpecWinLoss(store, spec.specId)
             local badge = ""
             if wins + losses > 0 then
-                badge = string.format("  |cff00cc00%dW|r |cffcc0000%dL|r", wins, losses)
+                badge = string.format("  |cff00cc00%dW|r|cffcc0000%dL|r", wins, losses)
             end
             btn.label:SetText(spec.specName .. badge)
 
-            btn:SetScript("OnClick", function()
-                self.selectedSpecId = spec.specId
-                self:RefreshDetail()
-            end)
-            btn:SetScript("OnEnter", function(self)
-                self.label:SetTextColor(unpack(Theme.accent))
-            end)
-            btn:SetScript("OnLeave", function(self)
-                self.label:SetTextColor(unpack(Theme.text))
-            end)
+            local specId = spec.specId
+            btn:SetScript("OnClick",  function() self.selectedSpecId = specId; self:RefreshDetail() end)
+            btn:SetScript("OnEnter",  function(b) b.label:SetTextColor(unpack(Theme.accent)) end)
+            btn:SetScript("OnLeave",  function(b) b.label:SetTextColor(unpack(Theme.text)) end)
 
             self.specButtons[#self.specButtons + 1] = btn
-            yOffset = yOffset + 22
+            yOffset = yOffset + 24
         end
         yOffset = yOffset + 6
     end
 
     ns.Widgets.SetCanvasHeight(self.listCanvas, yOffset + 20)
 
-    -- Auto-select first spec if none selected.
     if not self.selectedSpecId and classList[1] and classList[1].specs[1] then
         self.selectedSpecId = classList[1].specs[1].specId
     end
-
     self:RefreshDetail()
 end
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- RefreshDetail — right panel
+-- ─────────────────────────────────────────────────────────────────────────────
 function CounterGuideView:RefreshDetail()
-    -- Clear old detail elements.
-    for _, elem in ipairs(self.detailElements) do
-        elem:Hide()
-    end
+    hideElements(self.detailElements)
     self.detailElements = {}
 
+    local canvas = self.detailCanvas
+    local el     = self.detailElements
+
     if not self.selectedSpecId then
-        local empty = self.detailCanvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        empty:SetPoint("TOPLEFT", self.detailCanvas, "TOPLEFT", 8, -8)
-        empty:SetTextColor(unpack(Theme.textMuted))
-        empty:SetText("Select a spec from the list.")
-        self.detailElements[#self.detailElements + 1] = empty
-        ns.Widgets.SetCanvasHeight(self.detailCanvas, 60)
+        local e = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        e:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -8)
+        e:SetTextColor(unpack(Theme.textMuted))
+        e:SetText("Select a spec from the list.")
+        el[#el + 1] = e
+        ns.Widgets.SetCanvasHeight(canvas, 60)
         return
     end
 
-    local store = ns.Addon:GetModule("CombatStore")
-    local characterKey = store and store:GetCurrentCharacterKey() or nil
-    local snapshot = ns.Addon.runtime and ns.Addon.runtime.playerSnapshot or nil
-    local buildHash = snapshot and snapshot.buildHash or nil
+    local store          = ns.Addon:GetModule("CombatStore")
+    local snapshot       = ns.Addon.runtime and ns.Addon.runtime.playerSnapshot or nil
+    local buildHash      = snapshot and snapshot.buildHash or nil
+    local characterKey   = store and store:GetCurrentCharacterKey() or nil
     local strategyEngine = ns.Addon:GetModule("StrategyEngine")
+
     local guide = strategyEngine and strategyEngine.GetCounterGuide
         and strategyEngine.GetCounterGuide(self.selectedSpecId, buildHash, characterKey) or nil
 
     if not guide then
-        local noData = self.detailCanvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        noData:SetPoint("TOPLEFT", self.detailCanvas, "TOPLEFT", 8, -8)
-        noData:SetTextColor(unpack(Theme.textMuted))
-        noData:SetText("No data available for this spec.")
-        self.detailElements[#self.detailElements + 1] = noData
-        ns.Widgets.SetCanvasHeight(self.detailCanvas, 60)
+        local e = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        e:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -8)
+        e:SetTextColor(unpack(Theme.textMuted))
+        e:SetText("No guide data available for this spec.")
+        el[#el + 1] = e
+        ns.Widgets.SetCanvasHeight(canvas, 60)
         return
     end
 
-    local yPos = -8
-    local function addLabel(text, color, font)
-        local fs = self.detailCanvas:CreateFontString(nil, "OVERLAY", font or "GameFontHighlight")
-        fs:SetPoint("TOPLEFT", self.detailCanvas, "TOPLEFT", 8, yPos)
-        fs:SetPoint("RIGHT", self.detailCanvas, "RIGHT", -8, 0)
-        fs:SetTextColor(unpack(color or Theme.text))
-        fs:SetText(text)
+    local yPos    = -8
+    local PAD     = 8
+    local WIDTH   = 490
+    local BAR_W   = WIDTH - 90
+    local BAR_H   = 14
+
+    -- ── layout helpers ───────────────────────────────────────────────────────
+    local function addText(text, color, font, indent)
+        indent = indent or PAD
+        local fs = canvas:CreateFontString(nil, "OVERLAY", font or "GameFontHighlight")
+        fs:SetPoint("TOPLEFT", canvas, "TOPLEFT", indent, yPos)
+        fs:SetWidth(WIDTH - indent)
         fs:SetJustifyH("LEFT")
         fs:SetWordWrap(true)
-        self.detailElements[#self.detailElements + 1] = fs
+        fs:SetTextColor(unpack(color or Theme.text))
+        fs:SetText(text)
+        el[#el + 1] = fs
         yPos = yPos - (fs:GetStringHeight() + 6)
         return fs
     end
 
-    -- Spec header.
-    local specName = guide.specName or "Unknown"
-    local classFile = guide.classFile or ""
-    addLabel(string.format("%s %s", classFile, specName), Theme.accent, "GameFontNormalLarge")
-
-    -- Archetype + range.
-    addLabel(string.format("Archetype: %s  |  Range: %s", guide.archetypeLabel or "—", guide.rangeBucket or "—"), Theme.textMuted, "GameFontHighlightSmall")
-
-    -- Threat tags.
-    if guide.threatTags and #guide.threatTags > 0 then
-        addLabel("Threats: " .. table.concat(guide.threatTags, ", "), Theme.warning, "GameFontHighlightSmall")
+    local function addRule(extraTop)
+        yPos = yPos - (extraTop or 4)
+        local line = canvas:CreateTexture(nil, "BACKGROUND")
+        line:SetHeight(1)
+        line:SetPoint("TOPLEFT",  canvas, "TOPLEFT",  PAD, yPos)
+        line:SetPoint("TOPRIGHT", canvas, "TOPRIGHT", -PAD, yPos)
+        line:SetColorTexture(Theme.border[1], Theme.border[2], Theme.border[3], 0.4)
+        el[#el + 1] = line
+        yPos = yPos - 6
     end
 
-    -- CC families.
+    local function addSection(text)
+        addRule()
+        addText(text, Theme.accent, "GameFontNormal")
+    end
+
+    local function addBar(fillFraction, r, g, b)
+        local bg = canvas:CreateTexture(nil, "BACKGROUND")
+        bg:SetSize(BAR_W, BAR_H)
+        bg:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+        bg:SetColorTexture(0.10, 0.10, 0.10, 0.9)
+        el[#el + 1] = bg
+
+        if fillFraction and fillFraction > 0 then
+            local fill = canvas:CreateTexture(nil, "ARTWORK")
+            fill:SetSize(math.max(2, math.floor(BAR_W * fillFraction)), BAR_H)
+            fill:SetPoint("TOPLEFT", bg, "TOPLEFT", 0, 0)
+            fill:SetColorTexture(r or 0.5, g or 0.5, b or 0.5, 0.85)
+            el[#el + 1] = fill
+        end
+        yPos = yPos - (BAR_H + 8)
+    end
+
+    -- ── SPEC HEADER ──────────────────────────────────────────────────────────
+    local specId    = guide.specId or self.selectedSpecId
+    local specName  = guide.specName or "Unknown"
+    local classFile = guide.classFile or ""
+    local ICON_S    = 40
+
+    local iconFrame = CreateFrame("Frame", nil, canvas)
+    iconFrame:SetSize(ICON_S, ICON_S)
+    iconFrame:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+    iconFrame:SetFrameLevel(canvas:GetFrameLevel() + 1)
+
+    local iconBg = iconFrame:CreateTexture(nil, "BACKGROUND")
+    iconBg:SetAllPoints()
+    iconBg:SetColorTexture(0.08, 0.08, 0.08, 1)
+
+    local iconTex = iconFrame:CreateTexture(nil, "ARTWORK")
+    iconTex:SetAllPoints()
+    do
+        local _, _, _, iconId = ApiCompat.GetSpecializationInfoByID(specId)
+        if iconId then
+            iconTex:SetTexture(iconId)
+            iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        else
+            iconTex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+        end
+    end
+    el[#el + 1] = iconFrame
+
+    -- Spec name (class-coloured)
+    local nameFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    nameFs:SetPoint("TOPLEFT", iconFrame, "TOPRIGHT", 8, -2)
+    nameFs:SetText(specName)
+    if RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile] then
+        local cc = RAID_CLASS_COLORS[classFile]
+        nameFs:SetTextColor(cc.r, cc.g, cc.b, 1)
+    else
+        nameFs:SetTextColor(unpack(Theme.text))
+    end
+    el[#el + 1] = nameFs
+
+    local subFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    subFs:SetPoint("TOPLEFT", nameFs, "BOTTOMLEFT", 0, -2)
+    subFs:SetTextColor(unpack(Theme.textMuted))
+    local rangePretty = guide.rangeBucket and
+        (guide.rangeBucket:sub(1,1):upper() .. guide.rangeBucket:sub(2)) or "—"
+    subFs:SetText(string.format("%s  ·  %s  ·  %s",
+        classFile, guide.archetypeLabel or "—", rangePretty))
+    el[#el + 1] = subFs
+
+    yPos = yPos - (ICON_S + 12)
+
+    -- ── THREAT BAR ───────────────────────────────────────────────────────────
+    addRule(2)
+
+    local fights      = guide.historicalFights or 0
+    local threatScore = (fights >= 3 and guide.historicalWinRate)
+        and (1.0 - guide.historicalWinRate) or 0.5
+
+    local thrLabel = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    thrLabel:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+    thrLabel:SetTextColor(unpack(Theme.textMuted))
+    thrLabel:SetText("Threat Level")
+    el[#el + 1] = thrLabel
+
+    local thrVal = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    thrVal:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD + BAR_W + 6, yPos)
+    thrVal:SetText(fights >= 3
+        and string.format("%.0f%%", threatScore * 100)
+        or  "? (no data)")
+    thrVal:SetTextColor(unpack(fights >= 3 and Theme.text or Theme.textMuted))
+    el[#el + 1] = thrVal
+    yPos = yPos - 18
+
+    do
+        local r, g, b = 0.90, 0.20, 0.15
+        if threatScore < 0.45 then r, g, b = 0.25, 0.80, 0.35
+        elseif threatScore < 0.70 then r, g, b = 0.90, 0.65, 0.10 end
+        addBar(threatScore, r, g, b)
+    end
+
+    -- ── WIN-RATE BAR ─────────────────────────────────────────────────────────
+    local wrLabel = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    wrLabel:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+    wrLabel:SetTextColor(unpack(Theme.textMuted))
+    wrLabel:SetText("Your Win Rate")
+    el[#el + 1] = wrLabel
+
+    local wrVal = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    wrVal:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD + BAR_W + 6, yPos)
+    if guide.historicalWinRate and fights >= 3 then
+        local wr = guide.historicalWinRate
+        wrVal:SetText(string.format("%.0f%%  (%d)", wr * 100, fights))
+        wrVal:SetTextColor(unpack(wr >= 0.5 and Theme.success or Theme.warning))
+    else
+        wrVal:SetText(fights > 0 and string.format("%d fight%s", fights, fights == 1 and "" or "s") or "No data")
+        wrVal:SetTextColor(unpack(Theme.textMuted))
+    end
+    el[#el + 1] = wrVal
+    yPos = yPos - 18
+
+    do
+        local wr = guide.historicalWinRate
+        if wr and fights >= 3 then
+            local r = wr >= 0.5 and 0.25 or 0.90
+            local g = wr >= 0.5 and 0.80 or 0.65
+            addBar(wr, r, g, 0.10)
+        else
+            addBar(0, 0, 0, 0)
+        end
+    end
+
+    -- ── THREAT TAGS ──────────────────────────────────────────────────────────
+    if guide.threatTags and #guide.threatTags > 0 then
+        addSection("Threat Tags")
+        local tx = PAD
+        for _, tag in ipairs(guide.threatTags) do
+            local fs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            fs:SetText("  " .. tag .. "  ")
+            fs:SetPoint("TOPLEFT", canvas, "TOPLEFT", tx, yPos)
+            fs:SetTextColor(unpack(Theme.warning))
+            el[#el + 1] = fs
+            local tw = fs:GetStringWidth() + 4
+            if tx + tw > WIDTH then
+                yPos = yPos - 20
+                tx = PAD
+                fs:ClearAllPoints()
+                fs:SetPoint("TOPLEFT", canvas, "TOPLEFT", tx, yPos)
+            end
+            tx = tx + tw + 6
+        end
+        yPos = yPos - 22
+    end
+
+    -- ── DR FAMILY VISUALIZATION ───────────────────────────────────────────────
     if guide.ccFamilies and next(guide.ccFamilies) then
+        addSection("CC Families  (DR Groups)")
+
+        -- guide.ccFamilies is an array of {spellId, family} objects; extract
+        -- unique family name strings (same pattern used in SuggestionsView).
         local families = {}
-        for family in pairs(guide.ccFamilies) do
-            families[#families + 1] = family
+        local seenFam  = {}
+        for _, entry in ipairs(guide.ccFamilies) do
+            local familyName = type(entry) == "table" and entry.family or tostring(entry)
+            if familyName and not seenFam[familyName] then
+                seenFam[familyName] = true
+                families[#families + 1] = familyName
+            end
         end
         table.sort(families)
-        addLabel("CC Families: " .. table.concat(families, ", "), Theme.textMuted, "GameFontHighlightSmall")
+
+        local TAG_H   = 20
+        local TAG_PAD = 8
+        local tx      = PAD
+
+        for _, family in ipairs(families) do
+            local label  = CC_LABEL[family] or family
+            local colors = CC_COLORS[family] or { 0.7, 0.7, 0.7, 1.0 }
+            local approxW = #label * 7 + TAG_PAD * 2
+
+            if tx + approxW > WIDTH then
+                yPos = yPos - (TAG_H + 4)
+                tx = PAD
+            end
+
+            -- Pill background
+            local pill = canvas:CreateTexture(nil, "BACKGROUND")
+            pill:SetSize(approxW, TAG_H)
+            pill:SetPoint("TOPLEFT", canvas, "TOPLEFT", tx, yPos)
+            pill:SetColorTexture(
+                colors[1] * 0.20, colors[2] * 0.20, colors[3] * 0.20, 0.95)
+            el[#el + 1] = pill
+
+            -- Pill text
+            local pillFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            pillFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", tx + TAG_PAD, yPos - 3)
+            pillFs:SetText(label)
+            pillFs:SetTextColor(colors[1], colors[2], colors[3], 1.0)
+            el[#el + 1] = pillFs
+
+            tx = tx + approxW + 6
+        end
+        yPos = yPos - (TAG_H + 10)
     end
 
-    -- Win rate.
-    if guide.historicalWinRate then
-        local wrColor = guide.historicalWinRate >= 0.5 and Theme.success or Theme.warning
-        addLabel(string.format("Win Rate: %.0f%% (%d fights)", guide.historicalWinRate * 100, guide.historicalFights or 0), wrColor)
-    else
-        addLabel("Win Rate: No data yet", Theme.textMuted, "GameFontHighlightSmall")
-    end
-
-    -- Best build.
-    if guide.bestBuildVsSpec then
-        addLabel(string.format("Best Build: %s (%.0f%% WR, %d fights)",
-            guide.bestBuildVsSpec.buildHash or "—",
-            (guide.bestBuildVsSpec.winRate or 0) * 100,
-            guide.bestBuildVsSpec.fights or 0
-        ), Theme.accentSoft, "GameFontHighlightSmall")
-    end
-
-    -- Top opponent spells.
+    -- ── KEY SPELLS TO WATCH (with icons) ─────────────────────────────────────
     if guide.topSpellsFromOpponent and #guide.topSpellsFromOpponent > 0 then
-        yPos = yPos - 6
-        addLabel("Top Opponent Spells:", Theme.text)
-        for i, spell in ipairs(guide.topSpellsFromOpponent) do
-            local spellInfo = ns.ApiCompat.GetSpellInfo(spell.spellId) or {}
-            local name = spellInfo.name or string.format("Spell %d", spell.spellId)
-            addLabel(string.format("  %d. %s — %s damage (%d hits)", i, name,
-                Helpers.FormatNumber(spell.totalDamage or 0),
-                spell.hitCount or 0
-            ), Theme.textMuted, "GameFontHighlightSmall")
+        addSection("Key Spells to Watch")
+
+        local ICO_S     = 24
+        local ROW_H     = ICO_S + 6
+        local COL_W     = math.floor(WIDTH / 2) - PAD
+        local maxSpells = math.min(8, #guide.topSpellsFromOpponent)
+        -- Capture base position BEFORE the loop so row offsets stay correct
+        -- even though yPos is shared state with the rest of the layout.
+        local spellGridTop = yPos
+
+        for i = 1, maxSpells do
+            local spell = guide.topSpellsFromOpponent[i]
+            local col   = (i - 1) % 2
+            local row   = math.floor((i - 1) / 2)
+            local xOff  = PAD + col * (COL_W + 8)
+            local yOff  = spellGridTop - row * (ROW_H + 4)
+
+            -- Icon frame
+            local iconF = CreateFrame("Frame", nil, canvas)
+            iconF:SetSize(ICO_S, ICO_S)
+            iconF:SetPoint("TOPLEFT", canvas, "TOPLEFT", xOff, yOff)
+            iconF:SetFrameLevel(canvas:GetFrameLevel() + 1)
+
+            local iconT = iconF:CreateTexture(nil, "ARTWORK")
+            iconT:SetAllPoints()
+            local spellInfo = ApiCompat.GetSpellInfo(spell.spellId)
+            if spellInfo and spellInfo.iconID then
+                iconT:SetTexture(spellInfo.iconID)
+                iconT:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            else
+                iconT:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+            end
+            el[#el + 1] = iconF
+
+            -- Spell name
+            local nameFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            nameFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", xOff + ICO_S + 4, yOff - 2)
+            nameFs:SetWidth(COL_W - ICO_S - 6)
+            local name = spellInfo and spellInfo.name or ("Spell " .. spell.spellId)
+            nameFs:SetText(name)
+            nameFs:SetTextColor(unpack(Theme.text))
+            el[#el + 1] = nameFs
+
+            -- Damage / hit count
+            local dmgFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            dmgFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", xOff + ICO_S + 4, yOff - 14)
+            dmgFs:SetWidth(COL_W - ICO_S - 6)
+            dmgFs:SetText(string.format("%s  (%d hits)",
+                Helpers.FormatNumber(spell.totalDamage or 0), spell.hitCount or 0))
+            dmgFs:SetTextColor(unpack(Theme.textMuted))
+            el[#el + 1] = dmgFs
         end
+
+        -- Advance yPos past all rows at once.
+        local numRows = math.ceil(maxSpells / 2)
+        yPos = spellGridTop - numRows * (ROW_H + 4) - 4
     end
 
-    -- Recommended actions.
+    -- ── COUNTER STRATEGY CARDS ────────────────────────────────────────────────
     if guide.recommendedActions and #guide.recommendedActions > 0 then
-        yPos = yPos - 6
-        addLabel("Recommended Actions:", Theme.accent)
+        addSection("Counter Strategy")
         for _, action in ipairs(guide.recommendedActions) do
-            addLabel("  • " .. action, Theme.text, "GameFontHighlightSmall")
+            local cardBg = canvas:CreateTexture(nil, "BACKGROUND")
+            cardBg:SetHeight(24)
+            cardBg:SetPoint("TOPLEFT",  canvas, "TOPLEFT",  PAD, yPos)
+            cardBg:SetPoint("TOPRIGHT", canvas, "TOPRIGHT", -PAD, yPos)
+            cardBg:SetColorTexture(
+                Theme.panel[1] + 0.04, Theme.panel[2] + 0.04, Theme.panel[3] + 0.04, 0.75)
+            el[#el + 1] = cardBg
+
+            local bullet = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            bullet:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD + 6, yPos - 4)
+            bullet:SetPoint("RIGHT",   canvas, "RIGHT",  -PAD, 0)
+            bullet:SetJustifyH("LEFT")
+            bullet:SetWordWrap(true)
+            bullet:SetTextColor(unpack(Theme.text))
+            bullet:SetText("▸  " .. action)
+            el[#el + 1] = bullet
+            yPos = yPos - (bullet:GetStringHeight() + 10)
         end
     end
 
-    ns.Widgets.SetCanvasHeight(self.detailCanvas, math.abs(yPos) + 20)
+    -- ── INTERRUPT PRIORITY + SAFE WINDOWS ───────────────────────────────────
+    if guide.interruptPriority and #guide.interruptPriority > 0 then
+        addSection("Interrupt Priority")
+        for i, spell in ipairs(guide.interruptPriority) do
+            addText(string.format("%d.  %s", i, spell), Theme.text, "GameFontHighlightSmall", PAD + 4)
+        end
+    end
+
+    if guide.safeWindows and #guide.safeWindows > 0 then
+        addSection("Safe Offensive Windows")
+        for _, w in ipairs(guide.safeWindows) do
+            addText("✦  " .. w, Theme.success, "GameFontHighlightSmall", PAD + 4)
+        end
+    end
+
+    -- ── MURLOK GLOBAL WIN RATE ───────────────────────────────────────────────
+    if guide.murlokWinRate then
+        addRule()
+        addText(string.format("Global win rate (murlok.io): %.1f%%", guide.murlokWinRate * 100),
+            Theme.textMuted, "GameFontHighlightSmall")
+    end
+
+    -- ── BEST BUILD VS THIS SPEC ───────────────────────────────────────────────
+    if guide.bestBuildVsSpec then
+        addSection("Best Build vs This Spec")
+        local b = guide.bestBuildVsSpec
+        addText(string.format("Build %s  →  %.0f%% WR  (%d fights)",
+            b.buildHash or "—", (b.winRate or 0) * 100, b.fights or 0),
+            Theme.accentSoft, "GameFontHighlightSmall")
+    end
+
+    -- ── DATA GAP NOTICE ───────────────────────────────────────────────────────
+    if fights < 3 then
+        addRule()
+        addText(
+            "Not enough match history vs this spec yet — play more games to unlock personalised stats.",
+            Theme.textMuted, "GameFontHighlightSmall")
+    end
+
+    ns.Widgets.SetCanvasHeight(canvas, math.abs(yPos) + 30)
 end
 
 ns.Addon:RegisterModule("CounterGuideView", CounterGuideView)

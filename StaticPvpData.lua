@@ -6,6 +6,7 @@ local generated = ns.GeneratedSeedData or {}
 local seedMaps             = ns.SeedMaps             or {}
 local seedCompArchetypes   = ns.SeedCompArchetypes   or {}
 local seedMetricThresholds = ns.SeedMetricThresholds or {}
+local seedCounterTips      = (ns.GeneratedSeedData and ns.GeneratedSeedData.counterTips) or {}
 
 local function normalizeName(name)
     local value = string.lower(Helpers.Trim(tostring(name or "")) or "")
@@ -84,6 +85,7 @@ ns.StaticPvpData = {
     MAPS               = seedMaps,
     COMP_ARCHETYPES    = seedCompArchetypes,
     METRIC_THRESHOLDS  = seedMetricThresholds,
+    COUNTER_TIPS       = seedCounterTips,
 }
 
 function ns.StaticPvpData.GetDummyInfo(creatureId)
@@ -129,6 +131,10 @@ function ns.StaticPvpData.GetMapInfo(mapId)
     return (m.arenas       and m.arenas[mapId])
         or (m.battlegrounds and m.battlegrounds[mapId])
         or nil
+end
+
+function ns.StaticPvpData.GetCounterTips(specId)
+    return specId and seedCounterTips[specId] or nil
 end
 
 function ns.StaticPvpData.IsTrainingDummyName(name)

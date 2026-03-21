@@ -1,0 +1,93 @@
+name: Update Seed Data
+
+on:
+  # Run every Monday at 06:00 UTC (fresh weekly data)
+  schedule:
+    - cron: "0 6 * * 1"
+
+  # Allow manual trigger from the Actions tab
+  workflow_dispatch:
+    inputs:
+      skip_murlok:
+        description: "Skip murlok.io fetch (use cached data)"
+        required: false
+        default: "false"
+        type: boolean
+      skip_bnet:
+        description: "Skip Battle.net API calls"
+        required: false
+        default: "false"
+        type: boolean
+
+jobs:
+  update-seed:
+    name: Fetch & Regenerate Seed Files
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Python ──────────────────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      # ── Fetch counter data (murlok.io + static tips) ────────────────────────
+      - name: Fetch counter data
+        env:
+          BNET_CLIENT_ID:     ${{ secrets.BNET_CLIENT_ID }}
+          BNET_CLIENT_SECRET: ${{ secrets.BNET_CLIENT_SECRET }}
+          BNET_REGION:        eu
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.skip_murlok }}" = "true" ]; then
+            ARGS="$ARGS --skip-murlok"
+          fi
+          if [ "${{ github.event.inputs.skip_bnet }}" = "true" ]; then
+            ARGS="$ARGS --skip-bnet"
+          fi
+          python scripts/fetch_counter_data.py $ARGS
+
+      # ── Fetch spec baseline (Blizzard API) ──────────────────────────────────
+      - name: Fetch spec baseline
+        if: ${{ github.event.inputs.skip_bnet != 'true' }}
+        env:
+          BNET_CLIENT_ID:     ${{ secrets.BNET_CLIENT_ID }}
+          BNET_CLIENT_SECRET: ${{ secrets.BNET_CLIENT_SECRET }}
+          BNET_REGION:        eu
+        run: python scripts/fetch_blizzard_data.py
+        continue-on-error: true   # don't fail the whole job if Blizzard API is down
+
+      # ── Generate spec baseline Lua ───────────────────────────────────────────
+      - name: Generate SeedSpecBaseline.lua
+        if: ${{ github.event.inputs.skip_bnet != 'true' }}
+        run: python scripts/generate_seed_from_api.py
+        continue-on-error: true
+
+      # ── Commit if anything changed ───────────────────────────────────────────
+      - name: Check for changes
+        id: diff
+        run: |
+          git diff --quiet seed/generated/ data/raw/ || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Commit updated seed files
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add seed/generated/ data/raw/
+          git commit -m "chore(seed): auto-update seed data $(date -u '+%Y-%m-%d')"
+          git push
+
+      - name: No changes
+        if: steps.diff.outputs.changed != 'true'
+        run: echo "Seed data is already up to date — nothing to commit."
