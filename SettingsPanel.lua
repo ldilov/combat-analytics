@@ -38,7 +38,7 @@ function SettingsPanel:RefreshStatus()
         "Raw event timeline: unavailable on Midnight-safe mode",
         string.format("Include general combat: %s", ns.Addon:GetSetting("includeGeneralCombat") and "enabled" or "disabled"),
         string.format("Theme preset: %s", ns.Addon:GetSetting("themePreset") or "default"),
-        "Minimap button: disabled during stabilization",
+        string.format("Minimap button: %s  (use /ca minimap to toggle)", ns.Addon:GetSetting("showMinimapButton") and "shown" or "hidden"),
         "",
         "Use /caa or /combatanalytics to open the addon directly.",
     }
@@ -123,6 +123,16 @@ function SettingsPanel:BuildPanel()
     self.generalButton:SetPoint("LEFT", self.rawButton, "RIGHT", 8, 0)
     self.generalButton:SetScript("OnClick", function()
         ns.Addon:SetSetting("includeGeneralCombat", not ns.Addon:GetSetting("includeGeneralCombat"))
+        self:RefreshStatus()
+    end)
+
+    self.minimapButton = ns.Widgets.CreateButton(panel, "Toggle Minimap", 130, 24)
+    self.minimapButton:SetPoint("LEFT", self.generalButton, "RIGHT", 8, 0)
+    self.minimapButton:SetScript("OnClick", function()
+        local current = ns.Addon:GetSetting("showMinimapButton")
+        ns.Addon:SetSetting("showMinimapButton", not current)
+        local minimapModule = ns.Addon:GetModule("MinimapButton")
+        if minimapModule then minimapModule:RefreshVisibility() end
         self:RefreshStatus()
     end)
 

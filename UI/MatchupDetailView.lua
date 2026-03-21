@@ -220,11 +220,16 @@ function MatchupDetailView:Refresh(payload)
             addLabel("Threats: " .. table.concat(guide.threatTags, ", "), Theme.warning, "GameFontHighlightSmall")
         end
 
-        -- CC families
-        if guide.ccFamilies and next(guide.ccFamilies) then
+        -- CC families — guide.ccFamilies is an array of {spellId, family} objects.
+        if guide.ccFamilies and #guide.ccFamilies > 0 then
             local families = {}
-            for family in pairs(guide.ccFamilies) do
-                families[#families + 1] = family
+            local seenFam  = {}
+            for _, entry in ipairs(guide.ccFamilies) do
+                local familyName = type(entry) == "table" and entry.family or tostring(entry)
+                if familyName and not seenFam[familyName] then
+                    seenFam[familyName] = true
+                    families[#families + 1] = familyName
+                end
             end
             table.sort(families)
             addLabel("CC Families: " .. table.concat(families, ", "), Theme.textMuted, "GameFontHighlightSmall")

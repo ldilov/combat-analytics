@@ -72,3 +72,64 @@ ns.StaticPvpData = { ..., PVP_TALENT_CATALOG = pvpTalentCatalog }
 `data/raw/*.json` files are committed to the repo. This means:
 - Lua seed files can be regenerated without API credentials.
 - Diffs are visible when the API data changes after a re-fetch.
+---
+
+## Counter Data Script
+
+Fetches spec win rates from murlok.io and generates 
+with curated counter tips, interrupt priority lists, and safe-window hints per spec.
+
+### Step 1: Run after install (or to update)
+
+```bash
+# With Battle.net credentials (fetches live spec data too):
+python scripts/fetch_counter_data.py
+
+# Without credentials (murlok.io only):
+python scripts/fetch_counter_data.py --skip-bnet
+
+# Completely offline (uses cached data + static tips only):
+python scripts/fetch_counter_data.py --skip-murlok --skip-bnet
+```
+
+Environment variables:
+| Variable | Description |
+|---|---|
+|  | Battle.net OAuth client ID |
+|  | Battle.net OAuth client secret |
+|  | /// (default: ) |
+
+### GitHub Actions (automated weekly refresh)
+
+The workflow === CombatAnalytics counter-data fetch ===
+Region: eu
+Fetching murlok.io win rates …
+[warn] murlok.io fetch failed: 404 Client Error: Not Found for url: https://murlok.io/arena/spec-distribution
+  → 0 spec win rates retrieved
+  → Cached to D:\Workspaceepos\combat-analytics\dataaw\murlok_winrates.json
+[ok] Wrote D:\Workspaceepos\combat-analytics\seed\generated\SeedCounterTips.lua
+
+Done. Reload your addon or restart WoW to pick up the new seed file.
+Output: D:\Workspaceepos\combat-analytics\seed\generated\SeedCounterTips.lua
+[main 012e699] chore(seed): auto-update seed data 2026-03-21
+ 2 files changed, 184 insertions(+)
+ create mode 100644 data/raw/murlok_winrates.json
+ create mode 100644 seed/generated/SeedCounterTips.lua runs every Monday at 06:00 UTC
+and commits updated seed files automatically.
+
+**Required repository secrets:**
+- 
+- 
+
+To trigger manually: GitHub → Actions tab → **Update Seed Data** → **Run workflow**.
+
+### CurseForge integration
+
+After installing the addon via CurseForge, run the script once to get fresh data:
+
+```bash
+cd <path-to-CombatAnalytics-addon-folder>
+python scripts/fetch_counter_data.py
+```
+
+The addon will pick up the new  on next WoW reload.

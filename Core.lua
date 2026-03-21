@@ -436,12 +436,18 @@ function Addon:HandleCommand(input)
     end
 
     if command == "minimap" then
-        self:SetSetting("showMinimapButton", false)
+        local current = self:GetSetting("showMinimapButton")
+        local next = not current
+        self:SetSetting("showMinimapButton", next)
         local minimapButton = self:GetModule("MinimapButton")
-        if minimapButton and minimapButton.button then
-            minimapButton.button:Hide()
+        if minimapButton then
+            minimapButton:RefreshVisibility()
         end
-        self:Print("Minimap button is disabled during taint stabilization. Use |cff35c7e5/ca|r to open the UI.")
+        if next then
+            self:Print("Minimap button |cff70d196shown|r. Drag to reposition.")
+        else
+            self:Print("Minimap button |cffe64d40hidden|r. Use |cff35c7e5/ca minimap|r to show it again.")
+        end
         return
     end
 
