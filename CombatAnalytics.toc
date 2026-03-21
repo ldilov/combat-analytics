@@ -12,6 +12,8 @@ seed\generated\SeedSpellIntelligence.lua
 seed\generated\SeedSpecArchetypes.lua
 seed\generated\SeedArenaControl.lua
 seed\generated\SeedCounterTips.lua
+seed\generated\SeedSpecMeta.lua
+seed\generated\SeedPvpTalents.lua
 seed\Maps.lua
 seed\CompArchetypes.lua
 seed\MetricThresholds.lua

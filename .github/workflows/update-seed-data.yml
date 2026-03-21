@@ -57,7 +57,17 @@ jobs:
           fi
           python scripts/fetch_counter_data.py $ARGS
 
-      # ── Fetch spec baseline (Blizzard API) ──────────────────────────────────
+      # ── Fetch spec meta + PvP talents (Blizzard Game Data API) ─────────────
+      - name: Fetch spec meta and PvP talents
+        if: ${{ github.event.inputs.skip_bnet != 'true' }}
+        env:
+          BNET_CLIENT_ID:     ${{ secrets.BNET_CLIENT_ID }}
+          BNET_CLIENT_SECRET: ${{ secrets.BNET_CLIENT_SECRET }}
+          BNET_REGION:        eu
+        run: python scripts/fetch_bnet_seed.py
+        continue-on-error: true   # don't fail the whole job if Blizzard API is down
+
+      # ── Fetch spec baseline (legacy Blizzard API script) ────────────────────
       - name: Fetch spec baseline
         if: ${{ github.event.inputs.skip_bnet != 'true' }}
         env:
@@ -65,7 +75,7 @@ jobs:
           BNET_CLIENT_SECRET: ${{ secrets.BNET_CLIENT_SECRET }}
           BNET_REGION:        eu
         run: python scripts/fetch_blizzard_data.py
-        continue-on-error: true   # don't fail the whole job if Blizzard API is down
+        continue-on-error: true
 
       # ── Generate spec baseline Lua ───────────────────────────────────────────
       - name: Generate SeedSpecBaseline.lua
@@ -73,18 +83,22 @@ jobs:
         run: python scripts/generate_seed_from_api.py
         continue-on-error: true
 
+      # ── Regenerate static Lua seed files from curated JSON sources ───────────
+      - name: Regenerate seed Lua from JSON sources
+        run: python scripts/generate_seed_lua.py
+
       # ── Commit if anything changed ───────────────────────────────────────────
       - name: Check for changes
         id: diff
         run: |
-          git diff --quiet seed/generated/ data/raw/ || echo "changed=true" >> $GITHUB_OUTPUT
+          git diff --quiet seed/ || echo "changed=true" >> $GITHUB_OUTPUT
 
       - name: Commit updated seed files
         if: steps.diff.outputs.changed == 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add seed/generated/ data/raw/
+          git add seed/
           git commit -m "chore(seed): auto-update seed data $(date -u '+%Y-%m-%d')"
           git push
 

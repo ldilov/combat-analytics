@@ -46,7 +46,7 @@ except ImportError:
 SCRIPT_DIR  = Path(__file__).resolve().parent
 ADDON_ROOT  = SCRIPT_DIR.parent
 SEED_OUT    = ADDON_ROOT / "seed" / "generated" / "SeedCounterTips.lua"
-RAW_DIR     = ADDON_ROOT / "data" / "raw"
+RAW_DIR     = ADDON_ROOT / "seed" / "raw"
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------

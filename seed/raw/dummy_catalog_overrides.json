@@ -1,4 +1,5 @@
 {
+  "_comment": "Full training dummy catalog. Add new entries here; generate_seed_lua.py reads this to regenerate SeedDummyCatalog.lua.",
   "dummies": [
     {
       "creatureID": 31144,
@@ -25,6 +26,66 @@
       "benchmarkGroup": "dungeon",
       "isDungeonDummy": true,
       "isPvPUseful": true
+    },
+    {
+      "creatureID": 32666,
+      "displayName": "Training Dummy",
+      "normalizedName": "training dummy",
+      "family": "basic",
+      "benchmarkGroup": "general",
+      "isPvPUseful": true
+    },
+    {
+      "creatureID": 44171,
+      "displayName": "Training Dummy",
+      "normalizedName": "training dummy",
+      "family": "basic",
+      "benchmarkGroup": "general",
+      "isPvPUseful": true
+    },
+    {
+      "creatureID": 44614,
+      "displayName": "Training Dummy",
+      "normalizedName": "training dummy",
+      "family": "basic",
+      "benchmarkGroup": "general",
+      "isPvPUseful": true
+    },
+    {
+      "creatureID": 194643,
+      "displayName": "Training Grounds Tank Dummy",
+      "normalizedName": "training grounds tank dummy",
+      "family": "training_grounds",
+      "benchmarkGroup": "pvp",
+      "isPvPUseful": true,
+      "isTrainingGrounds": true
+    },
+    {
+      "creatureID": 194644,
+      "displayName": "Training Grounds PvP Dummy",
+      "normalizedName": "training grounds pvp dummy",
+      "family": "training_grounds",
+      "benchmarkGroup": "pvp",
+      "isPvPUseful": true,
+      "isTrainingGrounds": true
+    },
+    {
+      "creatureID": 194648,
+      "displayName": "Training Grounds Dummy",
+      "normalizedName": "training grounds dummy",
+      "family": "training_grounds",
+      "benchmarkGroup": "pvp",
+      "isPvPUseful": true,
+      "isTrainingGrounds": true
+    },
+    {
+      "creatureID": 194649,
+      "displayName": "Training Grounds Healer Dummy",
+      "normalizedName": "training grounds healer dummy",
+      "family": "training_grounds",
+      "benchmarkGroup": "pvp",
+      "isPvPUseful": true,
+      "isTrainingGrounds": true
     }
   ]
 }
