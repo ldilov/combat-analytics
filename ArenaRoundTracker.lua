@@ -389,7 +389,12 @@ function ArenaRoundTracker:HandleArenaOpponentUpdate(unitToken, updateReason)
             })
         end
         local snapshot = buildUnitSnapshot(unitToken)
-        if snapshot then
+        -- Reject snapshots whose GUID is the local player.  After a match ends
+        -- arena unit tokens can briefly become invalid or transition through
+        -- states where UnitGUID returns the player's own GUID; storing that
+        -- would cause the player to appear as their own opponent in history.
+        local myGuid = ApiCompat.GetPlayerGUID()
+        if snapshot and snapshot.guid ~= myGuid then
             s.visible    = true
             s.guid       = snapshot.guid
             s.name       = snapshot.name
@@ -625,10 +630,14 @@ end
 function ArenaRoundTracker:GetPrimaryEnemy()
     local round = self:GetCurrentRound()
     if not round then return nil end
+    -- Never return the player's own slot as the primary enemy.  In edge cases
+    -- (arena unit-token reuse after match end, brief transition states) a slot
+    -- can be populated with the local player's GUID; guard against that here.
+    local myGuid = ApiCompat.GetPlayerGUID()
     local best = nil
     for slot = 1, 5 do
         local s = round.slots[slot]
-        if s and s.guid then
+        if s and s.guid and s.guid ~= myGuid then
             if not best or (s.pressureScore or 0) > (best.pressureScore or 0) then
                 best = s
             end

@@ -237,8 +237,16 @@ function Helpers.ResolveOpponentName(session, fallback)
     if session.postMatchScores then
         local ApiCompat = ns.ApiCompat
         local myGuid = ApiCompat and ApiCompat.GetPlayerGUID() or nil
+        -- Fallback: if entry.guid is nil (couldn't be harvested — secret or
+        -- missing at harvest time), check name instead.  Name isn't globally
+        -- unique but it's the only remaining signal; it correctly handles the
+        -- "played against myself" case where the player's own entry appears
+        -- first with a nil GUID but a non-nil name.
+        local myName = ApiCompat and ApiCompat.GetPlayerName() or nil
         for _, entry in ipairs(session.postMatchScores) do
-            if entry.guid ~= myGuid and entry.name then
+            local isPlayer = (myGuid ~= nil and entry.guid == myGuid)
+                          or (entry.guid == nil and myName ~= nil and entry.name == myName)
+            if not isPlayer and entry.name then
                 return entry.name
             end
         end
