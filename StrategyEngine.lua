@@ -130,11 +130,9 @@ function StrategyEngine.GetCounterGuide(specId, playerBuildHash, characterKey)
     -- Historical win rate from spec aggregate.
     local specWinRate = nil
     local specFights = 0
-    if store and store.GetAggregateBuckets then
-        local specBuckets = store:GetAggregateBuckets("specs")
-        local specKey = tostring(specId)
-        if specBuckets and specBuckets[specKey] then
-            local bucket = specBuckets[specKey]
+    if store and store.GetAggregateBucketByKey then
+        local bucket = store:GetAggregateBucketByKey("specs", specId, characterKey)
+        if bucket then
             specFights = bucket.fights or 0
             if specFights > 0 then
                 specWinRate = (bucket.wins or 0) / specFights
@@ -194,10 +192,9 @@ end
 -- Convenience: check if enough data exists for a meaningful guide.
 function StrategyEngine.HasSufficientData(specId, characterKey)
     local store = ns.Addon:GetModule("CombatStore")
-    if not store or not store.GetAggregateBuckets then return false end
-    local specBuckets = store:GetAggregateBuckets("specs")
-    local specKey = tostring(specId)
-    return specBuckets and specBuckets[specKey] and (specBuckets[specKey].fights or 0) >= 5
+    if not store or not store.GetAggregateBucketByKey then return false end
+    local bucket = store:GetAggregateBucketByKey("specs", specId, characterKey)
+    return bucket ~= nil and (bucket.fights or 0) >= 5
 end
 
 ns.Addon:RegisterModule("StrategyEngine", StrategyEngine)
