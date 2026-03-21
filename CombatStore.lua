@@ -165,6 +165,9 @@ local function applySessionToBucket(bucket, session)
 end
 
 local function getOrCreateBucket(container, kind, key, label)
+    -- Sanitize key: tostring() converts secret strings (WoW taint) to plain Lua
+    -- strings so they can safely be used as table keys and in string operations.
+    key = tostring(key or "unknown")
     if Helpers.IsBlank(key) then
         key = "unknown"
     end
