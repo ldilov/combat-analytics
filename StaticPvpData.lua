@@ -6,7 +6,9 @@ local generated = ns.GeneratedSeedData or {}
 local seedMaps             = ns.SeedMaps             or {}
 local seedCompArchetypes   = ns.SeedCompArchetypes   or {}
 local seedMetricThresholds = ns.SeedMetricThresholds or {}
-local seedCounterTips      = (ns.GeneratedSeedData and ns.GeneratedSeedData.counterTips) or {}
+local seedCounterTips      = (ns.GeneratedSeedData and ns.GeneratedSeedData.counterTips)  or {}
+local seedSpecMeta         = (ns.GeneratedSeedData and ns.GeneratedSeedData.specMeta)     or {}
+local seedPvpTalents       = (ns.GeneratedSeedData and ns.GeneratedSeedData.pvpTalents)   or {}
 
 local function normalizeName(name)
     local value = string.lower(Helpers.Trim(tostring(name or "")) or "")
@@ -86,6 +88,8 @@ ns.StaticPvpData = {
     COMP_ARCHETYPES    = seedCompArchetypes,
     METRIC_THRESHOLDS  = seedMetricThresholds,
     COUNTER_TIPS       = seedCounterTips,
+    SPEC_META          = seedSpecMeta,
+    PVP_TALENTS        = seedPvpTalents,
 }
 
 function ns.StaticPvpData.GetDummyInfo(creatureId)
@@ -135,6 +139,20 @@ end
 
 function ns.StaticPvpData.GetCounterTips(specId)
     return specId and seedCounterTips[specId] or nil
+end
+
+--- Returns official spec metadata (name, role, classFile, iconFileDataId) for a spec.
+--- Sourced from Blizzard Game Data API via fetch_bnet_seed.py.
+function ns.StaticPvpData.GetSpecMeta(specId)
+    return specId and seedSpecMeta[specId] or nil
+end
+
+--- Returns all PvP talents for a spec as an array of
+--- {talentId, spellId, name, description, castTime, slots}.
+--- spellId is suitable for C_Spell.GetSpellInfo(spellId).iconID icon lookup.
+function ns.StaticPvpData.GetPvpTalentsForSpec(specId)
+    if not specId then return {} end
+    return seedPvpTalents[specId] or {}
 end
 
 function ns.StaticPvpData.IsTrainingDummyName(name)
