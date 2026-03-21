@@ -94,6 +94,21 @@ function StrategyEngine.GetCounterGuide(specId, playerBuildHash, characterKey)
     local archetypeKey = archetype and archetype.archetype or nil
     local recommendedActions = ARCHETYPE_ACTIONS[archetypeKey] or DEFAULT_ACTIONS
 
+    -- Enrich with static counter tips from SeedCounterTips (if available).
+    local counterTips = ns.StaticPvpData and ns.StaticPvpData.GetCounterTips
+        and ns.StaticPvpData.GetCounterTips(specId) or nil
+    if counterTips then
+        -- Merge seed tips before archetype actions for richer output.
+        local merged = {}
+        for _, t in ipairs(counterTips.tips or {}) do
+            merged[#merged + 1] = t
+        end
+        for _, a in ipairs(recommendedActions) do
+            merged[#merged + 1] = a
+        end
+        recommendedActions = merged
+    end
+
     return {
         specId = specId,
         archetypeLabel = archetype and archetype.archetype or "unknown",
@@ -108,7 +123,10 @@ function StrategyEngine.GetCounterGuide(specId, playerBuildHash, characterKey)
         winRateByMMRBand = winRateByMMR,
         bestBuildVsSpec = bestBuild,
         currentBuildEffectiveness = buildEffectiveness,
-        recommendedActions = recommendedActions,
+        recommendedActions   = recommendedActions,
+        interruptPriority    = counterTips and counterTips.interruptPriority or {},
+        safeWindows          = counterTips and counterTips.safeWindows or {},
+        murlokWinRate        = counterTips and counterTips.murlokWinRate or nil,
     }
 end
 
