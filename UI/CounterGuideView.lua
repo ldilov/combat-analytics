@@ -249,7 +249,7 @@ function CounterGuideView:RefreshDetail()
         addText(text, Theme.accent, "GameFontNormal")
     end
 
-    local function addBar(fillFraction, r, g, b)
+    local function addBar(fillFraction, r, g, b, alpha)
         local bg = canvas:CreateTexture(nil, "BACKGROUND")
         bg:SetSize(BAR_W, BAR_H)
         bg:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
@@ -260,7 +260,7 @@ function CounterGuideView:RefreshDetail()
             local fill = canvas:CreateTexture(nil, "ARTWORK")
             fill:SetSize(math.max(2, math.floor(BAR_W * fillFraction)), BAR_H)
             fill:SetPoint("TOPLEFT", bg, "TOPLEFT", 0, 0)
-            fill:SetColorTexture(r or 0.5, g or 0.5, b or 0.5, 0.85)
+            fill:SetColorTexture(r or 0.5, g or 0.5, b or 0.5, alpha or 0.85)
             el[#el + 1] = fill
         end
         yPos = yPos - (BAR_H + 8)
