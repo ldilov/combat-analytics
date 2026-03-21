@@ -165,9 +165,12 @@ local function applySessionToBucket(bucket, session)
 end
 
 local function getOrCreateBucket(container, kind, key, label)
-    -- Sanitize key: tostring() converts secret strings (WoW taint) to plain Lua
-    -- strings so they can safely be used as table keys and in string operations.
-    key = tostring(key or "unknown")
+    -- Arena opponent GUIDs/names are 'secret strings' — WoW marks them so addons
+    -- can't read their content.  tostring() propagates the secret flag rather than
+    -- stripping it.  Concatenation with "" forces a fresh plain-Lua-string
+    -- allocation; if that also throws, fall back to "unknown".
+    local okKey, safeKey = pcall(function() return (key or "") .. "" end)
+    key = (okKey and safeKey ~= "" and safeKey) or "unknown"
     if Helpers.IsBlank(key) then
         key = "unknown"
     end

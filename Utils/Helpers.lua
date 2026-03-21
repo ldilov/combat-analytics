@@ -25,10 +25,11 @@ function Helpers.Trim(value)
     if type(value) ~= "string" then
         return value
     end
-    -- Use string.match() directly rather than value:match() to avoid indexing a
-    -- secret string value (WoW taint model: colon-method syntax indexes value via
-    -- its metatable __index, which fails on secret strings with "attempt to index").
-    return string.match(value, "^%s*(.-)%s*$")
+    -- Use string.match() directly (not value:match()) to avoid metatable __index
+    -- on secret strings.  Also pcall-guard: if value is still a secret string
+    -- (tostring propagates the taint flag), return as-is rather than crashing.
+    local ok, result = pcall(string.match, value, "^%s*(.-)%s*$")
+    return ok and result or value
 end
 
 function Helpers.IsBlank(value)
