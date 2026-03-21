@@ -62,6 +62,16 @@ function Widgets.ApplyBackdrop(frame, backgroundColor, borderColor, insets)
     frame:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
 end
 
+-- Safe color-only backdrop update — does NOT call SetBackdrop, so it is safe
+-- to call from script hooks (OnEnter, OnLeave, SetActive, etc.) during tainted
+-- gameplay execution.  Never triggers SetupTextureCoordinates / secret-number crash.
+function Widgets.SetBackdropColors(frame, backgroundColor, borderColor)
+    local bg = backgroundColor or Widgets.THEME.panel
+    frame:SetBackdropColor(bg[1], bg[2], bg[3], bg[4] or 1)
+    local bc = borderColor or Widgets.THEME.border
+    frame:SetBackdropBorderColor(bc[1], bc[2], bc[3], bc[4] or 1)
+end
+
 function Widgets.CreateSurface(parent, width, height, backgroundColor, borderColor)
     local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     frame:SetSize(width, height)
@@ -309,13 +319,13 @@ function Widgets.CreateButton(parent, label, width, height)
     function button:SetActive(isActive)
         self.isActive = isActive and true or false
         if self.isActive then
-            Widgets.ApplyBackdrop(self, Widgets.THEME.accentSoft, Widgets.THEME.borderStrong)
+            Widgets.SetBackdropColors(self, Widgets.THEME.accentSoft, Widgets.THEME.borderStrong)
             self.text:SetTextColor(unpack(Widgets.THEME.text))
         elseif not self:IsEnabled() then
-            Widgets.ApplyBackdrop(self, Widgets.THEME.panelDisabled, Widgets.THEME.border)
+            Widgets.SetBackdropColors(self, Widgets.THEME.panelDisabled, Widgets.THEME.border)
             self.text:SetTextColor(0.42, 0.48, 0.55, 1)
         else
-            Widgets.ApplyBackdrop(self, Widgets.THEME.panelAlt, Widgets.THEME.border)
+            Widgets.SetBackdropColors(self, Widgets.THEME.panelAlt, Widgets.THEME.border)
             self.text:SetTextColor(unpack(Widgets.THEME.text))
         end
     end
@@ -330,7 +340,7 @@ function Widgets.CreateButton(parent, label, width, height)
         if self.isActive or not self:IsEnabled() then
             return
         end
-        Widgets.ApplyBackdrop(self, Widgets.THEME.panelHover, Widgets.THEME.borderStrong)
+        Widgets.SetBackdropColors(self, Widgets.THEME.panelHover, Widgets.THEME.borderStrong)
     end)
     button:HookScript("OnLeave", function(self)
         self:SetActive(self.isActive)
@@ -350,10 +360,10 @@ function Widgets.CreateEditBox(parent, width, height)
     editBox:SetTextInsets(8, 8, 4, 4)
     Widgets.ApplyBackdrop(editBox, Widgets.THEME.panelAlt, Widgets.THEME.border)
     editBox:HookScript("OnEditFocusGained", function(self)
-        Widgets.ApplyBackdrop(self, Widgets.THEME.panelAlt, Widgets.THEME.borderStrong)
+        Widgets.SetBackdropColors(self, Widgets.THEME.panelAlt, Widgets.THEME.borderStrong)
     end)
     editBox:HookScript("OnEditFocusLost", function(self)
-        Widgets.ApplyBackdrop(self, Widgets.THEME.panelAlt, Widgets.THEME.border)
+        Widgets.SetBackdropColors(self, Widgets.THEME.panelAlt, Widgets.THEME.border)
     end)
     return editBox
 end
@@ -385,10 +395,10 @@ function Widgets.CreateRowButton(parent, width, height)
     button.text:SetTextColor(unpack(Widgets.THEME.text))
 
     button:SetScript("OnEnter", function(self)
-        Widgets.ApplyBackdrop(self, Widgets.THEME.panelHover, Widgets.THEME.borderStrong)
+        Widgets.SetBackdropColors(self, Widgets.THEME.panelHover, Widgets.THEME.borderStrong)
     end)
     button:SetScript("OnLeave", function(self)
-        Widgets.ApplyBackdrop(self, Widgets.THEME.panel, Widgets.THEME.border)
+        Widgets.SetBackdropColors(self, Widgets.THEME.panel, Widgets.THEME.border)
     end)
 
     return button
@@ -585,7 +595,7 @@ function Widgets.CreateInsightCard(parent, width, height)
             border = Widgets.THEME.borderStrong
         end
 
-        Widgets.ApplyBackdrop(self.badge, palette, border)
+        Widgets.SetBackdropColors(self.badge, palette, border)
         self.badge.text:SetText(string.upper(severity or "info"))
         self.title:SetText(titleText or "")
         self.body:SetText(bodyText or "")
@@ -604,7 +614,7 @@ function Widgets.CreatePill(parent, width, height, backgroundColor, borderColor)
     pill.text:SetTextColor(unpack(Widgets.THEME.text))
 
     function pill:SetData(labelText, textColor, nextBackgroundColor, nextBorderColor)
-        Widgets.ApplyBackdrop(self, nextBackgroundColor or backgroundColor or Widgets.THEME.accentSoft, nextBorderColor or borderColor or Widgets.THEME.borderStrong)
+        Widgets.SetBackdropColors(self, nextBackgroundColor or backgroundColor or Widgets.THEME.accentSoft, nextBorderColor or borderColor or Widgets.THEME.borderStrong)
         self.text:SetText(labelText or "")
         self.text:SetTextColor(unpack(textColor or Widgets.THEME.text))
         self:Show()
@@ -735,10 +745,10 @@ function Widgets.CreateHistoryRow(parent, width, height)
     end
 
     button:SetScript("OnEnter", function(self)
-        Widgets.ApplyBackdrop(self, Widgets.THEME.panelHover, Widgets.THEME.borderStrong)
+        Widgets.SetBackdropColors(self, Widgets.THEME.panelHover, Widgets.THEME.borderStrong)
     end)
     button:SetScript("OnLeave", function(self)
-        Widgets.ApplyBackdrop(self, Widgets.THEME.panel, Widgets.THEME.border)
+        Widgets.SetBackdropColors(self, Widgets.THEME.panel, Widgets.THEME.border)
     end)
 
     function button:SetData(data)
