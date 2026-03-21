@@ -56,7 +56,7 @@ function MatchupDetailView:Refresh(payload)
     local specId = self.selectedSpecId
     local store = ns.Addon:GetModule("CombatStore")
     local characterKey = store and store:GetCurrentCharacterKey() or nil
-    local snapshot = ns.Addon.runtime and ns.Addon.runtime.playerSnapshot or nil
+    local snapshot = ns.Addon:GetLatestPlayerSnapshot()
     local buildHash = snapshot and snapshot.buildHash or nil
     local strategyEngine = ns.Addon:GetModule("StrategyEngine")
 
