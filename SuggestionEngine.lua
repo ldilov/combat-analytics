@@ -234,9 +234,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
 
     -- Task 4.3: Spec win rate threshold suggestions
     if opponent.specId then
-        local specBuckets = store.GetAggregateBuckets and store:GetAggregateBuckets("specs") or {}
-        local specKey = tostring(opponent.specId)
-        local specBucket = specBuckets[specKey]
+        local specBucket = store.GetAggregateBucketByKey and store:GetAggregateBucketByKey("specs", opponent.specId) or nil
         if specBucket and (specBucket.fights or 0) >= 10 then
             local winRate = (specBucket.wins or 0) / specBucket.fights
             if winRate < 0.40 then
