@@ -482,6 +482,13 @@ function Addon:InitializeRuntime()
     safeModuleCall(self, "SnapshotService", "Initialize")
     safeModuleCall(self, "DamageMeterService", "Initialize")
     safeModuleCall(self, "PartySyncService", "Initialize")
+    -- MinimapButton: create and show/hide based on saved setting so the
+    -- button appears immediately on login without needing /ca minimap.
+    safeModuleCall(self, "MinimapButton", "Initialize")
+    -- SettingsPanel: register the canvas category with the Blizzard
+    -- Settings system at startup so it appears in Settings → Addons
+    -- without the user needing to open it via /ca settings first.
+    safeModuleCall(self, "SettingsPanel", "Initialize")
 
     self.runtimeInitialized = true
     self.initialized = true
