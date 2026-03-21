@@ -51,4 +51,5 @@ UI\CleanupView.lua
 UI\RatingView.lua
 UI\CounterGuideView.lua
 UI\MatchupDetailView.lua
+UI\ReplayView.lua
 UI\MainFrame.lua

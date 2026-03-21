@@ -1695,4 +1695,9 @@ function CombatStore:GetBuildWeightedWinRate(buildHash)
     end, 30, 0.9)
 end
 
+function CombatStore:GetSessionById(sessionId)
+    local db = self:GetDB()
+    return db.combats and db.combats.byId and db.combats.byId[sessionId] or nil
+end
+
 ns.Addon:RegisterModule("CombatStore", CombatStore)

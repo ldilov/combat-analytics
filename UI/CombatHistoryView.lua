@@ -109,6 +109,24 @@ function CombatHistoryView:Build(parent)
         self.rows[index] = row
     end
 
+    self.replayButtons = {}
+    for index = 1, self.rowCount do
+        local row = self.rows[index]
+        local btn = ns.Widgets.CreateButton(self.canvas, "Replay", 60, 20)
+        btn:SetPoint("TOPRIGHT", row, "TOPRIGHT", -4, -4)
+        btn:Hide()
+        btn:SetScript("OnClick", function()
+            if btn.sessionId then
+                local store = ns.Addon:GetModule("CombatStore")
+                local session = store and store:GetSessionById(btn.sessionId)
+                if session and ns.ReplayView then
+                    ns.ReplayView:Show(session)
+                end
+            end
+        end)
+        self.replayButtons[index] = btn
+    end
+
     ns.Widgets.SetCanvasHeight(self.canvas, (self.rowCount * 64) + 8)
 
     return self.frame
@@ -156,6 +174,11 @@ function CombatHistoryView:Refresh()
         if session then
             row:Show()
             row.sessionId = session.id
+            local rBtn = self.replayButtons and self.replayButtons[index]
+            if rBtn then
+                rBtn.sessionId = session.id
+                rBtn:Show()
+            end
             local opponent = ns.Helpers.ResolveOpponentName(session, "Unknown")
             local subcontext = session.subcontext and prettifyToken(session.subcontext) or nil
             local contextLabel = prettifyToken(session.context)
@@ -196,6 +219,11 @@ function CombatHistoryView:Refresh()
         else
             row:Hide()
             row.sessionId = nil
+            local rBtn = self.replayButtons and self.replayButtons[index]
+            if rBtn then
+                rBtn:Hide()
+                rBtn.sessionId = nil
+            end
         end
     end
 end
