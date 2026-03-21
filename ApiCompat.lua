@@ -698,11 +698,15 @@ function ApiCompat.GetCreatureIdFromGUID(guid)
     if not guid then
         return nil
     end
+    -- Arena unit GUIDs are secret strings on WoW Midnight.  Both
+    -- C_CreatureInfo.GetCreatureID and strsplit are C functions that
+    -- explicitly reject secret arguments, so pcall-guard both paths.
     if C_CreatureInfo and C_CreatureInfo.GetCreatureID then
-        return C_CreatureInfo.GetCreatureID(guid)
+        local ok, result = pcall(C_CreatureInfo.GetCreatureID, guid)
+        return ok and result or nil
     end
-    local unitType, _, _, _, _, npcId = strsplit("-", guid)
-    if unitType == "Creature" or unitType == "Vehicle" then
+    local ok, unitType, _, _, _, _, npcId = pcall(strsplit, "-", guid)
+    if ok and (unitType == "Creature" or unitType == "Vehicle") then
         return tonumber(npcId)
     end
     return nil
