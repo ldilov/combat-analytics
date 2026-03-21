@@ -1,10 +1,8 @@
 # CombatAnalytics — Release Notes
 
-> All changes since **release/1.0** (`3a36c67`) through **HEAD** (`862b096`), in reverse chronological order.
-
 ---
 
-## [Unreleased] — 2026-03-21
+## [Released] — 2026-03-21 - v1.1
 
 ### Benchmarking Intelligence Phase
 
@@ -85,10 +83,6 @@ This phase adds defensive-economy metrics, kill-window analysis, comp classifica
 
 ---
 
-## [Roadmap v3] — Feature/Roadmap-V3 Merge
-
-Merged `feature/roadmap-v3` into `main`. Post-merge taint and API-compatibility patches applied.
-
 ### Highlights
 
 **Midnight API Compatibility**
@@ -110,12 +104,6 @@ Merged `feature/roadmap-v3` into `main`. Post-merge taint and API-compatibility 
 
 ---
 
-## [Roadmap v2] — Feature/Roadmap-V2 Merge
-
-Merged `feature/roadmap-v2` into `main`. Full PvP coaching platform delivered across five phases.
-
-### Phase 1 — Foundational Data
-
 | Task | Change |
 |------|--------|
 | **1.1** Post-match score harvest | `C_PvP.GetScoreInfo(i)` polled at match end; damage, kills, rating, MMR stored per player |
@@ -123,8 +111,6 @@ Merged `feature/roadmap-v2` into `main`. Full PvP coaching platform delivered ac
 | **1.3** Arena CC tracking | `ARENA_CROWD_CONTROL_SPELL_UPDATE` registered; CC spell/start/duration stored per arena slot |
 | **5.1** OnUpdate throttling | `OnUpdate` handler throttled to 0.1 s intervals |
 | **5.4** Schema v3 migration | CC, rating, and score fields backfilled with `false` sentinel on existing sessions |
-
-### Phase 2 — Core Analytics
 
 | Task | Change |
 |------|--------|
@@ -135,8 +121,6 @@ Merged `feature/roadmap-v2` into `main`. Full PvP coaching platform delivered ac
 | **2.6** Win rate by MMR band | `db.aggregates.mmrBands` bucket |
 | **4.5** Build effectiveness matrix | Build↔context win rate cross-table in `CombatStore` |
 
-### Phase 3 — Strategy Engine
-
 | Task | Change |
 |------|--------|
 | **4.1** StrategyEngine | New `StrategyEngine.lua`; generates ranked strategy cards per matchup |
@@ -146,8 +130,6 @@ Merged `feature/roadmap-v2` into `main`. Full PvP coaching platform delivered ac
 | **–** Interrupt analytics | Interrupt cast frequency and success rate per target tracked |
 | **–** Pressure / tilt scoring | Composite pressure and tilt index added to `session.metrics` |
 | **–** TTK estimate | Time-to-kill estimate based on sustained damage vs target health |
-
-### Phase 4 — UI/UX
 
 | Task | Change |
 |------|--------|
@@ -160,8 +142,6 @@ Merged `feature/roadmap-v2` into `main`. Full PvP coaching platform delivered ac
 | **3.7** Confidence badges | Capture-quality badges in history rows |
 | **–** Counter guide | Spec-specific counter tips in Insights tab |
 | **–** Responsive tab layout | Tab strip now wraps cleanly at 10 tabs; Matchup drill-down hidden until data present |
-
-### Phase 5 — Polish / Social
 
 | Task | Change |
 |------|--------|
@@ -182,4 +162,3 @@ Initial public release. Core pipeline, 8-tab UI, session schema v2, and seed dat
 
 ---
 
-*Generated from `git log 3a36c67..HEAD` on 2026-03-21.*
