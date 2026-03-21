@@ -170,7 +170,8 @@ local function getOrCreateBucket(container, kind, key, label)
     -- stripping it.  Concatenation with "" forces a fresh plain-Lua-string
     -- allocation; if that also throws, fall back to "unknown".
     local okKey, safeKey = pcall(function() return (key or "") .. "" end)
-    key = (okKey and safeKey ~= "" and safeKey) or "unknown"
+    local okCmp, notEmpty = pcall(function() return safeKey ~= "" end)
+    key = (okKey and okCmp and notEmpty and safeKey) or "unknown"
     if Helpers.IsBlank(key) then
         key = "unknown"
     end
