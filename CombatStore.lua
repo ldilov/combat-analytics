@@ -984,6 +984,22 @@ function CombatStore:GetAggregateBuckets(kind, characterKey)
     return list
 end
 
+function CombatStore:GetAggregateBucketByKey(kind, key, characterKey)
+    if not key then return nil end
+    local list = self:GetAggregateBuckets(kind, characterKey)
+    local searchKey = tostring(key)
+    for _, bucket in ipairs(list) do
+        if bucket.key == searchKey then
+            return bucket
+        end
+    end
+    return nil
+end
+
+function CombatStore:GetSpecBucket(specId, characterKey)
+    return self:GetAggregateBucketByKey("specs", specId, characterKey)
+end
+
 function CombatStore:GetDummyBenchmarks(characterKey)
     local db = self:GetDB()
     local characterRef = nil
