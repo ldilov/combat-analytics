@@ -25,7 +25,10 @@ function Helpers.Trim(value)
     if type(value) ~= "string" then
         return value
     end
-    return value:match("^%s*(.-)%s*$")
+    -- Use string.match() directly rather than value:match() to avoid indexing a
+    -- secret string value (WoW taint model: colon-method syntax indexes value via
+    -- its metatable __index, which fails on secret strings with "attempt to index").
+    return string.match(value, "^%s*(.-)%s*$")
 end
 
 function Helpers.IsBlank(value)
@@ -101,7 +104,8 @@ function Helpers.ArrayKeys(map)
 end
 
 function Helpers.StartsWith(value, prefix)
-    return type(value) == "string" and value:sub(1, #prefix) == prefix
+    -- Use string.sub() directly to avoid indexing a potential secret string value.
+    return type(value) == "string" and string.sub(value, 1, #prefix) == prefix
 end
 
 function Helpers.ContainsIgnoreCase(haystack, needle)
