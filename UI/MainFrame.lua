@@ -12,7 +12,8 @@ local MainFrame = {
         { id = "rating", label = "Rating", module = "RatingView" },
         { id = "insights", label = "Insights", module = "SuggestionsView" },
         { id = "counterguide", label = "Counters", module = "CounterGuideView" },
-        { id = "cleanup", label = "Cleanup", module = "CleanupView" },
+        { id = "builds",      label = "Builds",  module = "BuildComparatorView" },
+        { id = "cleanup",     label = "Cleanup", module = "CleanupView" },
     },
 }
 
