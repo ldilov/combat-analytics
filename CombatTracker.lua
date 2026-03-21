@@ -2416,6 +2416,50 @@ function CombatTracker:HarvestPostMatchData(session)
         end
     end
 
+    -- Rating snapshot backfill from scoreInfo.
+    -- GetPVPActiveMatchPersonalRatedInfo is NOT SecretInActivePvPMatch, so it
+    -- may have returned nil at COMPLETE time if the match server hadn't settled.
+    -- Now that we are INACTIVE, try it once more as a safety net.  Also derive
+    -- rating before/after directly from scoreInfo.rating + ratingChange, which
+    -- is authoritative and always present for rated matches.
+    if session.isRated then
+        -- Try refreshing ratingSnapshot.after via the personal-rated API.
+        if not (session.ratingSnapshot and session.ratingSnapshot.after) then
+            local ratedInfo = ApiCompat.GetPVPActiveMatchPersonalRatedInfo()
+            if ratedInfo and ratedInfo.personalRating and ratedInfo.personalRating > 0 then
+                session.ratingSnapshot = session.ratingSnapshot or {}
+                session.ratingSnapshot.after = {
+                    personalRating   = ratedInfo.personalRating,
+                    bestSeasonRating = ratedInfo.bestSeasonRating,
+                    seasonPlayed     = ratedInfo.seasonPlayed,
+                    seasonWon        = ratedInfo.seasonWon,
+                    weeklyPlayed     = ratedInfo.weeklyPlayed,
+                    weeklyWon        = ratedInfo.weeklyWon,
+                }
+            end
+        end
+
+        -- Fall back to scoreInfo.rating / ratingChange for this player when the
+        -- personal-rated API is still unavailable (e.g. disconnected resync).
+        local myGuid = ApiCompat.GetPlayerGUID()
+        for _, entry in ipairs(scores) do
+            if entry.guid == myGuid then
+                local scoreRating = entry.rating
+                if scoreRating and scoreRating > 0 then
+                    session.ratingSnapshot = session.ratingSnapshot or {}
+                    if not session.ratingSnapshot.after then
+                        session.ratingSnapshot.after = { personalRating = scoreRating }
+                    end
+                    if not session.ratingSnapshot.before then
+                        local change = entry.ratingChange or 0
+                        session.ratingSnapshot.before = { personalRating = scoreRating - change }
+                    end
+                end
+                break
+            end
+        end
+    end
+
     -- Post-match rewards.
     local items      = ApiCompat.GetPostMatchItemRewards()
     local currencies = ApiCompat.GetPostMatchCurrencyRewards()

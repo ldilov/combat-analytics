@@ -436,12 +436,18 @@ function Addon:HandleCommand(input)
     end
 
     if command == "minimap" then
-        self:SetSetting("showMinimapButton", false)
+        local current = self:GetSetting("showMinimapButton")
+        local next = not current
+        self:SetSetting("showMinimapButton", next)
         local minimapButton = self:GetModule("MinimapButton")
-        if minimapButton and minimapButton.button then
-            minimapButton.button:Hide()
+        if minimapButton then
+            minimapButton:RefreshVisibility()
         end
-        self:Print("Minimap button is disabled during taint stabilization. Use |cff35c7e5/ca|r to open the UI.")
+        if next then
+            self:Print("Minimap button |cff70d196shown|r. Drag to reposition.")
+        else
+            self:Print("Minimap button |cffe64d40hidden|r. Use |cff35c7e5/ca minimap|r to show it again.")
+        end
         return
     end
 
@@ -476,6 +482,13 @@ function Addon:InitializeRuntime()
     safeModuleCall(self, "SnapshotService", "Initialize")
     safeModuleCall(self, "DamageMeterService", "Initialize")
     safeModuleCall(self, "PartySyncService", "Initialize")
+    -- MinimapButton: create and show/hide based on saved setting so the
+    -- button appears immediately on login without needing /ca minimap.
+    safeModuleCall(self, "MinimapButton", "Initialize")
+    -- SettingsPanel: register the canvas category with the Blizzard
+    -- Settings system at startup so it appears in Settings → Addons
+    -- without the user needing to open it via /ca settings first.
+    safeModuleCall(self, "SettingsPanel", "Initialize")
 
     self.runtimeInitialized = true
     self.initialized = true
