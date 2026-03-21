@@ -320,9 +320,18 @@ function CounterGuideView:RefreshDetail()
     -- ── THREAT BAR ───────────────────────────────────────────────────────────
     addRule(2)
 
-    local fights      = guide.historicalFights or 0
-    local threatScore = (fights >= 3 and guide.historicalWinRate)
-        and (1.0 - guide.historicalWinRate) or 0.5
+    local fights       = guide.historicalFights or 0
+    local threatScore, isEstimated
+    if fights >= 3 and guide.historicalWinRate then
+        threatScore = 1.0 - guide.historicalWinRate
+        isEstimated = false
+    elseif guide.baselineThreatScore then
+        threatScore = guide.baselineThreatScore
+        isEstimated = true
+    else
+        threatScore = 0.5
+        isEstimated = true
+    end
 
     local thrLabel = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     thrLabel:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
@@ -332,10 +341,13 @@ function CounterGuideView:RefreshDetail()
 
     local thrVal = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     thrVal:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD + BAR_W + 6, yPos)
-    thrVal:SetText(fights >= 3
-        and string.format("%.0f%%", threatScore * 100)
-        or  "? (no data)")
-    thrVal:SetTextColor(unpack(fights >= 3 and Theme.text or Theme.textMuted))
+    if isEstimated then
+        thrVal:SetText(string.format("~%.0f%%  est.", threatScore * 100))
+        thrVal:SetTextColor(unpack(Theme.textMuted))
+    else
+        thrVal:SetText(string.format("%.0f%%", threatScore * 100))
+        thrVal:SetTextColor(unpack(Theme.text))
+    end
     el[#el + 1] = thrVal
     yPos = yPos - 18
 
@@ -343,7 +355,7 @@ function CounterGuideView:RefreshDetail()
         local r, g, b = 0.90, 0.20, 0.15
         if threatScore < 0.45 then r, g, b = 0.25, 0.80, 0.35
         elseif threatScore < 0.70 then r, g, b = 0.90, 0.65, 0.10 end
-        addBar(threatScore, r, g, b)
+        addBar(threatScore, r, g, b, isEstimated and 0.45 or 0.85)
     end
 
     -- ── WIN-RATE BAR ─────────────────────────────────────────────────────────
