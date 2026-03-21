@@ -55,6 +55,33 @@ local DEFAULT_ACTIONS = {
     "Play to your spec's strengths rather than reacting to theirs.",
 }
 
+-- ── Baseline threat score coefficients ───────────────────────────────────
+-- Used to estimate threat when historicalFights < 3. Tune weights here.
+local ARCHETYPE_THREAT_BONUS = {
+    setup_burst      = 0.15,
+    melee_pressure   = 0.10,
+    skirmisher       = 0.08,
+    sustained_caster = 0.05,
+    sustained_ranged = 0.05,
+    control_healer   = 0.05,
+    reactive_healer  = 0.03,
+    bruiser          = 0.00,
+}
+local TAG_THREAT_BONUS = {
+    frequent_cc      = 0.10,
+    execute_risk     = 0.08,
+    immunity_risk    = 0.08,
+    control_pressure = 0.08,
+    mobility_heavy   = 0.06,
+    purge_pressure   = 0.04,
+}
+local THREAT_MELEE_BONUS    = 0.05
+local THREAT_CC_FAM_BONUS   = 0.03
+local THREAT_CC_FAM_CAP     = 4
+local THREAT_BASE           = 0.45
+local THREAT_MIN            = 0.25
+local THREAT_MAX            = 0.90
+
 function StrategyEngine.GetCounterGuide(specId, playerBuildHash, characterKey)
     if not specId then return nil end
 
