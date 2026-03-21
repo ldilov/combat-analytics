@@ -82,6 +82,38 @@ local THREAT_BASE           = 0.45
 local THREAT_MIN            = 0.25
 local THREAT_MAX            = 0.90
 
+local function ComputeBaselineThreatScore(specId)
+    local archetype = ns.StaticPvpData and ns.StaticPvpData.GetSpecArchetype
+        and ns.StaticPvpData.GetSpecArchetype(specId) or nil
+    if not archetype then return THREAT_BASE end
+
+    local score = THREAT_BASE
+    score = score + (ARCHETYPE_THREAT_BONUS[archetype.archetype] or 0)
+
+    for _, tag in ipairs(archetype.threatTags or {}) do
+        score = score + (TAG_THREAT_BONUS[tag] or 0)
+    end
+
+    if archetype.rangeBucket == "melee" then
+        score = score + THREAT_MELEE_BONUS
+    end
+
+    -- Count unique CC families from SeedArenaControl data.
+    local ccFamilies = ns.StaticPvpData and ns.StaticPvpData.GetCCFamiliesForSpec
+        and ns.StaticPvpData.GetCCFamiliesForSpec(specId) or {}
+    local familySet = {}
+    for _, entry in ipairs(ccFamilies) do
+        if type(entry) == "table" and entry.family then
+            familySet[entry.family] = true
+        end
+    end
+    local familyCount = 0
+    for _ in pairs(familySet) do familyCount = familyCount + 1 end
+    score = score + math.min(familyCount, THREAT_CC_FAM_CAP) * THREAT_CC_FAM_BONUS
+
+    return math.max(THREAT_MIN, math.min(THREAT_MAX, score))
+end
+
 function StrategyEngine.GetCounterGuide(specId, playerBuildHash, characterKey)
     if not specId then return nil end
 
