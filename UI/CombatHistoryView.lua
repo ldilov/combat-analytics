@@ -118,7 +118,7 @@ function CombatHistoryView:Build(parent)
         btn:SetScript("OnClick", function()
             if btn.sessionId then
                 local store = ns.Addon:GetModule("CombatStore")
-                local session = store and store:GetSessionById(btn.sessionId)
+                local session = store and store:GetCombatById(btn.sessionId)
                 if session and ns.ReplayView then
                     ns.ReplayView:Show(session)
                 end
