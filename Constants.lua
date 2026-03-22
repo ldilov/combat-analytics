@@ -132,12 +132,10 @@ ns.Constants = {
         "PLAYER_LOGIN",
         "PLAYER_ENTERING_WORLD",
         "TRAIT_CONFIG_LIST_UPDATED",
-        -- Frame:RegisterEvent() is NOT a protected function and cannot raise
-        -- ADDON_ACTION_BLOCKED.  CLEU IS restricted in Midnight arena (src/dst
-        -- GUIDs/names are secret), but that only affects the DATA — not the
-        -- registration.  All CLEU fields are sanitized via SanitizeString /
-        -- SanitizeNumber before use, so restricted events are handled safely.
-        "COMBAT_LOG_EVENT_UNFILTERED",
+        -- NOTE: COMBAT_LOG_EVENT_UNFILTERED is NOT registered here.
+        -- Frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") is forbidden in
+        -- Midnight arena (raises ADDON_ACTION_BLOCKED / lua error). Damage data
+        -- is sourced from C_DamageMeter (DamageMeterService) instead.
         "PLAYER_REGEN_DISABLED",
         "PLAYER_REGEN_ENABLED",
         "DAMAGE_METER_COMBAT_SESSION_UPDATED",

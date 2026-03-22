@@ -16,6 +16,17 @@ local function hasFlag(value, flag)
     return flag ~= 0 and value ~= nil and bit.band(value, flag) > 0
 end
 
+-- Midnight arena guard: auraData fields (spellId, auraInstanceID) for arena
+-- opponent units are "secret" values that throw "table index is secret" when
+-- used as table keys.  This helper attempts the index and returns the original
+-- value on success, or nil if the value is secret/unusable as a key.
+local function safeMakeKey(val)
+    if val == nil then return nil end
+    local tmp = {}
+    local ok = pcall(function() tmp[val] = true end)
+    return ok and val or nil
+end
+
 local function isMineGuid(guid)
     if not guid then
         return false
@@ -163,7 +174,8 @@ local function isProcCandidate(unitToken, auraData)
     if unitToken ~= "player" and unitToken ~= "pet" then
         return false
     end
-    local category = Constants.SPELL_CATEGORIES[auraData.spellId]
+    local ok, category = pcall(function() return Constants.SPELL_CATEGORIES[auraData.spellId] end)
+    if not ok then category = nil end
     if auraData.duration and auraData.duration > 0 and auraData.duration <= 20 then
         return true
     end
@@ -907,13 +919,15 @@ function CombatTracker:HandleSpellDataLoadResult(spellId, success)
 end
 
 function CombatTracker:OpenAuraWindow(session, guid, auraId, timestampOffset, isProc, stackCount)
+    local safeAuraId = safeMakeKey(auraId)
+    if not safeAuraId then return nil end
     session.activeAuraWindows[guid] = session.activeAuraWindows[guid] or {}
-    local current = session.activeAuraWindows[guid][auraId]
+    local current = session.activeAuraWindows[guid][safeAuraId]
     if current then
         return current
     end
 
-    local aggregate = self:EnsureAuraAggregate(session, auraId)
+    local aggregate = self:EnsureAuraAggregate(session, safeAuraId)
     aggregate.applications = aggregate.applications + 1
     aggregate.procCount = aggregate.procCount + (isProc and 1 or 0)
     aggregate.isProc = aggregate.isProc or isProc
@@ -924,20 +938,22 @@ function CombatTracker:OpenAuraWindow(session, guid, auraId, timestampOffset, is
         startedAt = timestampOffset,
         stackCount = stackCount or 0,
     }
-    session.activeAuraWindows[guid][auraId] = current
+    session.activeAuraWindows[guid][safeAuraId] = current
     return current
 end
 
 function CombatTracker:CloseAuraWindow(session, guid, auraId, timestampOffset)
+    local safeAuraId = safeMakeKey(auraId)
+    if not safeAuraId then return end
     local guidWindows = session.activeAuraWindows[guid]
-    if not guidWindows or not guidWindows[auraId] then
+    if not guidWindows or not guidWindows[safeAuraId] then
         return
     end
 
-    local activeWindow = guidWindows[auraId]
-    local aggregate = self:EnsureAuraAggregate(session, auraId)
+    local activeWindow = guidWindows[safeAuraId]
+    local aggregate = self:EnsureAuraAggregate(session, safeAuraId)
     aggregate.totalUptime = aggregate.totalUptime + math.max(0, timestampOffset - (activeWindow.startedAt or timestampOffset))
-    guidWindows[auraId] = nil
+    guidWindows[safeAuraId] = nil
 end
 
 function CombatTracker:UpdateAuraStats(session, eventRecord)
@@ -1916,11 +1932,13 @@ function CombatTracker:HandleUnitAura(unitTarget, updateInfo)
     local timestampOffset = getSessionRelativeOffset(session)
 
     local function removeAuraState(auraInstanceId)
-        local previous = auraState[auraInstanceId]
+        local safeId = safeMakeKey(auraInstanceId)
+        if not safeId then return end
+        local previous = auraState[safeId]
         if previous and previous.spellId then
             self:CloseAuraWindow(session, actor.guid, previous.spellId, timestampOffset)
         end
-        auraState[auraInstanceId] = nil
+        auraState[safeId] = nil
     end
 
     if updateInfo and updateInfo.removedAuraInstanceIDs then
@@ -1933,32 +1951,46 @@ function CombatTracker:HandleUnitAura(unitTarget, updateInfo)
         if not auraData or not auraData.auraInstanceID then
             return
         end
-        local previous = auraState[auraData.auraInstanceID]
+        -- Midnight arena: auraData fields (auraInstanceID, spellId) for arena
+        -- opponent units may be secret values that crash on table-index.
+        -- safeMakeKey() probes the value; returns it if safe or nil if secret.
+        local safeInstanceID = safeMakeKey(auraData.auraInstanceID)
+        if not safeInstanceID then return end
+        local safeSpellId = safeMakeKey(auraData.spellId)  -- nil when secret
+
+        local previous = auraState[safeInstanceID]
         local procLike = isProcCandidate(unitTarget, auraData)
 
-        if previous and previous.spellId and previous.spellId ~= auraData.spellId then
+        -- previous.spellId is always a safe value (stored via safeSpellId below).
+        if previous and previous.spellId and safeSpellId and previous.spellId ~= safeSpellId then
             self:CloseAuraWindow(session, actor.guid, previous.spellId, timestampOffset)
             previous = nil
         end
 
-        if auraData.spellId and not previous then
-            self:OpenAuraWindow(session, actor.guid, auraData.spellId, timestampOffset, procLike, auraData.applications)
-        elseif auraData.spellId and previous and (previous.applications or 0) ~= (auraData.applications or 0) then
-            local aggregate = self:EnsureAuraAggregate(session, auraData.spellId)
-            aggregate.refreshCount = aggregate.refreshCount + 1
+        if safeSpellId and not previous then
+            self:OpenAuraWindow(session, actor.guid, safeSpellId, timestampOffset, procLike, auraData.applications)
+        elseif safeSpellId and previous then
+            local ok, appsChanged = pcall(function()
+                return (previous.applications or 0) ~= (auraData.applications or 0)
+            end)
+            if ok and appsChanged then
+                local aggregate = self:EnsureAuraAggregate(session, safeSpellId)
+                aggregate.refreshCount = aggregate.refreshCount + 1
+            end
         end
 
-        auraState[auraData.auraInstanceID] = {
-            auraInstanceId = auraData.auraInstanceID,
-            spellId = auraData.spellId,
+        auraState[safeInstanceID] = {
+            auraInstanceId = safeInstanceID,
+            spellId = safeSpellId,
             applications = auraData.applications,
             isHelpful = auraData.isHelpful,
             sourceUnit = auraData.sourceUnit,
             isProc = procLike,
         }
-        if auraData.spellId then
-            local aggregate = self:EnsureAuraAggregate(session, auraData.spellId)
-            aggregate.maxStacksObserved = math.max(aggregate.maxStacksObserved, auraData.applications or 0)
+        if safeSpellId then
+            local ok, apps = pcall(function() return auraData.applications or 0 end)
+            local aggregate = self:EnsureAuraAggregate(session, safeSpellId)
+            aggregate.maxStacksObserved = math.max(aggregate.maxStacksObserved, ok and apps or 0)
             aggregate.isProc = aggregate.isProc or procLike
         end
     end
@@ -1985,14 +2017,16 @@ function CombatTracker:HandleUnitAura(unitTarget, updateInfo)
                 break
             end
             if helpful then
-                if helpful.auraInstanceID then
-                    seenAuraInstanceIds[helpful.auraInstanceID] = true
+                local safeHelpfulId = helpful.auraInstanceID and safeMakeKey(helpful.auraInstanceID)
+                if safeHelpfulId then
+                    seenAuraInstanceIds[safeHelpfulId] = true
                 end
                 applyAuraData(helpful)
             end
             if harmful then
-                if harmful.auraInstanceID then
-                    seenAuraInstanceIds[harmful.auraInstanceID] = true
+                local safeHarmfulId = harmful.auraInstanceID and safeMakeKey(harmful.auraInstanceID)
+                if safeHarmfulId then
+                    seenAuraInstanceIds[safeHarmfulId] = true
                 end
                 applyAuraData(harmful)
             end

@@ -26,12 +26,9 @@ end
 local TRACKER_EVENT_MAP = {
     PLAYER_ENTERING_WORLD               = "HandlePlayerEnteringWorld",
     TRAIT_CONFIG_LIST_UPDATED            = "HandleTraitConfigListUpdated",
-    -- CLEU is restricted in Midnight arena (src/dst are secret strings) but
-    -- Frame:RegisterEvent() is not protected — registration never raises
-    -- ADDON_ACTION_BLOCKED.  NormalizeCombatLogEvent sanitizes every field
-    -- via SanitizeString/SanitizeNumber before use, so restricted events
-    -- are processed safely and produce zeroed-out amounts instead of crashes.
-    COMBAT_LOG_EVENT_UNFILTERED          = "HandleCombatLogEvent",
+    -- COMBAT_LOG_EVENT_UNFILTERED is not routed here: registering that event
+    -- via Frame:RegisterEvent() is forbidden in Midnight arena and raises a
+    -- Lua error. Damage data flows from C_DamageMeter instead.
     PLAYER_REGEN_DISABLED                = "HandlePlayerRegenDisabled",
     PLAYER_REGEN_ENABLED                 = "HandlePlayerRegenEnabled",
     DAMAGE_METER_COMBAT_SESSION_UPDATED  = "HandleDamageMeterCombatSessionUpdated",
