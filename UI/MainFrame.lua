@@ -99,10 +99,15 @@ function MainFrame:Initialize()
         end
     end)
 
+    -- Two-row tab strip: up to TABS_PER_ROW buttons on row 1, rest on row 2.
+    local TABS_PER_ROW = 6
+    local ROW_H        = 28
+    local ROW_GAP      = 6
+
     self.tabStrip = CreateFrame("Frame", nil, self.frame)
     self.tabStrip:SetPoint("TOPLEFT", self.header, "BOTTOMLEFT", 16, -10)
     self.tabStrip:SetPoint("TOPRIGHT", self.header, "BOTTOMRIGHT", -16, -10)
-    self.tabStrip:SetHeight(28)
+    self.tabStrip:SetHeight(ROW_H * 2 + ROW_GAP)
 
     self.contentShell = ns.Widgets.CreateSurface(self.frame, 1, 1, ns.Widgets.THEME.contentShell, ns.Widgets.THEME.border)
     self.contentShell:SetPoint("TOPLEFT", self.tabStrip, "BOTTOMLEFT", 0, -10)
@@ -115,7 +120,17 @@ function MainFrame:Initialize()
     self.buttons = {}
     self.views = {}
 
-    local previousButton = nil
+    -- Collect visible tabs first so row splitting is index-based.
+    local visibleTabs = {}
+    for _, tab in ipairs(self.tabs) do
+        if not tab.hidden then
+            visibleTabs[#visibleTabs + 1] = tab
+        end
+    end
+
+    local prevRow1 = nil
+    local prevRow2 = nil
+
     for _, tab in ipairs(self.tabs) do
         -- Build the view regardless of whether the tab button is visible.
         local viewModule = ns.Addon:GetModule(tab.module)
@@ -129,13 +144,33 @@ function MainFrame:Initialize()
         end
 
         if not tab.hidden then
-            local width = math.max(72, 24 + (string.len(tab.label) * 7))
+            local width  = math.max(72, 24 + (string.len(tab.label) * 7))
             local button = ns.Widgets.CreateButton(self.tabStrip, tab.label, width, 24)
-            if previousButton then
-                button:SetPoint("TOPLEFT", previousButton, "TOPRIGHT", 4, 0)
-            else
-                button:SetPoint("TOPLEFT", self.tabStrip, "TOPLEFT", 0, 0)
+
+            -- Determine which row this tab falls on by its position in visibleTabs.
+            local visibleIndex = 0
+            for vi, vt in ipairs(visibleTabs) do
+                if vt.id == tab.id then visibleIndex = vi break end
             end
+
+            if visibleIndex <= TABS_PER_ROW then
+                -- Row 1 (top)
+                if prevRow1 then
+                    button:SetPoint("TOPLEFT", prevRow1, "TOPRIGHT", 4, 0)
+                else
+                    button:SetPoint("TOPLEFT", self.tabStrip, "TOPLEFT", 0, 0)
+                end
+                prevRow1 = button
+            else
+                -- Row 2 (bottom)
+                if prevRow2 then
+                    button:SetPoint("TOPLEFT", prevRow2, "TOPRIGHT", 4, 0)
+                else
+                    button:SetPoint("TOPLEFT", self.tabStrip, "TOPLEFT", 0, -(ROW_H + ROW_GAP))
+                end
+                prevRow2 = button
+            end
+
             button:SetScript("OnClick", function()
                 self:ShowView(tab.id)
             end)
@@ -144,7 +179,6 @@ function MainFrame:Initialize()
                 button:SetEnabled(false)
             end
             self.buttons[tab.id] = button
-            previousButton = button
         end
     end
 end
