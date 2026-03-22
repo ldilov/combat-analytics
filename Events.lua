@@ -26,10 +26,12 @@ end
 local TRACKER_EVENT_MAP = {
     PLAYER_ENTERING_WORLD               = "HandlePlayerEnteringWorld",
     TRAIT_CONFIG_LIST_UPDATED            = "HandleTraitConfigListUpdated",
-    -- COMBAT_LOG_EVENT_UNFILTERED is NOT registered: in Midnight the frame
-    -- event is restricted for addons and always raises ADDON_ACTION_BLOCKED.
-    -- CLEU data is accessed via C_CombatLog.GetCurrentEventInfo() inside a
-    -- registered C_CombatLog callback instead (see HandleCombatLogEvent).
+    -- CLEU is restricted in Midnight arena (src/dst are secret strings) but
+    -- Frame:RegisterEvent() is not protected — registration never raises
+    -- ADDON_ACTION_BLOCKED.  NormalizeCombatLogEvent sanitizes every field
+    -- via SanitizeString/SanitizeNumber before use, so restricted events
+    -- are processed safely and produce zeroed-out amounts instead of crashes.
+    COMBAT_LOG_EVENT_UNFILTERED          = "HandleCombatLogEvent",
     PLAYER_REGEN_DISABLED                = "HandlePlayerRegenDisabled",
     PLAYER_REGEN_ENABLED                 = "HandlePlayerRegenEnabled",
     DAMAGE_METER_COMBAT_SESSION_UPDATED  = "HandleDamageMeterCombatSessionUpdated",
