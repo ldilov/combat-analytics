@@ -73,7 +73,11 @@ end
 function ReplayView:_label(x, y, text, font, cr, cg, cb, ca)
     local fs = self.canvas:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
     fs:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", x, -y)
-    fs:SetTextColor(cr or unpack(Theme.textMuted))
+    if cr then
+        fs:SetTextColor(cr, cg or 1, cb or 1, ca or 1)
+    else
+        fs:SetTextColor(unpack(Theme.textMuted))
+    end
     fs:SetText(text)
     self:_add(fs)
     return fs
@@ -139,8 +143,7 @@ function ReplayView:Render(session)
     self:_clear()
 
     if not session then
-        self:_label(8, 0, "No session data.", "GameFontHighlight",
-            unpack(Theme.textMuted))
+        self:_label(8, 0, "No session data.", "GameFontHighlight")
         return
     end
 
