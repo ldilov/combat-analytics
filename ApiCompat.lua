@@ -103,13 +103,14 @@ end
 
 local function isSecretValue(val)
     if val == nil then return false end
-    -- Attempt a trivial operation.  If the value is secret the operation
-    -- raises an error that pcall catches.
-    local ok = pcall(function()
-        -- tostring on a secret string errors with "secret value" in Midnight.
-        local _ = tostring(val) .. ""
-    end)
-    return not ok
+    -- On WoW Midnight, tostring() and ".." propagate the secret flag rather
+    -- than stripping it.  Concatenation can SUCCEED while the result is still
+    -- tainted.  A comparison to a plain string is the reliable second test:
+    -- it throws "attempt to compare ... (a secret string)" for tainted values.
+    local okConcat, asStr = pcall(function() return tostring(val) .. "" end)
+    if not okConcat then return true end            -- hard throw → definitely secret
+    local okCmp = pcall(function() return asStr == "" end)
+    return not okCmp                               -- compare threw → still tainted
 end
 
 ApiCompat.IsSecretValue = isSecretValue
