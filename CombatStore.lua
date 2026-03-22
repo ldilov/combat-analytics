@@ -337,6 +337,17 @@ local function updateAggregateContainerForSession(aggregates, session, kindFilte
     if not kindFilter or kindFilter == Constants.AGGREGATE_KIND.BUILD then
         local buildBucket = getOrCreateBucket(aggregates.builds, Constants.AGGREGATE_KIND.BUILD, buildHash, buildHash)
         applySessionToBucket(buildBucket, session)
+        -- Stamp human-readable snapshot metadata once so the UI can show spec
+        -- name + PvP talents instead of the raw hash.  Only written on first
+        -- encounter; the hash guarantees the build never changes under this key.
+        local snap = session.playerSnapshot
+        if snap and not buildBucket.specName then
+            buildBucket.specId           = snap.specId
+            buildBucket.specName         = snap.specName
+            buildBucket.classFile        = snap.classFile
+            buildBucket.pvpTalents       = snap.pvpTalents and Helpers.CopyTable(snap.pvpTalents, false) or {}
+            buildBucket.heroTalentSpecId = snap.heroTalentSpecId
+        end
         -- Build confidence score: sample-size-corrected win rate.
         -- Formula: min(1.0, fights / targetSample) * winRate
         -- Prevents small-sample builds from outranking stable high-fight builds.

@@ -13,11 +13,57 @@ local BuildComparatorView = {
 
 -- ─── helpers ─────────────────────────────────────────────────────────────────
 
+-- Resolve PvP talent names from stored spell IDs.
+-- C_Spell.GetSpellName() works synchronously for cached spells; PvP talents
+-- are always cached because the client needs them for the combat UI.
+local function resolvePvpTalentNames(pvpTalents)
+    if not pvpTalents or #pvpTalents == 0 then return nil end
+    local names = {}
+    for _, spellId in ipairs(pvpTalents) do
+        local name = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellId)
+        if name and name ~= "" then
+            names[#names + 1] = name
+        end
+    end
+    return #names > 0 and names or nil
+end
+
+-- Extract snapshot metadata from a bucket's last session (for buckets created
+-- before the specName field was introduced).
+local function snapshotFromLastSession(bucket)
+    if not bucket or not bucket.lastSessionId then return nil end
+    local store = ns.Addon:GetModule("CombatStore")
+    if not store then return nil end
+    local session = store:GetCombatById(bucket.lastSessionId)
+    return session and session.playerSnapshot or nil
+end
+
 local function buildLabel(bucket)
     if not bucket then return "(none)" end
-    local hash = string.sub(bucket.key or "unknown", 1, 8)
     local f    = bucket.fights or 0
-    return string.format("Build %s  (%dF)", hash, f)
+    local fStr = string.format("(%dF)", f)
+
+    -- Prefer metadata stored directly on the bucket; fall back to last session.
+    local specName   = bucket.specName
+    local pvpTalents = bucket.pvpTalents
+    if not specName then
+        local snap = snapshotFromLastSession(bucket)
+        if snap then
+            specName   = snap.specName
+            pvpTalents = snap.pvpTalents
+        end
+    end
+
+    if not specName then
+        -- Last resort: show truncated hash so it's always legible.
+        return string.format("Build %s  %s", string.sub(bucket.key or "?", 1, 8), fStr)
+    end
+
+    local pvpNames = resolvePvpTalentNames(pvpTalents)
+    if pvpNames then
+        return string.format("%s  \226\128\148  %s  %s", specName, table.concat(pvpNames, ", "), fStr)
+    end
+    return string.format("%s  %s", specName, fStr)
 end
 
 local METRIC_DEFS = {
@@ -99,7 +145,7 @@ function BuildComparatorView:Build(parent)
 
     self.nameA = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     self.nameA:SetPoint("LEFT", self.prevA, "RIGHT", 6, 0)
-    self.nameA:SetWidth(240)
+    self.nameA:SetWidth(340)
     self.nameA:SetJustifyH("LEFT")
 
     self.nextA = ns.Widgets.CreateButton(self.frame, ">", 24, 22)
@@ -124,7 +170,7 @@ function BuildComparatorView:Build(parent)
 
     self.nameB = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     self.nameB:SetPoint("LEFT", self.prevB, "RIGHT", 6, 0)
-    self.nameB:SetWidth(240)
+    self.nameB:SetWidth(340)
     self.nameB:SetJustifyH("LEFT")
 
     self.nextB = ns.Widgets.CreateButton(self.frame, ">", 24, 22)
