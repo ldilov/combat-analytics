@@ -176,7 +176,12 @@ local function isProcCandidate(unitToken, auraData)
     end
     local ok, category = pcall(function() return Constants.SPELL_CATEGORIES[auraData.spellId] end)
     if not ok then category = nil end
-    if auraData.duration and auraData.duration > 0 and auraData.duration <= 20 then
+    -- auraData.duration can be a secret number in Midnight arena; comparison
+    -- operators on secret values throw "attempt to compare", so pcall-guard.
+    local okDur, durationProc = pcall(function()
+        return auraData.duration and auraData.duration > 0 and auraData.duration <= 20
+    end)
+    if okDur and durationProc then
         return true
     end
     if category == Constants.SPELL_CATEGORY.OFFENSIVE or category == Constants.SPELL_CATEGORY.DEFENSIVE or category == Constants.SPELL_CATEGORY.MOBILITY then
@@ -931,8 +936,12 @@ function CombatTracker:OpenAuraWindow(session, guid, auraId, timestampOffset, is
     aggregate.applications = aggregate.applications + 1
     aggregate.procCount = aggregate.procCount + (isProc and 1 or 0)
     aggregate.isProc = aggregate.isProc or isProc
-    aggregate.stacksObserved = aggregate.stacksObserved + (stackCount or 0)
-    aggregate.maxStacksObserved = math.max(aggregate.maxStacksObserved, stackCount or 0)
+    -- stackCount may be a secret number (auraData.applications in Midnight arena);
+    -- arithmetic is fine but math.max uses comparison, so pcall-guard both.
+    pcall(function()
+        aggregate.stacksObserved    = aggregate.stacksObserved    + (stackCount or 0)
+        aggregate.maxStacksObserved = math.max(aggregate.maxStacksObserved, stackCount or 0)
+    end)
 
     current = {
         startedAt = timestampOffset,
@@ -1988,9 +1997,13 @@ function CombatTracker:HandleUnitAura(unitTarget, updateInfo)
             isProc = procLike,
         }
         if safeSpellId then
-            local ok, apps = pcall(function() return auraData.applications or 0 end)
             local aggregate = self:EnsureAuraAggregate(session, safeSpellId)
-            aggregate.maxStacksObserved = math.max(aggregate.maxStacksObserved, ok and apps or 0)
+            -- auraData.applications may be secret; math.max uses comparison and
+            -- would throw, so pcall-guard the entire update.
+            pcall(function()
+                aggregate.maxStacksObserved = math.max(
+                    aggregate.maxStacksObserved, auraData.applications or 0)
+            end)
             aggregate.isProc = aggregate.isProc or procLike
         end
     end
