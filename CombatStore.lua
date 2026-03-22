@@ -169,13 +169,18 @@ local function getOrCreateBucket(container, kind, key, label)
     -- can't read their content.  tostring() propagates the secret flag rather than
     -- stripping it.  Concatenation with "" forces a fresh plain-Lua-string
     -- allocation; if that also throws, fall back to "unknown".
+    -- Both key AND label must be sanitized: key is used as a table index (crashes
+    -- on secret compare), label is stored in bucket.label and used by UI SetText.
     local okKey, safeKey = pcall(function() return (key or "") .. "" end)
     local okCmp, notEmpty = pcall(function() return safeKey ~= "" end)
     key = (okKey and okCmp and notEmpty and safeKey) or "unknown"
     if Helpers.IsBlank(key) then
         key = "unknown"
     end
-    container[key] = container[key] or buildAggregateBucket(kind, key, label)
+    local okLabel, rawLabel = pcall(function() return (label or "") .. "" end)
+    local okLabelCmp, labelNotEmpty = pcall(function() return rawLabel ~= "" end)
+    local safeLabel = (okLabel and okLabelCmp and labelNotEmpty and rawLabel) or key
+    container[key] = container[key] or buildAggregateBucket(kind, key, safeLabel)
     return container[key]
 end
 
