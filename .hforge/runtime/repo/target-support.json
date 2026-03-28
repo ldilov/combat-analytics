@@ -1,0 +1,137 @@
+{
+  "generatedAt": "2026-03-28T16:46:26.919Z",
+  "targets": [
+    {
+      "targetId": "codex",
+      "displayName": "Codex",
+      "supportLevel": "full",
+      "degradedCapabilities": [
+        {
+          "capabilityId": "typed-hooks",
+          "displayName": "Typed hooks",
+          "supportLevel": "partial",
+          "supportMode": "documentation-only",
+          "fallbackBehavior": "Use the docs and packaged hook manifests as references, then wire execution manually in the Codex target."
+        }
+      ]
+    },
+    {
+      "targetId": "claude-code",
+      "displayName": "Claude Code",
+      "supportLevel": "full",
+      "degradedCapabilities": []
+    },
+    {
+      "targetId": "cursor",
+      "displayName": "Cursor",
+      "supportLevel": "partial",
+      "degradedCapabilities": [
+        {
+          "capabilityId": "templates",
+          "displayName": "Templates and docs",
+          "supportLevel": "partial",
+          "supportMode": "documentation-only",
+          "fallbackBehavior": "Use generated docs and manifests as the support surface instead of expecting a native Cursor runtime install."
+        },
+        {
+          "capabilityId": "workflow-validation",
+          "displayName": "Workflow validation",
+          "supportLevel": "partial",
+          "supportMode": "documentation-only",
+          "fallbackBehavior": "Run the validators from the repository rather than relying on a Cursor-specific runtime integration."
+        },
+        {
+          "capabilityId": "repo-intelligence",
+          "displayName": "Repo intelligence",
+          "supportLevel": "partial",
+          "supportMode": "translated",
+          "fallbackBehavior": "Inspect `.hforge/runtime/index.json` and `.hforge/library/`, then run the intelligence scripts directly and treat the output as operator guidance."
+        },
+        {
+          "capabilityId": "flow-orchestration",
+          "displayName": "Flow orchestration",
+          "supportLevel": "unsupported",
+          "supportMode": "unsupported",
+          "fallbackBehavior": "Do not rely on packaged flow recovery for Cursor; use `.hforge/runtime/index.json` and the thin bridge surfaces only."
+        },
+        {
+          "capabilityId": "typed-hooks",
+          "displayName": "Typed hooks",
+          "supportLevel": "unsupported",
+          "supportMode": "unsupported",
+          "fallbackBehavior": "Use hook docs as references only; do not claim native Cursor hook execution."
+        },
+        {
+          "capabilityId": "maintenance",
+          "displayName": "Maintenance commands",
+          "supportLevel": "partial",
+          "supportMode": "documentation-only",
+          "fallbackBehavior": "Run the maintenance commands from the repository rather than expecting Cursor-specific runtime integration."
+        },
+        {
+          "capabilityId": "observability",
+          "displayName": "Local observability",
+          "supportLevel": "partial",
+          "supportMode": "documentation-only",
+          "fallbackBehavior": "Inspect the local observability artifacts directly from the repository."
+        }
+      ]
+    },
+    {
+      "targetId": "opencode",
+      "displayName": "OpenCode",
+      "supportLevel": "partial",
+      "degradedCapabilities": [
+        {
+          "capabilityId": "templates",
+          "displayName": "Templates and docs",
+          "supportLevel": "partial",
+          "supportMode": "documentation-only",
+          "fallbackBehavior": "Use generated docs and manifests as the support surface instead of expecting a native OpenCode runtime install."
+        },
+        {
+          "capabilityId": "workflow-validation",
+          "displayName": "Workflow validation",
+          "supportLevel": "partial",
+          "supportMode": "documentation-only",
+          "fallbackBehavior": "Run the validators from the repository rather than relying on an OpenCode-specific runtime integration."
+        },
+        {
+          "capabilityId": "repo-intelligence",
+          "displayName": "Repo intelligence",
+          "supportLevel": "partial",
+          "supportMode": "translated",
+          "fallbackBehavior": "Inspect `.hforge/runtime/index.json` and `.hforge/library/`, then run the intelligence scripts directly and treat the output as operator guidance."
+        },
+        {
+          "capabilityId": "flow-orchestration",
+          "displayName": "Flow orchestration",
+          "supportLevel": "unsupported",
+          "supportMode": "unsupported",
+          "fallbackBehavior": "Do not rely on packaged flow recovery for OpenCode; use `.hforge/runtime/index.json` and the thin bridge surfaces only."
+        },
+        {
+          "capabilityId": "typed-hooks",
+          "displayName": "Typed hooks",
+          "supportLevel": "unsupported",
+          "supportMode": "unsupported",
+          "fallbackBehavior": "Use hook docs as references only; do not claim native OpenCode hook execution."
+        },
+        {
+          "capabilityId": "maintenance",
+          "displayName": "Maintenance commands",
+          "supportLevel": "partial",
+          "supportMode": "documentation-only",
+          "fallbackBehavior": "Run the maintenance commands from the repository rather than expecting OpenCode-specific runtime integration."
+        },
+        {
+          "capabilityId": "observability",
+          "displayName": "Local observability",
+          "supportLevel": "partial",
+          "supportMode": "documentation-only",
+          "fallbackBehavior": "Inspect the local observability artifacts directly from the repository."
+        }
+      ]
+    }
+  ]
+}
