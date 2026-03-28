@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-03-28T16:46:26.919Z",
+  "items": [
+    {
+      "id": "missing-tests",
+      "confidence": 0.92,
+      "evidence": [
+        "No test files or frameworks detected."
+      ]
+    },
+    {
+      "id": "legacy",
+      "confidence": 0.88,
+      "evidence": [
+        "seed/MetricThresholds.lua"
+      ]
+    },
+    {
+      "id": "security",
+      "confidence": 0.86,
+      "evidence": [
+        ".agents/skills/security-scan/SKILL.md",
+        ".claude/agents/security-scan.md",
+        "docs/plans/2026-03-21-baseline-threat-score-design.md",
+        "docs/plans/2026-03-21-baseline-threat-score.md"
+      ]
+    },
+    {
+      "id": "migration",
+      "confidence": 0.82,
+      "evidence": [
+        ".agents/skills/db-migration-review/SKILL.md"
+      ]
+    }
+  ]
+}

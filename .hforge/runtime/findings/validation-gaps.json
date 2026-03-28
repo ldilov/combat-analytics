@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-03-28T16:46:26.919Z",
+  "items": [
+    {
+      "id": "validation:missing-tests",
+      "confidence": 0.95,
+      "evidence": [
+        "No tests directory, test files, or test framework detected."
+      ]
+    },
+    {
+      "id": "validation:missing-lint",
+      "confidence": 0.65,
+      "evidence": [
+        "No lint configuration detected."
+      ]
+    }
+  ]
+}

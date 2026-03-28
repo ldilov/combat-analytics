@@ -29,6 +29,73 @@ local SUGGESTION_TITLES = {
     LOW_HEALER_PRESSURE = "Healer received little damage",
     TILT_WARNING = "Performance dip detected (possible tilt)",
     COMP_DEFICIT = "Low win rate vs this opponent composition",
+    CC_DR_WASTE = "CC applied at diminished returns",
+    CC_LATE_TRINKET = "Trinket used too late in CC chain",
+    CC_MISSED_KILL_WINDOW = "CC on healer but no burst follow-up",
+    CC_GOOD_TRINKET = "Good trinket timing (well done!)",
+    CC_CHAIN_BREAK = "CC chain broken prematurely",
+    CC_HIGH_UPTIME = "Excessive time spent crowd-controlled",
+}
+
+-- ---------------------------------------------------------------------------
+-- Category filter definitions for coaching notes
+-- ---------------------------------------------------------------------------
+local CATEGORY_FILTERS = {
+    { key = "all",         label = "All"         },
+    { key = "offense",     label = "Offense"     },
+    { key = "defense",     label = "Defense"     },
+    { key = "cc",          label = "CC"          },
+    { key = "matchup",     label = "Matchup"     },
+    { key = "consistency", label = "Consistency" },
+}
+
+local REASON_TO_CATEGORY = {
+    -- offense
+    LOW_PRESSURE_VS_BUILD_BASELINE = "offense",
+    WEAK_BURST_FOR_CONTEXT         = "offense",
+    LATE_FIRST_GO                  = "offense",
+    SUBOPTIMAL_OPENER_SEQUENCE     = "offense",
+    LOW_HEALER_PRESSURE            = "offense",
+    -- defense
+    DEFENSIVE_UNUSED_ON_LOSS       = "defense",
+    DEFENSIVE_DRIFT                = "defense",
+    REACTIVE_DEFENSIVE_LATE        = "defense",
+    -- CC
+    DIED_IN_CC                     = "cc",
+    TRINKET_TIMING_POOR            = "cc",
+    HIGH_CC_UPTIME                 = "cc",
+    POOR_INTERRUPT_RATE            = "cc",
+    CC_DR_WASTE                    = "cc",
+    CC_LATE_TRINKET                = "cc",
+    CC_MISSED_KILL_WINDOW          = "cc",
+    CC_GOOD_TRINKET                = "cc",
+    CC_CHAIN_BREAK                 = "cc",
+    CC_HIGH_UPTIME                 = "cc",
+    -- matchup
+    HIGH_DAMAGE_TAKEN_VS_OPPONENT  = "matchup",
+    SPEC_WINRATE_DEFICIT           = "matchup",
+    SPEC_WINRATE_STRENGTH          = "matchup",
+    COMP_DEFICIT                   = "matchup",
+    -- consistency
+    DUMMY_OPENER_VARIANCE          = "consistency",
+    DUMMY_SUSTAINED_VARIANCE       = "consistency",
+    ROTATION_GAPS_OBSERVED         = "consistency",
+    PROC_WINDOWS_UNDERUSED         = "consistency",
+    TILT_WARNING                   = "consistency",
+}
+
+-- Severity to fill fraction for MetricBar severity indicators
+local SEVERITY_FILL = {
+    high   = 1.0,
+    medium = 0.55,
+    low    = 0.2,
+}
+
+-- Severity to MetricBar fill color
+local SEVERITY_BAR_COLORS = {
+    high   = { 0.90, 0.30, 0.25, 1.0 },
+    medium = { 0.96, 0.74, 0.38, 1.0 },
+    low    = { 0.44, 0.82, 0.60, 1.0 },
 }
 
 local function formatDisplayLabel(value)
@@ -143,6 +210,24 @@ local function buildEvidenceText(suggestion)
         return string.format("Record vs this comp: %d-%d (%.0f%% win rate over %d games).",
             evidence.wins or 0, evidence.losses or 0, evidence.winRate or 0, evidence.fights or 0)
     end
+    if suggestion.reasonCode == "CC_DR_WASTE" then
+        return string.format("DR category: %s. Chain length: %d. Applied at diminished level.", evidence.drCategory or "?", evidence.chainLength or 0)
+    end
+    if suggestion.reasonCode == "CC_LATE_TRINKET" then
+        return string.format("Trinket delay: %.1fs after CC start. CC duration: %.1fs.", evidence.trinketDelay or 0, evidence.ccDuration or 0)
+    end
+    if suggestion.reasonCode == "CC_MISSED_KILL_WINDOW" then
+        return string.format("Healer CC duration: %.1fs. No burst within %.1fs of CC.", evidence.ccDuration or 0, evidence.followUpWindow or 5)
+    end
+    if suggestion.reasonCode == "CC_GOOD_TRINKET" then
+        return string.format("Trinketed %.1fs into CC. Avoided %.1fs of remaining CC.", evidence.trinketDelay or 0, evidence.avoidedDuration or 0)
+    end
+    if suggestion.reasonCode == "CC_CHAIN_BREAK" then
+        return string.format("Chain on %s broke after %d CCs. Gap: %.1fs.", evidence.drCategory or "?", evidence.chainLength or 0, evidence.gapSeconds or 0)
+    end
+    if suggestion.reasonCode == "CC_HIGH_UPTIME" then
+        return string.format("CC uptime: %.1f%%. Total time under CC: %.1fs.", (evidence.uptimePct or 0) * 100, evidence.totalCCTime or 0)
+    end
 
     return "Derived from current session output and your stored PvP history."
 end
@@ -175,16 +260,17 @@ local function buildTrustCard(store, session)
         identityConfidence
     )
 
+    -- T120: Support both legacy ANALYSIS_CONFIDENCE and new SESSION_CONFIDENCE labels
     if readQuality == "high" then
-        if dataConf == "enriched" then
+        if dataConf == "enriched" or dataConf == "state_plus_damage_meter" then
             body = string.format(
-                "%s trust on %s. CLEU timeline and DamageMeter rows reconciled within tolerance — full attribution available.",
+                "%s trust on %s. State events and DamageMeter reconciled within tolerance — full attribution available.",
                 richLabel,
                 characterLabel
             )
         else
             body = string.format(
-                "%s trust on %s. Raw timeline exists and fight identity resolved cleanly enough for stronger coaching.",
+                "%s trust on %s. Timeline exists and fight identity resolved cleanly enough for stronger coaching.",
                 richLabel,
                 characterLabel
             )
@@ -195,19 +281,25 @@ local function buildTrustCard(store, session)
             richLabel,
             characterLabel
         )
-    elseif dataConf == "restricted_raw" then
+    elseif dataConf == "restricted_raw" or dataConf == "damage_meter_only" then
         body = string.format(
             "%s trust on %s. CLEU is restricted for this session; coaching relies on DamageMeter totals only.",
             richLabel,
             characterLabel
         )
-    elseif dataConf == "degraded" then
+    elseif dataConf == "degraded" or dataConf == "visible_cc_only" then
         body = string.format(
-            "%s trust on %s. DamageMeter delta exceeded tolerance — damage totals may be unreliable. Timing advice suppressed.",
+            "%s trust on %s. Limited to CC/control data — damage totals may be unreliable. Timing advice suppressed.",
             richLabel,
             characterLabel
         )
-    elseif readQuality == "limited" then
+    elseif dataConf == "legacy_cleu_import" then
+        body = string.format(
+            "%s trust on %s. Migrated from pre-Midnight session — CLEU data is legacy, timeline detail limited.",
+            richLabel,
+            characterLabel
+        )
+    elseif readQuality == "limited" or dataConf == "estimated" then
         body = string.format(
             "%s trust on %s. This read leans on post-combat totals, so timing-heavy advice is intentionally conservative.",
             richLabel,
@@ -348,9 +440,42 @@ local function buildMatchupCard(store, session, characterKey)
         "Three similar sessions is the minimum before matchup memory becomes meaningful."
 end
 
+-- ---------------------------------------------------------------------------
+-- T077: Extract compact one-line key-data points from the fight story evidence
+-- ---------------------------------------------------------------------------
+local function extractStoryPills(storyEvidence)
+    if not storyEvidence or storyEvidence == "" then
+        return {}
+    end
+    local pills = {}
+    -- Pull key=value pairs separated by "|"
+    for segment in storyEvidence:gmatch("[^|]+") do
+        local trimmed = segment:match("^%s*(.-)%s*$")
+        if trimmed and trimmed ~= "" then
+            pills[#pills + 1] = trimmed
+        end
+    end
+    return pills
+end
+
+-- ---------------------------------------------------------------------------
+-- T077: Check whether a suggestion's reasonCode passes the active filter
+-- ---------------------------------------------------------------------------
+local function passesFilter(activeFilter, reasonCode)
+    if activeFilter == "all" then
+        return true
+    end
+    local category = REASON_TO_CATEGORY[reasonCode]
+    return category == activeFilter
+end
+
+-- ---------------------------------------------------------------------------
+-- Build
+-- ---------------------------------------------------------------------------
 function SuggestionsView:Build(parent)
     self.frame = CreateFrame("Frame", nil, parent)
     self.frame:SetAllPoints()
+    self.activeFilter = "all"
 
     self.title = ns.Widgets.CreateSectionTitle(self.frame, "Actionable Insights", "TOPLEFT", self.frame, "TOPLEFT", 16, -16)
     self.caption = ns.Widgets.CreateCaption(self.frame, "Post-fight review for the current character: trust first, then fight story, matchup memory, and coaching notes.", "TOPLEFT", self.title, "BOTTOMLEFT", 0, -4)
@@ -362,31 +487,95 @@ function SuggestionsView:Build(parent)
     self.emptyCard = ns.Widgets.CreateInsightCard(self.canvas, 750, 96)
     self.emptyCard:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
 
+    -- -----------------------------------------------------------------------
+    -- Trust card + severity bar + confidence pill
+    -- -----------------------------------------------------------------------
     self.trustCard = ns.Widgets.CreateInsightCard(self.canvas, 750, 104)
     self.trustCard:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
 
+    self.trustSeverityBar = ns.Widgets.CreateMetricBar(self.canvas, 750, 32)
+    self.trustSeverityBar:SetPoint("TOPLEFT", self.trustCard, "BOTTOMLEFT", 0, -4)
+
+    self.trustConfidencePill = ns.Widgets.CreateConfidencePill(self.canvas, "estimated")
+    self.trustConfidencePill:SetPoint("TOPLEFT", self.trustSeverityBar, "BOTTOMLEFT", 0, -4)
+
+    -- -----------------------------------------------------------------------
+    -- Story card + severity bar + compact pill strip
+    -- -----------------------------------------------------------------------
     self.storyCard = ns.Widgets.CreateInsightCard(self.canvas, 750, 104)
-    self.storyCard:SetPoint("TOPLEFT", self.trustCard, "BOTTOMLEFT", 0, -10)
+    self.storyCard:SetPoint("TOPLEFT", self.trustConfidencePill, "BOTTOMLEFT", 0, -10)
 
+    self.storySeverityBar = ns.Widgets.CreateMetricBar(self.canvas, 750, 32)
+    self.storySeverityBar:SetPoint("TOPLEFT", self.storyCard, "BOTTOMLEFT", 0, -4)
+
+    -- Compact fight-story pill strip (populated in Refresh)
+    self.storyPillFrame = CreateFrame("Frame", nil, self.canvas)
+    self.storyPillFrame:SetSize(750, 22)
+    self.storyPillFrame:SetPoint("TOPLEFT", self.storySeverityBar, "BOTTOMLEFT", 0, -4)
+    self.storyPills = {}
+
+    -- -----------------------------------------------------------------------
+    -- Matchup card + severity bar
+    -- -----------------------------------------------------------------------
     self.matchupCard = ns.Widgets.CreateInsightCard(self.canvas, 750, 104)
-    self.matchupCard:SetPoint("TOPLEFT", self.storyCard, "BOTTOMLEFT", 0, -10)
+    self.matchupCard:SetPoint("TOPLEFT", self.storyPillFrame, "BOTTOMLEFT", 0, -10)
 
-    self.recentTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Recent Coaching Notes", "TOPLEFT", self.matchupCard, "BOTTOMLEFT", 0, -22)
+    self.matchupSeverityBar = ns.Widgets.CreateMetricBar(self.canvas, 750, 32)
+    self.matchupSeverityBar:SetPoint("TOPLEFT", self.matchupCard, "BOTTOMLEFT", 0, -4)
+
+    -- -----------------------------------------------------------------------
+    -- Category filter bar for coaching notes
+    -- -----------------------------------------------------------------------
+    self.filterFrame = CreateFrame("Frame", nil, self.canvas)
+    self.filterFrame:SetSize(750, 28)
+    self.filterFrame:SetPoint("TOPLEFT", self.matchupSeverityBar, "BOTTOMLEFT", 0, -22)
+
+    self.filterButtons = {}
+    local filterXOffset = 0
+    for i, def in ipairs(CATEGORY_FILTERS) do
+        local btnWidth = #def.label * 8 + 20
+        local btn = ns.Widgets.CreateButton(self.filterFrame, def.label, btnWidth, 24)
+        btn:SetPoint("TOPLEFT", self.filterFrame, "TOPLEFT", filterXOffset, 0)
+        btn.filterKey = def.key
+        btn:SetActive(def.key == "all")
+        btn:SetScript("OnClick", function()
+            self.activeFilter = def.key
+            for _, other in ipairs(self.filterButtons) do
+                other:SetActive(other.filterKey == self.activeFilter)
+            end
+            self:Refresh()
+        end)
+        self.filterButtons[i] = btn
+        filterXOffset = filterXOffset + btnWidth + 6
+    end
+
+    -- -----------------------------------------------------------------------
+    -- Recent coaching notes section title + caption
+    -- -----------------------------------------------------------------------
+    self.recentTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Recent Coaching Notes", "TOPLEFT", self.filterFrame, "BOTTOMLEFT", 0, -14)
     self.recentCaption = ns.Widgets.CreateCaption(self.canvas, "Rules-backed notes from recent sessions on this character, newest first.", "TOPLEFT", self.recentTitle, "BOTTOMLEFT", 0, -4)
 
+    -- -----------------------------------------------------------------------
+    -- Coaching note cards with per-card severity bars
+    -- -----------------------------------------------------------------------
     self.cards = {}
+    self.cardSeverityBars = {}
     for index = 1, 8 do
         local card = ns.Widgets.CreateInsightCard(self.canvas, 750, 108)
         if index == 1 then
             card:SetPoint("TOPLEFT", self.recentCaption, "BOTTOMLEFT", 0, -12)
         else
-            card:SetPoint("TOPLEFT", self.cards[index - 1], "BOTTOMLEFT", 0, -10)
+            card:SetPoint("TOPLEFT", self.cardSeverityBars[index - 1], "BOTTOMLEFT", 0, -10)
         end
         self.cards[index] = card
+
+        local severityBar = ns.Widgets.CreateMetricBar(self.canvas, 750, 28)
+        severityBar:SetPoint("TOPLEFT", card, "BOTTOMLEFT", 0, -2)
+        self.cardSeverityBars[index] = severityBar
     end
 
     -- Strategy Spotlight section
-    self.strategyTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Strategy Spotlight", "TOPLEFT", self.cards[#self.cards], "BOTTOMLEFT", 0, -22)
+    self.strategyTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Strategy Spotlight", "TOPLEFT", self.cardSeverityBars[#self.cardSeverityBars], "BOTTOMLEFT", 0, -22)
     self.strategyCaption = ns.Widgets.CreateCaption(self.canvas, "Counter guide for the spec you faced most recently.", "TOPLEFT", self.strategyTitle, "BOTTOMLEFT", 0, -4)
 
     self.strategyCard = CreateFrame("Frame", nil, self.canvas, "BackdropTemplate")
@@ -427,10 +616,126 @@ function SuggestionsView:Build(parent)
     self.strategyEmpty = ns.Widgets.CreateInsightCard(self.canvas, 750, 72)
     self.strategyEmpty:SetPoint("TOPLEFT", self.strategyCaption, "BOTTOMLEFT", 0, -12)
 
-    ns.Widgets.SetCanvasHeight(self.canvas, 1560)
+    -- -----------------------------------------------------------------------
+    -- T105: Opener Lab section
+    -- -----------------------------------------------------------------------
+    self.openerLabSection = CreateFrame("Frame", nil, self.canvas, "BackdropTemplate")
+    ns.Widgets.ApplyBackdrop(self.openerLabSection, ns.Widgets.THEME.panelAlt, ns.Widgets.THEME.border)
+    self.openerLabSection:SetSize(750, 200)
+
+    self.openerLabTitle = self.openerLabSection:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    self.openerLabTitle:SetPoint("TOPLEFT", self.openerLabSection, "TOPLEFT", 12, -10)
+    self.openerLabTitle:SetTextColor(unpack(ns.Widgets.THEME.text))
+    self.openerLabTitle:SetText("Opener Lab")
+
+    self.openerLabSequence = self.openerLabSection:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.openerLabSequence:SetPoint("TOPLEFT", self.openerLabTitle, "BOTTOMLEFT", 0, -8)
+    self.openerLabSequence:SetPoint("RIGHT", self.openerLabSection, "RIGHT", -12, 0)
+    self.openerLabSequence:SetJustifyH("LEFT")
+    self.openerLabSequence:SetTextColor(unpack(ns.Widgets.THEME.text))
+
+    self.openerLabRankTitle = self.openerLabSection:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    self.openerLabRankTitle:SetPoint("TOPLEFT", self.openerLabSequence, "BOTTOMLEFT", 0, -10)
+    self.openerLabRankTitle:SetJustifyH("LEFT")
+    self.openerLabRankTitle:SetTextColor(unpack(ns.Widgets.THEME.accent))
+
+    self.openerLabRows = {}
+    for rowIdx = 1, 3 do
+        local row = {}
+        row.bar = ns.Widgets.CreateMetricBar(self.openerLabSection, 710, 22)
+        if rowIdx == 1 then
+            row.bar:SetPoint("TOPLEFT", self.openerLabRankTitle, "BOTTOMLEFT", 0, -6)
+        else
+            row.bar:SetPoint("TOPLEFT", self.openerLabRows[rowIdx - 1].bar, "BOTTOMLEFT", 0, -4)
+        end
+        self.openerLabRows[rowIdx] = row
+    end
+
+    self.openerLabSection:Hide()
+
+    -- -----------------------------------------------------------------------
+    -- T112: Practice Plan section
+    -- -----------------------------------------------------------------------
+    self.practicePlanTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Practice Plan", "TOPLEFT", self.openerLabSection, "BOTTOMLEFT", 0, -22)
+    self.practicePlanCaption = ns.Widgets.CreateCaption(self.canvas, "Actionable practice drills derived from your recent performance patterns.", "TOPLEFT", self.practicePlanTitle, "BOTTOMLEFT", 0, -4)
+
+    self.practicePlanCards = {}
+    self.practicePlanBars = {}
+    for ppIdx = 1, 10 do
+        local card = ns.Widgets.CreateInsightCard(self.canvas, 750, 108)
+        if ppIdx == 1 then
+            card:SetPoint("TOPLEFT", self.practicePlanCaption, "BOTTOMLEFT", 0, -12)
+        else
+            card:SetPoint("TOPLEFT", self.practicePlanBars[ppIdx - 1], "BOTTOMLEFT", 0, -10)
+        end
+        self.practicePlanCards[ppIdx] = card
+
+        local bar = ns.Widgets.CreateMetricBar(self.canvas, 750, 28)
+        bar:SetPoint("TOPLEFT", card, "BOTTOMLEFT", 0, -2)
+        self.practicePlanBars[ppIdx] = bar
+    end
+
+    self.practicePlanTitle:Hide()
+    self.practicePlanCaption:Hide()
+
+    ns.Widgets.SetCanvasHeight(self.canvas, 1900)
     return self.frame
 end
 
+-- ---------------------------------------------------------------------------
+-- Helper: configure a severity MetricBar for a given severity level
+-- ---------------------------------------------------------------------------
+local function setSeverityBar(bar, severity, label)
+    local fill = SEVERITY_FILL[severity] or 0.2
+    local color = SEVERITY_BAR_COLORS[severity] or SEVERITY_BAR_COLORS.low
+    local severityLabel = (severity == "high" and "HIGH") or (severity == "medium" and "MED") or "LOW"
+    bar:SetData(
+        label or "Severity",
+        severityLabel,
+        "",
+        fill,
+        color
+    )
+end
+
+-- ---------------------------------------------------------------------------
+-- Helper: rebuild the fight-story pill strip
+-- ---------------------------------------------------------------------------
+local function refreshStoryPills(self, storyEvidence)
+    -- Hide existing pills
+    for _, pill in ipairs(self.storyPills) do
+        pill:Hide()
+    end
+
+    local segments = extractStoryPills(storyEvidence)
+    if #segments == 0 then
+        self.storyPillFrame:SetSize(750, 1)
+        return
+    end
+
+    local xOffset = 0
+    for i, text in ipairs(segments) do
+        local pill = self.storyPills[i]
+        if not pill then
+            pill = ns.Widgets.CreatePill(self.storyPillFrame, 10, 18, ns.Widgets.THEME.panelAlt, ns.Widgets.THEME.border)
+            self.storyPills[i] = pill
+        end
+        -- Size pill to text width (estimate: ~6px per character + 16 padding)
+        local pillWidth = math.max(50, #text * 6 + 16)
+        pill:SetSize(pillWidth, 18)
+        pill:ClearAllPoints()
+        pill:SetPoint("TOPLEFT", self.storyPillFrame, "TOPLEFT", xOffset, 0)
+        pill:SetData(text)
+        pill:Show()
+        xOffset = xOffset + pillWidth + 6
+    end
+
+    self.storyPillFrame:SetSize(750, 22)
+end
+
+-- ---------------------------------------------------------------------------
+-- Refresh
+-- ---------------------------------------------------------------------------
 function SuggestionsView:Refresh()
     local store = ns.Addon:GetModule("CombatStore")
     local characterKey = store:GetCurrentCharacterKey()
@@ -442,6 +747,12 @@ function SuggestionsView:Refresh()
         self.scrollFrame:SetVerticalScroll(0)
     end
 
+    -- Default-hide practice plan; the end of Refresh will show it if applicable
+    self.practicePlanTitle:Hide()
+    self.practicePlanCaption:Hide()
+    for _, ppCard in ipairs(self.practicePlanCards) do ppCard:Hide() end
+    for _, ppBar in ipairs(self.practicePlanBars) do ppBar:Hide() end
+
     if not latestSession and #suggestions == 0 then
         self.emptyCard:SetData(
             "low",
@@ -451,12 +762,21 @@ function SuggestionsView:Refresh()
         )
         self.emptyCard:Show()
         self.trustCard:Hide()
+        self.trustSeverityBar:Hide()
+        self.trustConfidencePill:Hide()
         self.storyCard:Hide()
+        self.storySeverityBar:Hide()
+        self.storyPillFrame:Hide()
         self.matchupCard:Hide()
+        self.matchupSeverityBar:Hide()
+        self.filterFrame:Hide()
         self.recentTitle:Hide()
         self.recentCaption:Hide()
         for _, card in ipairs(self.cards) do
             card:Hide()
+        end
+        for _, bar in ipairs(self.cardSeverityBars) do
+            bar:Hide()
         end
         self.strategyTitle:Hide()
         self.strategyCaption:Hide()
@@ -466,26 +786,76 @@ function SuggestionsView:Refresh()
     end
 
     self.emptyCard:Hide()
+    self.filterFrame:Show()
     self.recentTitle:Show()
     self.recentCaption:Show()
 
     if latestSession then
         self.caption:SetText(string.format("Post-fight review for %s. Trust first, then fight story, matchup memory, and coaching notes.", store:GetSessionCharacterLabel(latestSession)))
-        self.trustCard:SetData(buildTrustCard(store, latestSession))
-        self.storyCard:SetData(buildFightStory(store, latestSession, characterKey))
-        self.matchupCard:SetData(buildMatchupCard(store, latestSession, characterKey))
+
+        -- Trust card + severity bar + confidence pill
+        local trustSeverity, trustTitle, trustBody, trustEvidence = buildTrustCard(store, latestSession)
+        self.trustCard:SetData(trustSeverity, trustTitle, trustBody, trustEvidence)
+        setSeverityBar(self.trustSeverityBar, trustSeverity, "Trust Level")
+        self.trustSeverityBar:Show()
+
+        -- Confidence pill — session-level confidence from the session itself
+        local sessionConfidence = latestSession.sessionConfidence or latestSession.dataConfidence or "estimated"
+        -- Recreate the confidence pill if the confidence level changed, since
+        -- CreateConfidencePill bakes the mapping into the pill at creation time.
+        if self.trustConfidencePill then
+            self.trustConfidencePill:Hide()
+        end
+        self.trustConfidencePill = ns.Widgets.CreateConfidencePill(self.canvas, sessionConfidence)
+        self.trustConfidencePill:SetPoint("TOPLEFT", self.trustSeverityBar, "BOTTOMLEFT", 0, -4)
+        self.trustConfidencePill:Show()
+
+        -- Story card + severity bar + pill strip
+        local storySeverity, storyTitle, storyBody, storyEvidence = buildFightStory(store, latestSession, characterKey)
+        self.storyCard:SetData(storySeverity, storyTitle, storyBody, storyEvidence)
+        -- Re-anchor story card below the confidence pill
+        self.storyCard:ClearAllPoints()
+        self.storyCard:SetPoint("TOPLEFT", self.trustConfidencePill, "BOTTOMLEFT", 0, -10)
+        setSeverityBar(self.storySeverityBar, storySeverity, "Story Severity")
+        self.storySeverityBar:Show()
+        refreshStoryPills(self, storyEvidence)
+        self.storyPillFrame:Show()
+
+        -- Matchup card + severity bar
+        local matchupSeverity, matchupTitle, matchupBody, matchupEvidence = buildMatchupCard(store, latestSession, characterKey)
+        self.matchupCard:SetData(matchupSeverity, matchupTitle, matchupBody, matchupEvidence)
+        setSeverityBar(self.matchupSeverityBar, matchupSeverity, "Matchup Signal")
+        self.matchupSeverityBar:Show()
+
         self.trustCard:Show()
         self.storyCard:Show()
         self.matchupCard:Show()
     else
         self.caption:SetText("Post-fight review for the current character: trust first, then fight story, matchup memory, and coaching notes.")
         self.trustCard:Hide()
+        self.trustSeverityBar:Hide()
+        self.trustConfidencePill:Hide()
         self.storyCard:Hide()
+        self.storySeverityBar:Hide()
+        self.storyPillFrame:Hide()
         self.matchupCard:Hide()
+        self.matchupSeverityBar:Hide()
     end
 
+    -- -----------------------------------------------------------------------
+    -- Coaching notes — apply category filter
+    -- -----------------------------------------------------------------------
+    local filtered = {}
+    for _, suggestion in ipairs(suggestions) do
+        if passesFilter(self.activeFilter, suggestion.reasonCode) then
+            filtered[#filtered + 1] = suggestion
+        end
+    end
+
+    local visibleCount = 0
     for index, card in ipairs(self.cards) do
-        local suggestion = suggestions[index]
+        local severityBar = self.cardSeverityBars[index]
+        local suggestion = filtered[index]
         if suggestion then
             local session = store:GetCombatById(suggestion.sessionId)
             card:SetData(
@@ -494,17 +864,37 @@ function SuggestionsView:Refresh()
                 string.format("%s\n%s", suggestion.message or "", buildSessionTag(session)),
                 buildEvidenceText(suggestion)
             )
-        elseif index == 1 then
+            setSeverityBar(severityBar, suggestion.severity, REASON_TO_CATEGORY[suggestion.reasonCode] or "note")
+            card:Show()
+            severityBar:Show()
+            visibleCount = visibleCount + 1
+        elseif index == 1 and #filtered == 0 then
+            -- Show a placeholder when no coaching notes match the active filter
+            local noMatchMsg = self.activeFilter == "all"
+                and "The latest sessions on this character did not trip any recent rule-based warnings, which usually means the trust/story cards are the better place to review."
+                or string.format("No coaching notes match the '%s' filter. Try 'All' to see every note.", self.activeFilter)
             card:SetData(
                 "low",
                 "No fresh coaching notes",
-                "The latest sessions on this character did not trip any recent rule-based warnings, which usually means the trust/story cards are the better place to review.",
+                noMatchMsg,
                 latestSession and buildSessionTag(latestSession) or "Collect another duel, arena round, or dummy pull for more notes."
             )
+            setSeverityBar(severityBar, "low", "note")
+            card:Show()
+            severityBar:Show()
+            visibleCount = 1
         else
             card:Hide()
+            severityBar:Hide()
         end
     end
+
+    -- -----------------------------------------------------------------------
+    -- Re-anchor strategy section below the last visible coaching card
+    -- -----------------------------------------------------------------------
+    local lastVisibleBar = self.cardSeverityBars[math.max(1, visibleCount)]
+    self.strategyTitle:ClearAllPoints()
+    self.strategyTitle:SetPoint("TOPLEFT", lastVisibleBar, "BOTTOMLEFT", 0, -22)
 
     -- Strategy Spotlight
     self.strategyTitle:Show()
@@ -525,6 +915,7 @@ function SuggestionsView:Refresh()
             string.format("%d sessions recorded so far — need at least 3.", totalFights)
         )
         self.strategyEmpty:Show()
+        self:RecalculateCanvasHeight()
         return
     end
 
@@ -533,6 +924,7 @@ function SuggestionsView:Refresh()
     local topBucket = specBuckets[1]
     if not topBucket then
         self.strategyCard:Hide()
+        self:RecalculateCanvasHeight()
         return
     end
 
@@ -542,6 +934,7 @@ function SuggestionsView:Refresh()
 
     if not guide then
         self.strategyCard:Hide()
+        self:RecalculateCanvasHeight()
         return
     end
 
@@ -591,6 +984,124 @@ function SuggestionsView:Refresh()
     end
 
     self.strategyCard:Show()
+
+    -- -----------------------------------------------------------------------
+    -- T112: Practice Plan section
+    -- -----------------------------------------------------------------------
+    local ppOk, ppSuggestions = pcall(function()
+        local planner = ns.Addon:GetModule("PracticePlannerService")
+        if not planner or not planner.GeneratePracticePlan then return {} end
+        local aggregates = store:GetAggregateBuckets("specs")
+        local recent = store.GetRecentSessions and store:GetRecentSessions(20, characterKey) or {}
+        return planner:GeneratePracticePlan(aggregates, recent) or {}
+    end)
+    if not ppOk then ppSuggestions = {} end
+
+    -- Anchor the practice plan section below the visible strategy element
+    local ppAnchor = self.strategyCard:IsShown() and self.strategyCard
+        or (self.strategyEmpty:IsShown() and self.strategyEmpty or self.strategyCaption)
+
+    if ppSuggestions and #ppSuggestions > 0 then
+        self.practicePlanTitle:ClearAllPoints()
+        self.practicePlanTitle:SetPoint("TOPLEFT", ppAnchor, "BOTTOMLEFT", 0, -22)
+        self.practicePlanTitle:Show()
+        self.practicePlanCaption:Show()
+
+        local ppVisible = math.min(#ppSuggestions, 10)
+        for ppIdx = 1, 10 do
+            local ppCard = self.practicePlanCards[ppIdx]
+            local ppBar = self.practicePlanBars[ppIdx]
+            local item = ppSuggestions[ppIdx]
+            if item and ppIdx <= ppVisible then
+                local categoryLabel = item.category or "general"
+                local sev = item.severity or "low"
+                ppCard:SetData(
+                    sev,
+                    item.title or "Practice Drill",
+                    string.format("%s\n%s", item.action or "", item.evidence or ""),
+                    string.format("Category: %s | %s", categoryLabel, item.linkedMatchup or "")
+                )
+                setSeverityBar(ppBar, sev, categoryLabel)
+                ppCard:Show()
+                ppBar:Show()
+            else
+                ppCard:Hide()
+                ppBar:Hide()
+            end
+        end
+    else
+        self.practicePlanTitle:Hide()
+        self.practicePlanCaption:Hide()
+        for _, ppCard in ipairs(self.practicePlanCards) do ppCard:Hide() end
+        for _, ppBar in ipairs(self.practicePlanBars) do ppBar:Hide() end
+    end
+
+    self:RecalculateCanvasHeight()
+end
+
+-- ---------------------------------------------------------------------------
+-- Recalculate canvas height based on visible content
+-- ---------------------------------------------------------------------------
+function SuggestionsView:RecalculateCanvasHeight()
+    -- Sum up the approximate heights of all visible sections.
+    -- This keeps the scroll canvas tight rather than using a fixed oversize.
+    local height = 0
+
+    -- Top section cards (trust + severity + confidence + story + severity + pills + matchup + severity)
+    if self.trustCard:IsShown() then
+        height = height + 104 + 32 + 22 + 10 + 4 + 4  -- trustCard + bar + pill + spacing
+    end
+    if self.storyCard:IsShown() then
+        height = height + 104 + 32 + 4 + 10  -- storyCard + bar + spacing
+        if self.storyPillFrame:IsShown() then
+            height = height + 22 + 4
+        end
+    end
+    if self.matchupCard:IsShown() then
+        height = height + 104 + 32 + 4 + 10  -- matchupCard + bar + spacing
+    end
+
+    -- Filter bar
+    if self.filterFrame:IsShown() then
+        height = height + 28 + 22  -- filterFrame + gap to section title
+    end
+
+    -- Recent section header
+    if self.recentTitle:IsShown() then
+        height = height + 20 + 4 + 12  -- title + caption gap + card gap
+    end
+
+    -- Coaching cards
+    for i, card in ipairs(self.cards) do
+        if card:IsShown() then
+            height = height + 108 + 28 + 2 + 10  -- card + severityBar + gaps
+        end
+    end
+
+    -- Strategy section
+    if self.strategyTitle:IsShown() then
+        height = height + 22 + 20 + 4 + 12  -- gap + title + caption gap + card gap
+        if self.strategyCard:IsShown() then
+            height = height + 180
+        elseif self.strategyEmpty:IsShown() then
+            height = height + 72
+        end
+    end
+
+    -- Practice Plan section
+    if self.practicePlanTitle:IsShown() then
+        height = height + 22 + 20 + 4 + 12  -- gap + title + caption gap + card gap
+        for _, ppCard in ipairs(self.practicePlanCards) do
+            if ppCard:IsShown() then
+                height = height + 108 + 28 + 2 + 10  -- card + bar + gaps
+            end
+        end
+    end
+
+    -- Add some bottom padding
+    height = height + 40
+
+    ns.Widgets.SetCanvasHeight(self.canvas, math.max(height, 400))
 end
 
 ns.Addon:RegisterModule("SuggestionsView", SuggestionsView)

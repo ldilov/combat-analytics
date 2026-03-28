@@ -6,6 +6,9 @@ local Helpers = ns.Helpers
 
 local DamageMeterService = {}
 
+-- T048: Detect whether DeathRecap category exists in Enum.DamageMeterType.
+local HAS_DEATH_RECAP = pcall(function() return Enum.DamageMeterType.DeathRecap end)
+
 local function createSpellAggregate(spellId)
     return {
         spellId = spellId,
@@ -233,6 +236,39 @@ local function getLatestTrackedUnit(session)
     return nil
 end
 
+-- collectExpectedOpponentGuids returns a keyed table of all known enemy GUIDs
+-- for the given session. GUIDs are gathered from four sources:
+--   1. session.primaryOpponent.guid
+--   2. session.identity.opponentGuid
+--   3. session.arena.slots[*].guid (all persisted arena slots)
+--   4. ArenaRoundTracker:GetSlots() live state (current round slots)
+local function collectExpectedOpponentGuids(session)
+    local guids = {}
+
+    local po = session and session.primaryOpponent
+    if po and po.guid then guids[po.guid] = true end
+
+    local identity = session and session.identity
+    if identity and identity.opponentGuid then guids[identity.opponentGuid] = true end
+
+    local arena = session and session.arena
+    if arena and arena.slots then
+        for _, slot in pairs(arena.slots) do
+            if slot.guid then guids[slot.guid] = true end
+        end
+    end
+
+    -- Pull live slots from ArenaRoundTracker for the current round.
+    local art = ns and ns.Addon and ns.Addon.GetModule and ns.Addon:GetModule("ArenaRoundTracker")
+    if art then
+        for _, slot in pairs(art:GetSlots()) do
+            if slot.guid then guids[slot.guid] = true end
+        end
+    end
+
+    return guids
+end
+
 function DamageMeterService:IsSupported()
     return type(C_DamageMeter) == "table" and type(Enum) == "table" and type(Enum.DamageMeterType) == "table"
 end
@@ -374,6 +410,86 @@ function DamageMeterService:GetContextFitScore(session, snapshot)
     end
 
     return 0
+end
+
+-- GetOpponentFitScore scores how well a Damage Meter candidate's enemy source
+-- list matches the known opponent roster for the given session.
+--
+-- Scoring:
+--   +28  Primary opponent GUID found in candidate's enemy sources
+--   +10  Per additional overlapping GUID (capped at +30 total overlap credit)
+--   -18  Candidate has enemy sources but zero GUID overlap (wrong session penalty)
+--   +10  Arena: candidate source count exactly matches expected bracket size
+--    +6  Arena: candidate source count is off by one from expected bracket size
+--   +14  Duel: candidate has exactly one enemy source
+--    -8  Duel: candidate has more than one enemy source
+--
+-- Returns 0 safely when both the GUID set and enemy sources are empty.
+function DamageMeterService:GetOpponentFitScore(session, enemySources)
+    if not session then return 0 end
+    local sources = enemySources or {}
+    if #sources == 0 then return 0 end
+
+    local expectedGuids = collectExpectedOpponentGuids(session)
+    local primaryGuid   = session.primaryOpponent and session.primaryOpponent.guid
+
+    local score = 0
+    local overlapCount = 0
+    local primaryFound = false
+
+    for _, entry in ipairs(sources) do
+        local sourceGuid = entry.combatSource and entry.combatSource.sourceGUID
+        if sourceGuid then
+            if primaryGuid and sourceGuid == primaryGuid then
+                if not primaryFound then
+                    score = score + 28
+                    primaryFound = true
+                end
+            elseif expectedGuids[sourceGuid] then
+                overlapCount = overlapCount + 1
+            end
+        end
+    end
+
+    -- Per-overlap credit, capped at +30.
+    score = score + math.min(overlapCount * 10, 30)
+
+    -- Zero-overlap penalty: penalize candidates with sources but no GUID match.
+    local totalOverlap = (primaryFound and 1 or 0) + overlapCount
+    if totalOverlap == 0 then
+        score = score - 18
+    end
+
+    -- Context source-count fit.
+    local identity  = session.identity or {}
+    local context   = identity.kind or session.context
+    local sourceCount = #sources
+
+    if context == Constants.CONTEXT.ARENA then
+        local bracket = session.bracket or (session.arena and session.arena.bracket)
+        if bracket and bracket > 0 then
+            local delta = math.abs(sourceCount - bracket)
+            if delta == 0 then
+                score = score + 10
+            elseif delta == 1 then
+                score = score + 6
+            end
+        end
+    elseif context == Constants.CONTEXT.DUEL then
+        if sourceCount == 1 then
+            score = score + 14
+        elseif sourceCount > 1 then
+            score = score - 8
+        end
+    elseif context == Constants.CONTEXT.TRAINING_DUMMY then
+        if sourceCount == 1 then
+            score = score + 14
+        elseif sourceCount > 1 then
+            score = score - 8
+        end
+    end
+
+    return score
 end
 
 function DamageMeterService:HandleCombatSessionUpdated(damageMeterType, sessionId)
@@ -551,6 +667,44 @@ function DamageMeterService:CollectEnemyDamageSnapshotForSession(sessionId)
     return combatSession.totalAmount or 0, buildMergedCombatSpellList(spellsById), sources
 end
 
+-- T049: Collect Death Recap rows from C_DamageMeter for a given session.
+function DamageMeterService:CollectDeathRecapSnapshot(sessionId)
+    if not HAS_DEATH_RECAP then
+        return nil
+    end
+
+    local ok, combatSession = pcall(ApiCompat.GetCombatSessionFromID, sessionId, Enum.DamageMeterType.DeathRecap)
+    if not ok or not combatSession then
+        return { available = false }
+    end
+
+    local rows = {}
+    for _, combatSource in ipairs(combatSession.combatSources or {}) do
+        local sourceOk, sessionSource = pcall(
+            ApiCompat.GetCombatSessionSourceFromID,
+            sessionId,
+            Enum.DamageMeterType.DeathRecap,
+            combatSource.sourceGUID,
+            combatSource.sourceCreatureID
+        )
+        for _, combatSpell in ipairs(sourceOk and sessionSource and sessionSource.combatSpells or {}) do
+            rows[#rows + 1] = {
+                spellId = combatSpell.spellID,
+                amount = combatSpell.totalAmount or 0,
+                sourceGuid = combatSource.sourceGUID,
+                sourceName = combatSource.name,
+                sourceClassFile = combatSource.classFilename,
+            }
+        end
+    end
+
+    if #rows == 0 then
+        return { available = false }
+    end
+
+    return { available = true, rows = rows }
+end
+
 function DamageMeterService:BuildSnapshotFromSources(session, payload)
     local enemyDamageTaken = tonumber(payload.enemyDamageTaken) or 0
     local snapshot = {
@@ -583,7 +737,8 @@ function DamageMeterService:BuildHistoricalSnapshot(session, sessionInfo, sessio
     local dispelSource, dispelCombatSource = self:GetPlayerSource(sessionId, Enum.DamageMeterType.Dispels)
     local damageTakenSource, damageTakenCombatSource = self:GetPlayerSource(sessionId, Enum.DamageMeterType.DamageTaken)
     local deathSource, deathCombatSource = self:GetPlayerSource(sessionId, Enum.DamageMeterType.Deaths)
-    local enemyDamageTaken, enemyDamageSpells = self:CollectEnemyDamageSnapshotForSession(sessionId)
+    -- T008: Capture the 3rd return value (enemySources) for GUID-overlap scoring.
+    local enemyDamageTaken, enemyDamageSpells, enemySources = self:CollectEnemyDamageSnapshotForSession(sessionId)
 
     local snapshot = self:BuildSnapshotFromSources(session, {
         duration = tonumber(sessionInfo and sessionInfo.durationSeconds) or tonumber(damageSession and damageSession.durationSeconds) or (session and session.duration) or 0,
@@ -628,6 +783,17 @@ function DamageMeterService:BuildHistoricalSnapshot(session, sessionInfo, sessio
     local signalScore, signal = self:GetSessionSignalScore(sessionId)
     score = score + signalScore
 
+    -- T009: Add GUID-overlap opponent fit score.
+    local opponentFitScore = self:GetOpponentFitScore(session, enemySources)
+    score = score + opponentFitScore
+
+    -- T009: Apply duration mismatch penalty (>15s delta on non-zero-duration sessions).
+    local sessionDuration = tonumber(session and session.duration) or 0
+    local candidateDuration = tonumber(snapshot.duration) or 0
+    if sessionDuration > 0 and math.abs(candidateDuration - sessionDuration) > 15 then
+        score = score - 20
+    end
+
     return {
         snapshot = snapshot,
         score = score,
@@ -638,6 +804,8 @@ function DamageMeterService:BuildHistoricalSnapshot(session, sessionInfo, sessio
         signal = signal,
         durationDelta = getDurationDelta(session and session.duration, snapshot.duration),
         signalScore = signalScore,
+        opponentFitScore = opponentFitScore,
+        enemySources = enemySources or {},
     }
 end
 
@@ -654,6 +822,9 @@ function DamageMeterService:ApplyImportMetadata(session, metadata)
     session.import.signalScore = metadata and metadata.signalScore or 0
     session.import.score = metadata and metadata.score or 0
     session.import.finalDamageSourceHint = session.import.finalDamageSourceHint or nil
+    -- T010: Persist opponent fit score and enemy source count for diagnostics.
+    session.import.opponentFitScore = metadata and metadata.opponentFitScore or 0
+    session.import.enemySourceCount = metadata and metadata.enemySourceCount or 0
 end
 
 function DamageMeterService:ResolveDamageSpellBreakdown(session, snapshot)
@@ -1024,10 +1195,12 @@ function DamageMeterService:ImportSession(session)
                 localDamage = builtCandidate.snapshot and builtCandidate.snapshot.damageDone or 0,
                 localSpellTotal = builtCandidate.snapshot and builtCandidate.snapshot.localDamageSpellTotal or 0,
                 meaningful = hasMeaningfulData and true or false,
+                opponentFitScore = builtCandidate.opponentFitScore or 0,
                 score = builtCandidate.score or 0,
                 sessionId = candidateId,
                 signalCount = builtCandidate.signal and builtCandidate.signal.count or 0,
                 signalScore = builtCandidate.signalScore or 0,
+                sourceCount = builtCandidate.enemySources and #builtCandidate.enemySources or 0,
             })
             if not selectedCandidate
                 or builtCandidate.score > selectedCandidate.score
@@ -1046,6 +1219,8 @@ function DamageMeterService:ImportSession(session)
             durationDelta = getDurationDelta(session and session.duration, self.currentSessionSnapshot and self.currentSessionSnapshot.duration),
             signalScore = 0,
             score = 0,
+            opponentFitScore = 0,   -- T017: diagnostics on fallback path
+            enemySourceCount = 0,
         })
         ns.Addon:Trace("damage_meter.import.cached_snapshot", {
             damage = self.currentSessionSnapshot.damageDone or 0,
@@ -1079,6 +1254,8 @@ function DamageMeterService:ImportSession(session)
                 durationDelta = getDurationDelta(session and session.duration, self.currentSessionSnapshot and self.currentSessionSnapshot.duration),
                 signalScore = 0,
                 score = 0,
+                opponentFitScore = 0,   -- T017: diagnostics on fallback path
+                enemySourceCount = 0,
             })
             ns.Addon:Trace("damage_meter.import.current_fallback", {
                 damage = self.currentSessionSnapshot and self.currentSessionSnapshot.damageDone or 0,
@@ -1092,6 +1269,8 @@ function DamageMeterService:ImportSession(session)
                 durationDelta = getDurationDelta(session and session.duration, self.currentSessionSnapshot and self.currentSessionSnapshot.duration),
                 signalScore = 0,
                 score = 0,
+                opponentFitScore = 0,   -- T017: diagnostics on fallback path
+                enemySourceCount = 0,
             })
             return self:ApplySnapshotToSession(session, self.currentSessionSnapshot)
         else
@@ -1109,6 +1288,9 @@ function DamageMeterService:ImportSession(session)
         durationDelta = selectedCandidate.durationDelta,
         signalScore = selectedCandidate.signalScore or 0,
         score = selectedCandidate.score or 0,
+        -- T010: persist opponent fit score and enemy source count for diagnostics.
+        opponentFitScore = selectedCandidate.opponentFitScore or 0,
+        enemySourceCount = selectedCandidate.enemySources and #selectedCandidate.enemySources or 0,
     })
     ns.Addon:Trace("damage_meter.import.selected", {
         duration = selectedCandidate.snapshot and selectedCandidate.snapshot.duration or 0,
@@ -1116,10 +1298,12 @@ function DamageMeterService:ImportSession(session)
         enemyDamage = selectedCandidate.snapshot and selectedCandidate.snapshot.enemyDamageTaken or 0,
         expected = selectedCandidate.snapshot and selectedCandidate.snapshot.expectedDamageDone or 0,
         localDamage = selectedCandidate.snapshot and selectedCandidate.snapshot.damageDone or 0,
+        opponentFitScore = selectedCandidate.opponentFitScore or 0,
         score = selectedCandidate.score or 0,
         sessionId = sessionId,
         signalCount = selectedCandidate.signal and selectedCandidate.signal.count or 0,
         signalScore = selectedCandidate.signalScore or 0,
+        sourceCount = selectedCandidate.enemySources and #selectedCandidate.enemySources or 0,
     })
     self:ApplySnapshotToSession(session, selectedCandidate.snapshot)
 
@@ -1143,15 +1327,81 @@ function DamageMeterService:ImportSession(session)
     -- Merge per-source enemy damage rows into SpellAttributionPipeline.
     -- This must run after ApplyPrimaryOpponent so session.primaryOpponent is set,
     -- and after the historical sessionId is resolved so we query the right session.
+    local _, _, enemySources = self:CollectEnemyDamageSnapshotForSession(sessionId)
     local sap = ns.Addon:GetModule("SpellAttributionPipeline")
     if sap then
-        local _, _, enemySources = self:CollectEnemyDamageSnapshotForSession(sessionId)
         for _, entry in ipairs(enemySources or {}) do
             sap:MergeDamageMeterSource(session, entry.combatSource, entry.sessionSource)
         end
         local importedTotal = selectedCandidate.snapshot
             and selectedCandidate.snapshot.enemyDamageTaken or 0
         sap:FinalizeReconciliation(session, importedTotal, "historical")
+    end
+
+    -- T057: Emit dm_spell timeline events for each merged player damage spell row.
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp then
+        local _, resolvedDamageSpells = self:ResolveDamageSpellBreakdown(session, selectedCandidate.snapshot)
+        for _, row in ipairs(resolvedDamageSpells or {}) do
+            if row.spellID then
+                local spellInfo = ns.ApiCompat.GetSpellInfo(row.spellID)
+                tp:AppendTimelineEvent(session, {
+                    t = session.duration,
+                    lane = Constants.TIMELINE_LANE.DM_SPELL,
+                    type = "player_spell",
+                    spellId = row.spellID,
+                    spellName = spellInfo and spellInfo.name or nil,
+                    amount = row.totalAmount or 0,
+                    source = Constants.PROVENANCE_SOURCE.DAMAGE_METER,
+                    confidence = "confirmed",
+                })
+            end
+        end
+
+        -- T058: Emit dm_enemy_spell timeline events for each enemy damage source row.
+        for _, entry in ipairs(enemySources or {}) do
+            local combatSource = entry.combatSource
+            local sessionSource = entry.sessionSource
+            for _, combatSpell in ipairs(sessionSource and sessionSource.combatSpells or {}) do
+                if combatSpell.spellID then
+                    tp:AppendTimelineEvent(session, {
+                        t = session.duration,
+                        lane = Constants.TIMELINE_LANE.DM_ENEMY_SPELL,
+                        type = "enemy_spell",
+                        spellId = combatSpell.spellID,
+                        amount = combatSpell.totalAmount or 0,
+                        source = Constants.PROVENANCE_SOURCE.DAMAGE_METER,
+                        confidence = "confirmed",
+                        meta = {
+                            sourceGuid = combatSource and combatSource.sourceGUID or nil,
+                            sourceName = combatSource and combatSource.name or nil,
+                            sourceClassFile = combatSource and combatSource.classFilename or nil,
+                        },
+                    })
+                end
+            end
+        end
+
+        -- T050: Merge Death Recap rows into timeline as dm_enemy_spell lane events.
+        local deathRecap = self:CollectDeathRecapSnapshot(sessionId)
+        if deathRecap and deathRecap.available and deathRecap.rows then
+            for _, row in ipairs(deathRecap.rows) do
+                tp:AppendTimelineEvent(session, {
+                    t = session.duration,
+                    lane = Constants.TIMELINE_LANE.DM_ENEMY_SPELL,
+                    type = "death_recap",
+                    spellId = row.spellId,
+                    amount = row.amount,
+                    source = Constants.PROVENANCE_SOURCE.DAMAGE_METER,
+                    confidence = "confirmed",
+                    meta = {
+                        sourceGuid = row.sourceGuid,
+                        sourceName = row.sourceName,
+                        sourceClassFile = row.sourceClassFile,
+                    },
+                })
+            end
+        end
     end
 
     local classifier = ns.Addon:GetModule("SessionClassifier")

@@ -674,4 +674,91 @@ function Metrics.ComputeDerivedMetrics(session)
     return session.metrics
 end
 
+--- Compute rotation consistency metrics for dummy sessions.
+--- @param session table  A finalized dummy session.
+--- @return table  Rotation consistency data.
+function Metrics:ComputeRotationConsistency(session)
+    local casts = {}
+    for _, evt in ipairs(session.timelineEvents or {}) do
+        if evt.lane == Constants.TIMELINE_LANE.PLAYER_CAST then
+            casts[#casts + 1] = evt.t or evt.offset or evt.timestampOffset or 0
+        end
+    end
+    if #casts < 3 then
+        return { gapHistogram = {}, procConversionRate = 0, openerVariance = {} }
+    end
+
+    -- Gap histogram (time between consecutive casts)
+    table.sort(casts)
+    local gaps = {}
+    for i = 2, #casts do
+        gaps[#gaps + 1] = Helpers.Round(casts[i] - casts[i - 1], 2)
+    end
+
+    -- Bucket gaps: <0.5s, 0.5-1.0s, 1.0-1.5s, 1.5-2.0s, >2.0s
+    local buckets = { 0, 0, 0, 0, 0 }
+    for _, gap in ipairs(gaps) do
+        if gap < 0.5 then buckets[1] = buckets[1] + 1
+        elseif gap < 1.0 then buckets[2] = buckets[2] + 1
+        elseif gap < 1.5 then buckets[3] = buckets[3] + 1
+        elseif gap < 2.0 then buckets[4] = buckets[4] + 1
+        else buckets[5] = buckets[5] + 1 end
+    end
+
+    -- Proc-window conversion rate
+    local procWindowsUsed = session.metrics and session.metrics.procWindowCastCount or 0
+    local procWindowsTotal = session.metrics and session.metrics.procWindowsObserved or 0
+    local procRate = procWindowsTotal > 0 and (procWindowsUsed / procWindowsTotal) or 0
+
+    -- Opener variance: best/worst/median opener damage across sessions
+    -- (single-session scope: just return opener damage for this session)
+    local openerDamage = session.metrics and session.metrics.openerDamage or 0
+
+    return {
+        gapHistogram = buckets,
+        gapLabels = { "<0.5s", "0.5-1s", "1-1.5s", "1.5-2s", ">2s" },
+        totalGaps = #gaps,
+        procConversionRate = Helpers.Round(procRate, 2),
+        openerDamage = openerDamage,
+    }
+end
+
+--- Compute opener variance band across multiple sessions.
+--- @param sessions table  Array of dummy sessions.
+--- @return table  { best, worst, median, buildComparison = {} }
+function Metrics:ComputeOpenerVarianceBand(sessions)
+    local damages = {}
+    local byBuild = {}
+    for _, session in ipairs(sessions or {}) do
+        local dmg = session.metrics and session.metrics.openerDamage or 0
+        if dmg > 0 then
+            damages[#damages + 1] = dmg
+            local hash = session.playerSnapshot and session.playerSnapshot.buildHash or "unknown"
+            if not byBuild[hash] then byBuild[hash] = {} end
+            local bd = byBuild[hash]
+            bd[#bd + 1] = dmg
+        end
+    end
+    if #damages == 0 then
+        return { best = 0, worst = 0, median = 0, buildComparison = {} }
+    end
+    table.sort(damages)
+    local median = damages[math.ceil(#damages / 2)]
+    local buildComparison = {}
+    for hash, dmgs in pairs(byBuild) do
+        local sum = 0
+        for _, d in ipairs(dmgs) do sum = sum + d end
+        buildComparison[hash] = {
+            average = Helpers.Round(sum / #dmgs, 0),
+            sessions = #dmgs,
+        }
+    end
+    return {
+        best = damages[#damages],
+        worst = damages[1],
+        median = median,
+        buildComparison = buildComparison,
+    }
+end
+
 ns.Metrics = Metrics

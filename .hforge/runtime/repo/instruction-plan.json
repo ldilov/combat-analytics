@@ -1,0 +1,47 @@
+{
+  "generatedAt": "2026-03-28T16:46:26.919Z",
+  "plans": [
+    {
+      "generatedAt": "2026-03-28T16:46:26.949Z",
+      "workspaceId": "D:\\Workspace\\repos\\combat-analytics",
+      "targetId": "claude-code",
+      "scopeStrategy": "root-only",
+      "sharedRuntimeRoot": ".hforge/runtime",
+      "sharedRuntimeBridges": [
+        "AGENTS.md"
+      ],
+      "sharedRuntimeArtifacts": [
+        ".hforge/runtime/index.json",
+        ".hforge/runtime/README.md"
+      ],
+      "recommendations": [
+        {
+          "path": "AGENTS.md",
+          "surfaceType": "root-guidance",
+          "reason": "Every supported repo benefits from one root guidance surface.",
+          "confidence": 0.95,
+          "evidence": [
+            "scripts/fetch_blizzard_data.py",
+            "scripts/fetch_bnet_seed.py",
+            "scripts/fetch_counter_data.py"
+          ],
+          "writeMode": "recommend-only"
+        }
+      ],
+      "recommendedProfiles": [
+        "developer",
+        "core"
+      ],
+      "recommendedSkills": [
+        "security-scan"
+      ],
+      "generatedArtifacts": [
+        "AGENTS.md"
+      ],
+      "riskNotes": [
+        "validation:missing-tests",
+        "validation:missing-lint"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+# Agent Command Catalog
+
+Generated: 2026-03-28T16:46:26.961Z
+Package: @harness-forge/cli@1.0.1
+
+## CLI commands
+- `hforge` - Launch the interactive onboarding flow for new workspaces or the project hub for an existing .hforge runtime.
+- `hforge init --root <repo> --json` - Initialize the hidden Harness Forge runtime and install-state surfaces for a workspace.
+- `hforge init --root <repo> --agent codex --setup-profile recommended --yes` - Initialize a workspace directly without prompts and install one or more selected agent targets.
+- `hforge bootstrap --root <repo> --yes` - Autodetect supported agent runtimes in a repo and install the recommended Harness Forge surfaces.
+- `hforge install --target <target> --root <repo> --yes` - Install for one explicit target with selected bundles, languages, frameworks, or capabilities.
+- `hforge status --root <repo> --json` - Inspect the current install state.
+- `hforge refresh --root <repo> --json` - Refresh the shared runtime summary and baseline artifacts for the installed targets.
+- `hforge task list --root <repo> --json` - List task-runtime folders and the artifacts currently available for each task.
+- `hforge task inspect <taskId> --root <repo> --json` - Inspect file-interest, impact-analysis, task-pack, and recursive linkage for one task.
+- `hforge pack inspect <taskId> --root <repo> --json` - Inspect the canonical task-pack artifact for one task.
+- `hforge review --root <repo> --json` - Summarize runtime health, decision coverage, and stale task artifacts.
+- `hforge export --root <repo> --json` - Export install-state, runtime index, doctor, and audit summaries for review or handoff.
+- `hforge shell setup --yes` - Create user-level shims and update supported shell profiles so bare hforge is available on PATH.
+- `hforge shell status --json` - Inspect shell integration status, shim presence, profile wiring, and bare hforge availability.
+- `hforge commands --json` - List CLI commands and npm scripts that agents can use safely.
+- `hforge recommend <repo> --json` - Inspect a repository and return evidence-backed recommendations.
+- `hforge scan <repo> --json` - Collect a human- or machine-readable baseline scan of a repository.
+- `hforge cartograph <repo> --json` - Build a repo map showing services, hotspots, ownership, and validation gaps.
+- `hforge classify-boundaries <repo> --json` - Classify service and package boundaries for a repository.
+- `hforge synthesize-instructions <repo> --target codex --json` - Generate target-aware AGENTS and instruction-plan recommendations for a repository.
+- `hforge target inspect <target> --json` - Inspect support, mappings, and capability notes for Codex, Claude Code, Cursor, or OpenCode.
+- `hforge capabilities --target codex --json` - Inspect the support matrix for one target or all targets.
+- `hforge flow status --root <repo> --json` - Inspect recoverable flow state.
+- `hforge recursive plan "investigate cross-module issue" --task-id TASK-001 --root <repo> --json` - Create a durable draft recursive session for difficult work without disturbing ordinary task flows.
+- `hforge recursive inspect <sessionId> --root <repo> --json` - Inspect recursive session identity, budget, handles, and current promotion state.
+- `hforge observability summarize --root <repo> --json` - Summarize local observability events and effectiveness signals.
+- `hforge observability report <repo> --json` - Report local recommendation and maintenance effectiveness signals.
+- `hforge parallel plan <tasks.md> --root <repo> --json` - Create a parallel worktree shard plan from a task backlog.
+- `hforge parallel status --root <repo> --json` - Inspect the current parallel execution plan status.
+- `hforge parallel merge-check --root <repo> --json` - Check whether the current shard plan is merge-ready.
+- `hforge doctor --root <repo> --json` - Check installation health and missing managed surfaces.
+- `hforge audit --root <repo> --json` - Audit install state and package surface integrity.
+- `hforge diff-install --root <repo> --json` - Compare managed install expectations against the repo.
+- `hforge template validate --json` - Validate the shipped task and workflow templates.
+
+## Recommended npm scripts
+- `npm run recommend:current`
+- `npm run cartograph:current`
+- `npm run instructions:codex`
+- `npm run target:codex`
+- `npm run target:claude-code`
+- `npm run target:opencode`
+- `npm run observability:summary`
+- `npm run validate:local`
+- `npm run smoke:cli`
+- `npm run validate:release`
+- `npm run validate:compatibility`
+- `npm run validate:doc-command-alignment`
+- `npm run flow:status`
+- `npm run observability:report`
+
+## All npm scripts
+- `build` -> `tsc -p tsconfig.json`
+- `prepare` -> `npm run build`
+- `prepack` -> `npm run build`
+- `prepublishOnly` -> `npm run build && npm run validate:release`
+- `bootstrap:current` -> `node dist/cli/index.js bootstrap --yes`
+- `recommend:current` -> `node dist/cli/index.js recommend . --json`
+- `scan:current` -> `node dist/cli/index.js scan . --json`
+- `cartograph:current` -> `node dist/cli/index.js cartograph . --json`
+- `classify:current` -> `node dist/cli/index.js classify-boundaries . --json`
+- `instructions:codex` -> `node dist/cli/index.js synthesize-instructions . --target codex --json`
+- `instructions:claude-code` -> `node dist/cli/index.js synthesize-instructions . --target claude-code --json`
+- `instructions:opencode` -> `node dist/cli/index.js synthesize-instructions . --target opencode --json`
+- `target:codex` -> `node dist/cli/index.js target inspect codex --json`
+- `target:claude-code` -> `node dist/cli/index.js target inspect claude-code --json`
+- `target:opencode` -> `node dist/cli/index.js target inspect opencode --json`
+- `commands:catalog` -> `node dist/cli/index.js commands --json`
+- `dev` -> `node --enable-source-maps dist/cli/index.js`
+- `generate:support-docs` -> `node scripts/ci/generate-target-support-docs.mjs`
+- `intelligence:scan` -> `node scripts/intelligence/scan-repo.mjs . --json`
+- `intelligence:cartograph` -> `node scripts/intelligence/cartograph-repo.mjs . --json`
+- `intelligence:classify` -> `node scripts/intelligence/classify-boundaries.mjs . --json`
+- `intelligence:frameworks` -> `node scripts/intelligence/detect-frameworks.mjs . --json`
+- `intelligence:recommend` -> `node scripts/intelligence/score-recommendations.mjs . --json`
+- `intelligence:synthesize` -> `node scripts/intelligence/synthesize-instructions.mjs . --dry-run --json`
+- `lint` -> `eslint .`
+- `observability:summarize` -> `node scripts/runtime/summarize-observability.mjs --json`
+- `observability:summary` -> `node dist/cli/index.js observability summarize --json`
+- `parallel:plan` -> `node scripts/runtime/create-parallel-plan.mjs specs/004-enhancement-pack-foundations/tasks.md --json`
+- `parallel:status` -> `node scripts/runtime/check-parallel-status.mjs --json`
+- `parallel:merge-check` -> `node scripts/runtime/check-merge-readiness.mjs --json`
+- `test` -> `vitest run --coverage`
+- `test:watch` -> `vitest`
+- `smoke` -> `node scripts/ci/release-smoke.mjs`
+- `smoke:cli` -> `node scripts/ci/smoke-runner.mjs`
+- `validate:capability-matrix` -> `node scripts/ci/validate-capability-matrix.mjs`
+- `validate:templates` -> `node dist/cli/index.js template validate`
+- `validate:catalog` -> `node scripts/ci/validate-pack-dependencies.mjs`
+- `validate:content-metadata` -> `node scripts/ci/validate-content-metadata.mjs`
+- `validate:seeded-coverage` -> `node scripts/ci/validate-seeded-knowledge-coverage.mjs`
+- `validate:generated-sync` -> `node scripts/ci/validate-generated-sync.mjs`
+- `validate:benchmarks` -> `node scripts/intelligence/score-recommendations.mjs tests/fixtures/benchmarks/typescript-web-app --json`
+- `validate:package-surface` -> `node scripts/ci/validate-packed-install-surface.mjs`
+- `validate:compatibility` -> `node scripts/ci/generate-compatibility-matrix.mjs && node scripts/ci/validate-manifest-runtime-consistency.mjs`
+- `validate:placeholders` -> `node scripts/ci/validate-no-placeholders.mjs`
+- `validate:skill-depth` -> `node scripts/ci/validate-skill-depth.mjs`
+- `validate:framework-coverage` -> `node scripts/ci/validate-framework-coverage.mjs`
+- `validate:doc-command-alignment` -> `node scripts/ci/validate-doc-command-alignment.mjs`
+- `validate:runtime-consistency` -> `node scripts/ci/validate-manifest-runtime-consistency.mjs`
+- `validate:local` -> `npm run build && npm test && npm run validate:package-surface && npm run validate:doc-command-alignment && npm run validate:runtime-consistency`
+- `knowledge:coverage` -> `node scripts/knowledge/report-coverage.mjs --json`
+- `knowledge:drift` -> `node scripts/knowledge/report-drift.mjs --json`
+- `flow:status` -> `node scripts/runtime/flow-status.mjs --json`
+- `observability:report` -> `node scripts/runtime/report-effectiveness.mjs --json`
+- `validate:release` -> `node scripts/ci/release-smoke.mjs`
+- `release:dry-run` -> `npm run build && npm run validate:release && npm pack --json --dry-run`
