@@ -36,6 +36,13 @@ ArenaRoundTracker.lua
 SpellAttributionPipeline.lua
 CompArchetypeClassifier.lua
 CombatTracker.lua
+ArenaScoutService.lua
+TradeLedgerService.lua
+CCCoachService.lua
+OpenerLabService.lua
+DuelLabService.lua
+PracticePlannerService.lua
+MatchupMemoryService.lua
 ExportSerializer.lua
 PartySyncService.lua
 Events.lua
@@ -53,4 +60,6 @@ UI\CounterGuideView.lua
 UI\MatchupDetailView.lua
 UI\ReplayView.lua
 UI\BuildComparatorView.lua
+UI\ArenaScoutView.lua
+UI\TradeLedgerView.lua
 UI\MainFrame.lua

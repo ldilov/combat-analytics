@@ -217,8 +217,9 @@ function Helpers.GetResultBucket(result)
 end
 
 -- Resolve the best available opponent display name from a session.
--- Walks through primary opponent fields, arena slots, and post-match
--- scoreboard to find a non-nil human-readable name.
+-- Walks through primary opponent fields, arena slots, post-match
+-- scoreboard, actor table, and duel metadata to find a non-nil
+-- human-readable name.
 function Helpers.ResolveOpponentName(session, fallback)
     fallback = fallback or "Unknown"
     if session.primaryOpponent then
@@ -226,7 +227,6 @@ function Helpers.ResolveOpponentName(session, fallback)
         if po.name then return po.name end
         if po.specName then return po.specName end
         if po.className then return po.className end
-        if po.guid then return po.guid end
     end
     if session.arena and session.arena.slots then
         for _, slot in pairs(session.arena.slots) do
@@ -250,6 +250,30 @@ function Helpers.ResolveOpponentName(session, fallback)
                 return entry.name
             end
         end
+    end
+    -- Walk the actors table for any hostile player with a name.  Prefer the
+    -- actor whose GUID matches primaryOpponent (if it exists but had a nil
+    -- name) so we pick the right enemy in multi-target sessions.
+    if session.actors then
+        local ApiCompat = ns.ApiCompat
+        local myGuid = ApiCompat and ApiCompat.GetPlayerGUID() or nil
+        local poGuid = session.primaryOpponent and session.primaryOpponent.guid or nil
+        local bestName = nil
+        for guid, actor in pairs(session.actors) do
+            if actor.name and actor.isHostile and actor.isPlayer and guid ~= myGuid then
+                if guid == poGuid then
+                    return actor.name
+                end
+                bestName = bestName or actor.name
+            end
+        end
+        if bestName then
+            return bestName
+        end
+    end
+    -- Duel opponent name captured from DUEL_REQUESTED event.
+    if session.duelOpponentName then
+        return session.duelOpponentName
     end
     return fallback
 end

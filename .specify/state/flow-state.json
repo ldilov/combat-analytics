@@ -1,0 +1,17 @@
+{
+  "featureId": "002-pvp-session-hardening",
+  "currentStage": "implement",
+  "status": "complete",
+  "lastArtifact": "specs/002-pvp-session-hardening/tasks.md",
+  "nextAction": "Run T022 in-game: /ca regression + manual validation across rated 2v2, 3v3, Solo Shuffle, duel, BG, world PvP.",
+  "updatedAt": "2026-03-28T01:00:00.000Z",
+  "artifactLineage": [
+    "specs/002-pvp-session-hardening/spec.md",
+    "specs/002-pvp-session-hardening/checklists/requirements.md",
+    "specs/002-pvp-session-hardening/plan.md",
+    "specs/002-pvp-session-hardening/research.md",
+    "specs/002-pvp-session-hardening/data-model.md",
+    "specs/002-pvp-session-hardening/quickstart.md",
+    "specs/002-pvp-session-hardening/tasks.md"
+  ]
+}
