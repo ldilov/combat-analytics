@@ -440,6 +440,42 @@ function Addon:HandleCommand(input)
                 provParts[#provParts + 1] = string.format("%s:%s", field, type(source) == "table" and source.source or tostring(source))
             end
             self:Print(string.format("  provenance: {%s}", table.concat(provParts, ", ")))
+            -- T028: Build catalog summary
+            local catalogSvc = self:GetModule("BuildCatalogService")
+            local liveBuild  = catalogSvc and catalogSvc:GetCurrentLiveBuild()
+            if liveBuild then
+                self:Print(string.format("  currentBuildId: %s", liveBuild.buildId or "?"))
+                self:Print(string.format("  loadoutId: %s", liveBuild.loadoutId or "?"))
+                self:Print(string.format("  snapshotFreshness: %s", liveBuild.snapshotFreshness or "?"))
+            else
+                self:Print("  currentBuildId: (no live build)")
+            end
+            local store = self:GetModule("CombatStore")
+            if store then
+                local db2 = store:GetDB()
+                local catalog = db2 and db2.buildCatalog
+                if catalog then
+                    local profileCount = catalog.order and #catalog.order or 0
+                    self:Print(string.format("  buildCatalog: %d profile%s",
+                        profileCount, profileCount == 1 and "" or "s"))
+                    for i, bid in ipairs(catalog.order or {}) do
+                        if i > 5 then
+                            self:Print(string.format("    … (%d more)", profileCount - 5))
+                            break
+                        end
+                        local p = catalog.byId[bid]
+                        if p then
+                            self:Print(string.format(
+                                "    [%s] sessions=%d current=%s warnings=%s",
+                                string.sub(bid, 1, 12) .. "…",
+                                p.sessionCount or 0,
+                                p.isCurrentBuild and "yes" or "no",
+                                p.isMigratedWithWarnings and "yes" or "no"))
+                        end
+                    end
+                end
+            end
+
             -- Also save to export key
             local db = self:GetDB()
             if db then
@@ -450,6 +486,8 @@ function Addon:HandleCommand(input)
                     confidence = session.captureQuality and session.captureQuality.confidence,
                     timelineEventCount = #(session.timelineEvents or {}),
                     laneCounts = laneCounts,
+                    currentBuildId = liveBuild and liveBuild.buildId or nil,
+                    snapshotFreshness = liveBuild and liveBuild.snapshotFreshness or nil,
                 }
             end
             self:Print("|cff35c7e5--- End Diagnostic Export ---|r")

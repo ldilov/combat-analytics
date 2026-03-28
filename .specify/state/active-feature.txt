@@ -1,1 +1,1 @@
-specs/002-pvp-session-hardening
+﻿specs/003-build-comparator-overhaul

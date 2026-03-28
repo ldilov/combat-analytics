@@ -476,10 +476,24 @@ function CombatTracker:CreateSession(context, subcontext, identitySource)
 
     ns.Addon:Trace("session.snapshot.request", { reason = "session_start" })
     session.playerSnapshot = snapshotService:GetSessionPlayerSnapshot("session_start")
+    -- Attach canonical build identity fields (feature 003-build-comparator-overhaul).
+    -- buildId, loadoutId, and snapshotFreshness are computed by SnapshotService and
+    -- already present on the snapshot object; this block surfaces them as a
+    -- reminder and ensures they survive schema evolution.
+    if session.playerSnapshot then
+        session.playerSnapshot.buildId = session.playerSnapshot.buildId
+            or ns.BuildHash.ComputeBuildId(session.playerSnapshot)
+        session.playerSnapshot.loadoutId = session.playerSnapshot.loadoutId
+            or ns.BuildHash.ComputeLoadoutId(session.playerSnapshot)
+        session.playerSnapshot.snapshotFreshness = session.playerSnapshot.snapshotFreshness
+            or ns.Constants.SNAPSHOT_FRESHNESS.DEGRADED
+    end
     ns.Addon:Trace("session.snapshot.ready", {
-        buildHash = session.playerSnapshot and session.playerSnapshot.buildHash or "unknown",
-        quality = session.playerSnapshot and session.playerSnapshot.captureFlags and session.playerSnapshot.captureFlags.buildSnapshot or "ok",
-        specId = session.playerSnapshot and session.playerSnapshot.specId or 0,
+        buildHash  = session.playerSnapshot and session.playerSnapshot.buildHash or "unknown",
+        buildId    = session.playerSnapshot and session.playerSnapshot.buildId or "unknown",
+        freshness  = session.playerSnapshot and session.playerSnapshot.snapshotFreshness or "unknown",
+        quality    = session.playerSnapshot and session.playerSnapshot.captureFlags and session.playerSnapshot.captureFlags.buildSnapshot or "ok",
+        specId     = session.playerSnapshot and session.playerSnapshot.specId or 0,
     })
     snapshotService:UpdateSessionActor(session, "player", "session_start")
     snapshotService:UpdateSessionActor(session, "pet", "session_start")
