@@ -574,6 +574,36 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         end
     end
 
+    -- ── CC Coach Integration (T100) ─────────────────────────────────────────
+    local ccCoach = ns.Addon:GetModule("CCCoachService")
+    if ccCoach and ccCoach.GenerateCCInsights then
+        local ccOk, ccInsights = pcall(ccCoach.GenerateCCInsights, ccCoach, session)
+        if ccOk and ccInsights then
+            local CC_INSIGHT_TO_REASON = {
+                dr_waste        = "CC_DR_WASTE",
+                late_trinket    = "CC_LATE_TRINKET",
+                missed_cc_kill  = "CC_MISSED_KILL_WINDOW",
+                good_trinket    = "CC_GOOD_TRINKET",
+                cc_chain_break  = "CC_CHAIN_BREAK",
+                high_cc_uptime  = "CC_HIGH_UPTIME",
+            }
+            for _, insight in ipairs(ccInsights) do
+                local reasonCode = CC_INSIGHT_TO_REASON[insight.insightType]
+                if reasonCode then
+                    addSuggestion(results, buildSuggestion(
+                        session,
+                        reasonCode,
+                        insight.severity or "medium",
+                        insight.confidence or 0.70,
+                        insight.evidence or {},
+                        "cc_coaching",
+                        insight.message or "CC coaching insight"
+                    ))
+                end
+            end
+        end
+    end
+
     return results
 end
 

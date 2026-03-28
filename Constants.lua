@@ -2,7 +2,7 @@ local ADDON_NAME, ns = ...
 
 ns.Constants = {
     ADDON_NAME = ADDON_NAME,
-    SCHEMA_VERSION = 5,
+    SCHEMA_VERSION = 6,
     RAW_EVENT_VERSION = 2,
     MAX_RAW_EVENTS_PER_SESSION = 25000,
     RAW_EVENT_WARNING_THRESHOLD = 500000,
@@ -63,15 +63,49 @@ ns.Constants = {
         WARGAME = "wargame",
         TRAINING_GROUNDS = "training_grounds",
     },
-    -- Analysis confidence labels attached to session.captureQuality.
-    -- Used by the UI confidence badge and by the suggestion engine.
+    -- Legacy confidence labels — preserved for migration compatibility.
+    -- New code should use SESSION_CONFIDENCE instead.
     ANALYSIS_CONFIDENCE = {
-        FULL_RAW     = "full_raw",      -- CLEU unrestricted, delta < 5 %
-        ENRICHED     = "enriched",      -- CLEU unrestricted + DamageMeter detail merged
-        RESTRICTED_RAW = "restricted_raw", -- CLEU restricted, DamageMeter is primary source
-        DEGRADED     = "degraded",      -- delta > 12 % or major subevent gaps
-        PARTIAL_ROSTER = "partial_roster", -- arena slot coverage < 100 %
-        UNKNOWN      = "unknown",       -- could not determine
+        FULL_RAW     = "full_raw",
+        ENRICHED     = "enriched",
+        RESTRICTED_RAW = "restricted_raw",
+        DEGRADED     = "degraded",
+        PARTIAL_ROSTER = "partial_roster",
+        UNKNOWN      = "unknown",
+    },
+    -- Provenance source: which sanctioned API produced a persisted field.
+    PROVENANCE_SOURCE = {
+        STATE          = "state",           -- REGEN, PVP_MATCH, DUEL events
+        DAMAGE_METER   = "damage_meter",    -- C_DamageMeter APIs
+        VISIBLE_UNIT   = "visible_unit",    -- UNIT_AURA, UNIT_SPELLCAST_SUCCEEDED, ARENA_OPPONENT_UPDATE
+        INSPECT        = "inspect",         -- NotifyInspect / INSPECT_READY
+        LOSS_OF_CONTROL = "loss_of_control", -- LOSS_OF_CONTROL_*, PLAYER_CONTROL_*
+        SPELL_DIMINISH = "spell_diminish",  -- UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED
+        ESTIMATED      = "estimated",       -- derived / calculated
+        LEGACY_IMPORT  = "legacy_import",   -- migrated from pre-v6 schema
+    },
+    -- Session-level confidence — replaces ANALYSIS_CONFIDENCE for v6+ sessions.
+    SESSION_CONFIDENCE = {
+        STATE_PLUS_DAMAGE_METER = "state_plus_damage_meter", -- full state + DM import
+        DAMAGE_METER_ONLY       = "damage_meter_only",       -- DM succeeded, limited state
+        VISIBLE_CC_ONLY         = "visible_cc_only",         -- only CC/LOC data, no DM
+        PARTIAL_ROSTER          = "partial_roster",          -- arena with incomplete slots
+        ESTIMATED               = "estimated",               -- insufficient direct observation
+        LEGACY_CLEU_IMPORT      = "legacy_cleu_import",      -- old session from pre-v6
+    },
+    -- Timeline lane types for the timelineEvents system (v6+).
+    TIMELINE_LANE = {
+        PLAYER_CAST    = "player_cast",
+        VISIBLE_AURA   = "visible_aura",
+        CC_RECEIVED    = "cc_received",
+        DR_UPDATE      = "dr_update",
+        KILL_WINDOW    = "kill_window",
+        DEATH          = "death",
+        MATCH_STATE    = "match_state",
+        INSPECT        = "inspect",
+        DM_CHECKPOINT  = "dm_checkpoint",
+        DM_SPELL       = "dm_spell",
+        DM_ENEMY_SPELL = "dm_enemy_spell",
     },
     WINDOW_TYPE = {
         OPENER = "opener",
@@ -104,6 +138,8 @@ ns.Constants = {
         DEGRADED = "degraded",
         OVERFLOW = "overflow",
         RESTRICTED = "restricted",
+        TIMELINE_OK = "timeline_ok",
+        ROSTER_OK = "roster_ok",
     },
     INVENTORY_SLOTS = {
         1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,

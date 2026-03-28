@@ -446,8 +446,33 @@ function CombatDetailView:Build(parent)
     self.timelineTexturePool = self.timelineTexturePool or {}
     self.timelineHitboxPool = self.timelineHitboxPool or {}
 
+    -- Multi-lane timeline section (from session.timelineEvents).
+    self.multiLaneTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Multi-Lane Timeline", "TOPLEFT", self.timelineLegend, "BOTTOMLEFT", 0, -22)
+    self.multiLaneCaption = ns.Widgets.CreateCaption(self.canvas, "Each lane shows a different event type positioned along the fight duration.", "TOPLEFT", self.multiLaneTitle, "BOTTOMLEFT", 0, -4)
+    -- Stable anchor for dynamically created lane widgets. Lanes are recreated in Refresh.
+    self.multiLaneContainer = CreateFrame("Frame", nil, self.canvas)
+    self.multiLaneContainer:SetPoint("TOPLEFT", self.multiLaneCaption, "BOTTOMLEFT", 0, -8)
+    self.multiLaneContainer:SetSize(750, 10) -- height adjusted dynamically
+    self.multiLaneTitle:Hide()
+    self.multiLaneCaption:Hide()
+    self.multiLaneContainer:Hide()
+    self.multiLaneWidgets = {}
+
+    self.multiLaneFallback = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.multiLaneFallback:SetPoint("TOPLEFT", self.multiLaneCaption, "BOTTOMLEFT", 0, -8)
+    self.multiLaneFallback:SetTextColor(unpack(Theme.textMuted))
+    self.multiLaneFallback:SetText("Limited timeline data available for this session (legacy or restricted capture).")
+    self.multiLaneFallback:Hide()
+
+    -- T096: Trade Ledger panel
+    local TradeLedgerView = ns.Addon:GetModule("TradeLedgerView")
+    if TradeLedgerView then
+        TradeLedgerView:Build(self.canvas)
+        self.tradeLedgerView = TradeLedgerView
+    end
+
     -- CC Received section
-    self.ccTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Crowd Control Received", "TOPLEFT", self.timelineLegend, "BOTTOMLEFT", 0, -22)
+    self.ccTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Crowd Control Received", "TOPLEFT", self.multiLaneContainer, "BOTTOMLEFT", 0, -22)
     self.ccCaption = ns.Widgets.CreateCaption(self.canvas, "CC events that landed on you during this session, with total uptime.", "TOPLEFT", self.ccTitle, "BOTTOMLEFT", 0, -4)
     self.ccSummary = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.ccSummary:SetPoint("TOPLEFT", self.ccCaption, "BOTTOMLEFT", 0, -10)
@@ -847,6 +872,12 @@ function CombatDetailView:Refresh(payload)
         self.timelineCaption:Hide()
         self.timelineContainer:Hide()
         self.timelineLegend:Hide()
+        if self.multiLaneTitle then self.multiLaneTitle:Hide() end
+        if self.multiLaneCaption then self.multiLaneCaption:Hide() end
+        if self.multiLaneContainer then self.multiLaneContainer:Hide() end
+        if self.multiLaneFallback then self.multiLaneFallback:Hide() end
+        for _, lw in ipairs(self.multiLaneWidgets or {}) do lw:Hide() end
+        if self.tradeLedgerView and self.tradeLedgerView.frame then self.tradeLedgerView.frame:Hide() end
         self.ccTitle:Hide()
         self.ccCaption:Hide()
         self.ccSummary:Hide()
@@ -966,6 +997,114 @@ function CombatDetailView:Refresh(payload)
 
     -- Render graphical timeline
     self:BuildTimeline(session)
+
+    -- Multi-lane timeline from session.timelineEvents.
+    local LANE_COLORS = {
+        player_cast   = { 0.35, 0.78, 0.90, 1.0 },
+        visible_aura  = { 0.60, 0.82, 0.44, 1.0 },
+        cc_received   = { 0.96, 0.74, 0.38, 1.0 },
+        kill_window   = { 0.90, 0.30, 0.25, 1.0 },
+        death         = { 1.0, 0.0, 0.0, 1.0 },
+        match_state   = { 0.60, 0.69, 0.78, 1.0 },
+    }
+    local LANE_ORDER = { "player_cast", "visible_aura", "cc_received", "kill_window", "death", "match_state" }
+    local LANE_LABELS = {
+        player_cast  = "Player Casts",
+        visible_aura = "Visible Auras",
+        cc_received  = "CC Received",
+        kill_window  = "Kill Windows",
+        death        = "Deaths",
+        match_state  = "Match State",
+    }
+
+    -- Hide previous lane widgets
+    for _, laneWidget in ipairs(self.multiLaneWidgets or {}) do
+        laneWidget:Hide()
+    end
+    self.multiLaneWidgets = {}
+
+    local timelineEvents = session.timelineEvents or {}
+    local duration = math.max(session.duration or 0, 0.1)
+
+    if #timelineEvents > 0 then
+        -- Group events by lane
+        local laneGroups = {}
+        for _, evt in ipairs(timelineEvents) do
+            local lane = evt.lane or "unknown"
+            if not laneGroups[lane] then
+                laneGroups[lane] = {}
+            end
+            local laneEvts = laneGroups[lane]
+            laneEvts[#laneEvts + 1] = {
+                t = evt.offset or evt.timestampOffset or 0,
+                color = LANE_COLORS[lane] or Theme.accent,
+                duration = evt.duration,
+                tooltip = evt.label or evt.spellName or lane,
+            }
+        end
+
+        local laneCount = 0
+        local laneHeight = 20
+        local laneGap = 4
+        local prevLaneWidget = nil
+
+        for _, laneName in ipairs(LANE_ORDER) do
+            local events = laneGroups[laneName]
+            if events and #events > 0 then
+                laneCount = laneCount + 1
+                local laneWidget = ns.Widgets.CreateTimelineLane(
+                    self.canvas, events, duration, 750, laneHeight
+                )
+                if prevLaneWidget then
+                    laneWidget:SetPoint("TOPLEFT", prevLaneWidget, "BOTTOMLEFT", 0, -laneGap)
+                else
+                    laneWidget:SetPoint("TOPLEFT", self.multiLaneContainer, "TOPLEFT", 0, 0)
+                end
+
+                -- Add lane label on the left side
+                local lbl = laneWidget:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                lbl:SetPoint("LEFT", laneWidget, "LEFT", 4, 0)
+                lbl:SetTextColor(unpack(Theme.text))
+                lbl:SetText(LANE_LABELS[laneName] or laneName)
+
+                laneWidget:Show()
+                self.multiLaneWidgets[#self.multiLaneWidgets + 1] = laneWidget
+                prevLaneWidget = laneWidget
+            end
+        end
+
+        if laneCount > 0 then
+            self.multiLaneTitle:Show()
+            self.multiLaneCaption:Show()
+            self.multiLaneContainer:Show()
+            self.multiLaneFallback:Hide()
+            local totalLaneHeight = laneCount * laneHeight + (laneCount - 1) * laneGap
+            self.multiLaneContainer:SetHeight(totalLaneHeight)
+        else
+            self.multiLaneTitle:Hide()
+            self.multiLaneCaption:Hide()
+            self.multiLaneContainer:Hide()
+            self.multiLaneFallback:Hide()
+        end
+    else
+        -- Fallback for legacy sessions or restricted capture
+        self.multiLaneTitle:Show()
+        self.multiLaneCaption:Show()
+        self.multiLaneContainer:Hide()
+        local hasRawEvts = session.rawEvents and #session.rawEvents > 0
+        if hasRawEvts then
+            self.multiLaneFallback:SetText("Limited timeline data. Raw events are available below for inspection.")
+        else
+            self.multiLaneFallback:SetText("Limited timeline data available for this session (legacy or restricted capture).")
+        end
+        self.multiLaneFallback:Show()
+        self.multiLaneContainer:SetHeight(10)
+    end
+
+    -- T096: Refresh trade ledger
+    if self.tradeLedgerView then
+        self.tradeLedgerView:Refresh(session)
+    end
 
     -- CC Received section
     local ccReceived = session.ccReceived or {}
@@ -1117,7 +1256,17 @@ function CombatDetailView:Refresh(payload)
     )
     self.rawMeta:SetText(filterLine)
     ns.Widgets.SetBodyText(self.rawContent, self.rawText, rawText)
-    ns.Widgets.SetCanvasHeight(self.canvas, 2240)
+    local multiLaneHeight = 0
+    if #(session.timelineEvents or {}) > 0 then
+        multiLaneHeight = (self.multiLaneContainer and self.multiLaneContainer:GetHeight() or 0) + 60
+    elseif self.multiLaneFallback and self.multiLaneFallback:IsShown() then
+        multiLaneHeight = 60
+    end
+    local tradeLedgerHeight = 0
+    if self.tradeLedgerView and self.tradeLedgerView.frame and self.tradeLedgerView.frame:IsShown() then
+        tradeLedgerHeight = self.tradeLedgerView.frame:GetHeight() + 20
+    end
+    ns.Widgets.SetCanvasHeight(self.canvas, 2240 + multiLaneHeight + tradeLedgerHeight)
 end
 
 ns.Addon:RegisterModule("CombatDetailView", CombatDetailView)
