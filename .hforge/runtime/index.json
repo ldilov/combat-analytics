@@ -1,10 +1,10 @@
 {
   "version": 2,
   "runtimeSchemaVersion": 3,
-  "packageVersion": "1.0.1",
+  "packageVersion": "1.1.1",
   "runtimeId": "workspace-runtime",
-  "initializedAt": "2026-03-28T16:46:26.672Z",
-  "generatedAt": "2026-03-28T16:46:26.887Z",
+  "initializedAt": "2026-03-28T19:46:59.710Z",
+  "generatedAt": "2026-03-28T19:53:14.859Z",
   "rootDir": ".hforge/runtime",
   "visibilityMode": "hidden-ai-layer",
   "authoritativeSurfaces": [
@@ -88,6 +88,7 @@
       "displayName": "Claude Code",
       "supportMode": "native",
       "instructionSurfaces": [
+        "AGENTS.md",
         "CLAUDE.md",
         ".agents/skills",
         ".claude/settings.json"
@@ -104,7 +105,7 @@
       "id": "claude-code:instruction:1",
       "targetId": "claude-code",
       "kind": "instruction",
-      "path": "CLAUDE.md",
+      "path": "AGENTS.md",
       "supportMode": "native",
       "description": "Claude Code discovery surface"
     },
@@ -112,12 +113,20 @@
       "id": "claude-code:instruction:2",
       "targetId": "claude-code",
       "kind": "instruction",
-      "path": ".agents/skills",
+      "path": "CLAUDE.md",
       "supportMode": "native",
       "description": "Claude Code discovery surface"
     },
     {
       "id": "claude-code:instruction:3",
+      "targetId": "claude-code",
+      "kind": "instruction",
+      "path": ".agents/skills",
+      "supportMode": "native",
+      "description": "Claude Code discovery surface"
+    },
+    {
+      "id": "claude-code:instruction:4",
       "targetId": "claude-code",
       "kind": "instruction",
       "path": ".claude/settings.json",

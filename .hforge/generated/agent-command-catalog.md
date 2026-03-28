@@ -1,7 +1,7 @@
 # Agent Command Catalog
 
-Generated: 2026-03-28T16:46:26.961Z
-Package: @harness-forge/cli@1.0.1
+Generated: 2026-03-28T19:53:14.941Z
+Package: @harness-forge/cli@1.1.1
 
 ## CLI commands
 - `hforge` - Launch the interactive onboarding flow for new workspaces or the project hub for an existing .hforge runtime.

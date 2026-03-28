@@ -2,7 +2,7 @@ local ADDON_NAME, ns = ...
 
 ns.Constants = {
     ADDON_NAME = ADDON_NAME,
-    SCHEMA_VERSION = 6,
+    SCHEMA_VERSION = 7,
     RAW_EVENT_VERSION = 2,
     MAX_RAW_EVENTS_PER_SESSION = 25000,
     RAW_EVENT_WARNING_THRESHOLD = 500000,
@@ -168,6 +168,7 @@ ns.Constants = {
         "PLAYER_LOGIN",
         "PLAYER_ENTERING_WORLD",
         "TRAIT_CONFIG_LIST_UPDATED",
+        "TRAIT_CONFIG_UPDATED",
         -- NOTE: COMBAT_LOG_EVENT_UNFILTERED is NOT registered here.
         -- Frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED") is forbidden in
         -- Midnight arena (raises ADDON_ACTION_BLOCKED / lua error). Damage data
@@ -281,5 +282,28 @@ ns.Constants = {
         [78675] = "mobility",   -- Solar Beam
         [1953] = "mobility",    -- Blink
         [36554] = "mobility",   -- Shadow Step
+    },
+    -- ──────────────────────────────────────────────────────────────────────────
+    -- Build Identity (feature 003-build-comparator-overhaul)
+    -- ──────────────────────────────────────────────────────────────────────────
+    BUILD_IDENTITY_VERSION = 1,
+    SNAPSHOT_FRESHNESS = {
+        FRESH           = "fresh",
+        PENDING_REFRESH = "pending_refresh",
+        DEGRADED        = "degraded",
+        UNAVAILABLE     = "unavailable",
+    },
+    CONFIDENCE_TIER = {
+        NO_DATA = "no_data",
+        LOW     = "low",
+        MEDIUM  = "medium",
+        HIGH    = "high",
+    },
+    -- Minimum session counts per tier. Read by BuildComparisonService; never
+    -- hardcode these values elsewhere.
+    CONFIDENCE_TIER_THRESHOLDS = {
+        LOW_MIN    = 1,
+        MEDIUM_MIN = 5,
+        HIGH_MIN   = 15,
     },
 }

@@ -5,9 +5,9 @@ This workspace uses `.hforge/` as the hidden AI layer for Harness Forge.
 
 ## Runtime Version
 - schema version: `3`
-- package version: `1.0.1`
-- initialized at: `2026-03-28T16:46:26.672Z`
-- generated at: `2026-03-28T16:46:26.887Z`
+- package version: `1.1.1`
+- initialized at: `2026-03-28T19:46:59.710Z`
+- generated at: `2026-03-28T19:53:14.859Z`
 
 ## Visibility Policy
 - mode: `hidden-ai-layer`
@@ -26,6 +26,7 @@ This workspace uses `.hforge/` as the hidden AI layer for Harness Forge.
 
 ## Installed Targets
 - `claude-code` (native) - Claude Code
+  - instruction: `AGENTS.md`
   - instruction: `CLAUDE.md`
   - instruction: `.agents/skills`
   - instruction: `.claude/settings.json`
@@ -62,6 +63,7 @@ This workspace uses `.hforge/` as the hidden AI layer for Harness Forge.
 - `.hforge/runtime/findings/validation-gaps.json` - Detected validation gaps that should influence runtime guidance. (source: hforge scan --json)
 
 ## Discovery Bridges
+- `AGENTS.md` [claude-code, native] - Claude Code discovery surface
 - `CLAUDE.md` [claude-code, native] - Claude Code discovery surface
 - `.agents/skills` [claude-code, native] - Claude Code discovery surface
 - `.claude/settings.json` [claude-code, native] - Claude Code discovery surface
