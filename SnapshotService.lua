@@ -48,7 +48,10 @@ local function buildFallbackSnapshot(reason)
         },
     }
 
-    snapshot.buildHash = BuildHash.FromSnapshot(snapshot)
+    snapshot.buildHash       = BuildHash.FromSnapshot(snapshot)
+    snapshot.buildId         = BuildHash.ComputeBuildId(snapshot)
+    snapshot.loadoutId       = BuildHash.ComputeLoadoutId(snapshot)
+    snapshot.snapshotFreshness = Constants.SNAPSHOT_FRESHNESS.DEGRADED
     return snapshot
 end
 
@@ -240,7 +243,10 @@ function SnapshotService:CapturePlayerSnapshot(reason)
         captureFlags = {},
     }
 
-    snapshot.buildHash = BuildHash.FromSnapshot(snapshot)
+    snapshot.buildHash         = BuildHash.FromSnapshot(snapshot)
+    snapshot.buildId           = BuildHash.ComputeBuildId(snapshot)
+    snapshot.loadoutId         = BuildHash.ComputeLoadoutId(snapshot)
+    snapshot.snapshotFreshness = Constants.SNAPSHOT_FRESHNESS.FRESH
     return snapshot
 end
 
@@ -250,6 +256,7 @@ function SnapshotService:RefreshPlayerSnapshot(reason)
         local snapshot = buildFallbackSnapshot(reason or "refresh")
         snapshot.captureFlags.buildSnapshot = Constants.CAPTURE_QUALITY.DEGRADED
         snapshot.captureFlags.awaitingTraitData = true
+        snapshot.snapshotFreshness = Constants.SNAPSHOT_FRESHNESS.PENDING_REFRESH
         ns.Addon:SetLatestPlayerSnapshot(snapshot)
         self.pendingFullRefresh = true
         ns.Addon:Trace("snapshot.refresh.fallback", {
@@ -269,6 +276,7 @@ function SnapshotService:RefreshPlayerSnapshot(reason)
         ns.Addon:Debug("%s", snapshotOrError)
         snapshot = buildFallbackSnapshot(reason or "refresh")
         snapshot.captureFlags.buildSnapshot = Constants.CAPTURE_QUALITY.DEGRADED
+        snapshot.snapshotFreshness = Constants.SNAPSHOT_FRESHNESS.DEGRADED
         ns.Addon:Trace("snapshot.refresh.error", { reason = reason or "refresh" })
     end
 
@@ -276,9 +284,22 @@ function SnapshotService:RefreshPlayerSnapshot(reason)
     self.pendingFullRefresh = snapshot.captureFlags and snapshot.captureFlags.buildSnapshot == Constants.CAPTURE_QUALITY.DEGRADED or false
     ns.Addon:Trace("snapshot.refresh.ready", {
         buildHash = snapshot.buildHash or "unknown",
-        pending = self.pendingFullRefresh and true or false,
-        specId = snapshot.specId or 0,
+        buildId   = snapshot.buildId or "unknown",
+        freshness = snapshot.snapshotFreshness or "unknown",
+        pending   = self.pendingFullRefresh and true or false,
+        specId    = snapshot.specId or 0,
     })
+
+    -- Notify BuildCatalogService so the catalog stays current after every refresh.
+    -- pcall guard: a catalog error must never break the snapshot refresh cycle.
+    local catalogSvc = ns.Addon:GetModule("BuildCatalogService")
+    if catalogSvc then
+        local ok, err = pcall(catalogSvc.OnSnapshotRefreshed, catalogSvc, snapshot)
+        if not ok then
+            ns.Addon:Warn("BuildCatalogService update failed after snapshot refresh: %s", tostring(err))
+        end
+    end
+
     return snapshot
 end
 
@@ -327,6 +348,16 @@ end
 
 function SnapshotService:HandleTraitConfigListUpdated()
     self:TryRefreshDeferredSnapshot("trait_config_ready")
+end
+
+-- Fired when the player selects or deselects an individual talent node during a
+-- live editing session. Uses the existing pendingFullRefresh coalescing guard so
+-- rapid node clicks produce only one refresh cycle, not one per click.
+function SnapshotService:HandleTraitConfigUpdated()
+    if self._traitConfigUpdatedProcessing then return end
+    self._traitConfigUpdatedProcessing = true
+    self:TryRefreshDeferredSnapshot("trait_config_node_changed")
+    self._traitConfigUpdatedProcessing = false
 end
 
 function SnapshotService:CreateActorSnapshotFromUnit(unitToken, sourceType)
