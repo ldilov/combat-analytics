@@ -92,6 +92,14 @@ local function ensureDefaults(db)
 
     db.dummyBenchmarks = db.dummyBenchmarks or {}
 
+    -- Build catalog — v7+. Indexed by canonical buildId.
+    db.buildCatalog = db.buildCatalog or { order = {}, byId = {} }
+    db.buildCatalog.order = db.buildCatalog.order or {}
+    db.buildCatalog.byId  = db.buildCatalog.byId  or {}
+
+    -- Per-character preferences (scope persistence, etc.) — v7+.
+    db.characterPrefs = db.characterPrefs or {}
+
     db.suggestionCache = db.suggestionCache or { order = {}, bySessionId = {} }
     db.suggestionCache.order = db.suggestionCache.order or {}
     db.suggestionCache.bySessionId = db.suggestionCache.bySessionId or {}
@@ -597,6 +605,205 @@ function CombatStore:MigrateSchema(db)
         db.schemaVersion = 6
     end
 
+    -- v6 → v7: Build Comparator Overhaul — initialize build catalog, stamp
+    -- canonical buildId / loadoutId onto every existing session snapshot, upsert
+    -- build profiles, and merge legacy hash values.
+    -- T024 / T025 / T026
+    if version < 7 then
+        -- (1) Ensure catalog and prefs structures exist (may already exist from
+        --     ensureDefaults, but be defensive here too).
+        db.buildCatalog = db.buildCatalog or { order = {}, byId = {} }
+        db.buildCatalog.order = db.buildCatalog.order or {}
+        db.buildCatalog.byId  = db.buildCatalog.byId  or {}
+        db.characterPrefs     = db.characterPrefs or {}
+
+        -- T025: Collect legacy hashes per buildId so we can consolidate them
+        -- after all sessions are stamped (belt-and-suspenders merge).
+        local legacyHashesMap = {}  -- buildId → { hash, ... }
+        local buildSessionCounts = {}  -- buildId → count
+
+        for _, sessionId in ipairs(db.combats.order or {}) do
+            local session = db.combats.byId[sessionId]
+            if session then
+                local snap = session.playerSnapshot
+
+                -- T026: Idempotence guard — skip if already stamped.
+                if snap and snap.buildId then
+                    -- Already migrated; still count for sessionCount accuracy.
+                    local bid = snap.buildId
+                    buildSessionCounts[bid] = (buildSessionCounts[bid] or 0) + 1
+                    local legacyHash = snap.buildHash
+                    if legacyHash then
+                        legacyHashesMap[bid] = legacyHashesMap[bid] or {}
+                        local seen = false
+                        for _, h in ipairs(legacyHashesMap[bid]) do
+                            if h == legacyHash then seen = true; break end
+                        end
+                        if not seen then
+                            legacyHashesMap[bid][#legacyHashesMap[bid] + 1] = legacyHash
+                        end
+                    end
+                elseif snap and (snap.talentNodes or snap.classId) then
+                    -- T024: Normal session with snapshot data — stamp buildId.
+                    local ok, bid = pcall(function() return ns.BuildHash.ComputeBuildId(snap) end)
+                    if not ok or not bid then
+                        bid = nil
+                    end
+
+                    local ok2, lid = pcall(function() return ns.BuildHash.ComputeLoadoutId(snap) end)
+                    if not ok2 then lid = nil end
+
+                    if bid then
+                        snap.buildId             = bid
+                        snap.loadoutId           = lid
+                        snap.snapshotFreshness   = Constants.SNAPSHOT_FRESHNESS.FRESH
+                        buildSessionCounts[bid]  = (buildSessionCounts[bid] or 0) + 1
+
+                        -- T025: Collect the old legacy hash for later consolidation.
+                        local legacyHash = snap.buildHash
+                        if legacyHash then
+                            legacyHashesMap[bid] = legacyHashesMap[bid] or {}
+                            local seen = false
+                            for _, h in ipairs(legacyHashesMap[bid]) do
+                                if h == legacyHash then seen = true; break end
+                            end
+                            if not seen then
+                                legacyHashesMap[bid][#legacyHashesMap[bid] + 1] = legacyHash
+                            end
+                        end
+                    else
+                        -- T026: Partial-data session — assign deterministic fallback buildId.
+                        local fallbackSuffix = snap.buildHash or sessionId
+                        bid = "legacy-partial-" .. string.sub(tostring(fallbackSuffix), 1, 8)
+                        snap.buildId           = bid
+                        snap.loadoutId         = nil
+                        snap.snapshotFreshness = Constants.SNAPSHOT_FRESHNESS.DEGRADED
+                        snap.isMigrated        = true
+                        snap.isMigratedWithWarnings = true
+                        buildSessionCounts[bid] = (buildSessionCounts[bid] or 0) + 1
+
+                        -- Record warning
+                        db.maintenance = db.maintenance or {}
+                        db.maintenance.buildMigrationWarnings = db.maintenance.buildMigrationWarnings or {}
+                        local warn = db.maintenance.buildMigrationWarnings
+                        warn[#warn + 1] = {
+                            sessionId = sessionId,
+                            reason    = "partial_snapshot_no_talent_data",
+                            fallbackBuildId = bid,
+                        }
+                    end
+                else
+                    -- T026: Nil snapshot — assign sentinel fallback.
+                    local bid = "legacy-partial-" .. string.sub(tostring(sessionId), 1, 8)
+                    snap = snap or {}
+                    snap.buildId                = bid
+                    snap.loadoutId              = nil
+                    snap.snapshotFreshness      = Constants.SNAPSHOT_FRESHNESS.DEGRADED
+                    snap.isMigrated             = true
+                    snap.isMigratedWithWarnings = true
+                    session.playerSnapshot      = snap
+                    buildSessionCounts[bid]     = (buildSessionCounts[bid] or 0) + 1
+
+                    db.maintenance = db.maintenance or {}
+                    db.maintenance.buildMigrationWarnings = db.maintenance.buildMigrationWarnings or {}
+                    local warn = db.maintenance.buildMigrationWarnings
+                    warn[#warn + 1] = {
+                        sessionId = sessionId,
+                        reason    = "nil_player_snapshot",
+                        fallbackBuildId = bid,
+                    }
+                end
+            end
+        end
+
+        -- (2) Upsert one BuildProfile per unique buildId.
+        for bid, sessionCount in pairs(buildSessionCounts) do
+            local existing = db.buildCatalog.byId[bid]
+            if not existing then
+                -- Collect one representative snapshot for this buildId.
+                local repSnap = nil
+                for _, sessionId in ipairs(db.combats.order or {}) do
+                    local s = db.combats.byId[sessionId]
+                    if s and s.playerSnapshot and s.playerSnapshot.buildId == bid then
+                        repSnap = s.playerSnapshot
+                        break
+                    end
+                end
+
+                local charKey = nil
+                if repSnap and repSnap.name and repSnap.realm then
+                    charKey = repSnap.name .. "-" .. repSnap.realm
+                end
+
+                local profile = {
+                    buildId              = bid,
+                    buildIdentityVersion = Constants.BUILD_IDENTITY_VERSION,
+                    classId              = repSnap and repSnap.classId,
+                    specId               = repSnap and repSnap.specId,
+                    heroTalentSpecId     = repSnap and repSnap.heroTalentSpecId,
+                    talentSignature      = "",
+                    pvpTalentSignature   = "",
+                    displayNames         = { "Migrated Build" },
+                    associatedLoadoutIds = {},
+                    legacyBuildHashes    = legacyHashesMap[bid] or {},
+                    sessionCount         = sessionCount,
+                    characterKey         = charKey,
+                    isCurrentBuild       = false,
+                    isMigrated           = true,
+                    isMigratedWithWarnings = (repSnap and repSnap.isMigratedWithWarnings) or false,
+                    isLowConfidence      = sessionCount < Constants.CONFIDENCE_TIER_THRESHOLDS.LOW_MIN,
+                    firstSeenAt          = 0,
+                    lastSeenAt           = 0,
+                }
+
+                -- Talent and PvP signature from snapshot
+                if repSnap and repSnap.talentNodes then
+                    local parts = {}
+                    for _, node in ipairs(repSnap.talentNodes) do
+                        parts[#parts + 1] = table.concat({
+                            tostring(node.nodeId   or 0),
+                            tostring(node.entryId  or 0),
+                            tostring(node.activeRank or 0),
+                        }, ":")
+                    end
+                    table.sort(parts)
+                    profile.talentSignature = table.concat(parts, "|")
+                end
+
+                if repSnap and repSnap.pvpTalents then
+                    local sorted = {}
+                    for _, v in ipairs(repSnap.pvpTalents) do
+                        sorted[#sorted + 1] = tostring(v)
+                    end
+                    table.sort(sorted)
+                    profile.pvpTalentSignature = table.concat(sorted, ",")
+                end
+
+                db.buildCatalog.byId[bid]                = profile
+                db.buildCatalog.order[#db.buildCatalog.order + 1] = bid
+            else
+                -- T025: Merge any newly found legacy hashes into the existing profile.
+                existing.legacyBuildHashes = existing.legacyBuildHashes or {}
+                for _, h in ipairs(legacyHashesMap[bid] or {}) do
+                    local found = false
+                    for _, eh in ipairs(existing.legacyBuildHashes) do
+                        if eh == h then found = true; break end
+                    end
+                    if not found then
+                        existing.legacyBuildHashes[#existing.legacyBuildHashes + 1] = h
+                    end
+                end
+                -- Recalculate session count from actual tally
+                existing.sessionCount = sessionCount
+            end
+        end
+
+        db.schemaVersion = 7
+        ns.Addon:Trace("migration.v7.complete", {
+            profilesCreated = #db.buildCatalog.order,
+        })
+    end
+
     -- Future migrations go here as additional `if version < N then` blocks.
 
     -- T121: Post-migration validation for mixed-version datasets.
@@ -1014,6 +1221,10 @@ function CombatStore:PersistSession(session)
     end
 
     db.maintenance.totalRawEvents = db.maintenance.totalRawEvents + #(session.rawEvents or {})
+    -- Invalidate the scoped-session query cache whenever a new session is added.
+    if isNew and self._queryCache then
+        self._queryCache = {}
+    end
     C_Timer.After(0, function()
         self:UpdateAggregatesForSession(session)
     end)
@@ -1830,6 +2041,191 @@ function CombatStore:GetBuildWeightedWinRate(buildHash)
     return computeWeightedWinRate(sessions, function(s)
         return s.playerSnapshot and s.playerSnapshot.buildHash == buildHash
     end, 30, 0.9)
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Build Catalog Persistence API (feature 003-build-comparator-overhaul)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+-- In-memory query cache. Invalidated in PersistSession when isNew == true.
+CombatStore._queryCache = {}
+
+-- Create or merge-update a build profile entry in the catalog.
+-- Only non-nil fields in |fields| overwrite existing values; firstSeenAt is
+-- never overwritten after creation.
+function CombatStore:UpsertBuildProfile(buildId, fields)
+    if not buildId or not fields then return end
+    local db = self:GetDB()
+    local existing = db.buildCatalog.byId[buildId]
+    if not existing then
+        -- New profile: insert into order array.
+        db.buildCatalog.byId[buildId] = {
+            buildId               = buildId,
+            buildIdentityVersion  = fields.buildIdentityVersion or Constants.BUILD_IDENTITY_VERSION,
+            classId               = fields.classId,
+            specId                = fields.specId,
+            heroTalentSpecId      = fields.heroTalentSpecId,
+            talentSignature       = fields.talentSignature or "",
+            pvpTalentSignature    = fields.pvpTalentSignature or "",
+            displayNames          = fields.displayNames or {},
+            aliases               = fields.aliases or {},
+            associatedLoadoutIds  = fields.associatedLoadoutIds or {},
+            legacyBuildHashes     = fields.legacyBuildHashes or {},
+            firstSeenAt           = fields.firstSeenAt or GetTime(),
+            lastSeenAt            = fields.lastSeenAt or GetTime(),
+            latestSessionId       = fields.latestSessionId,
+            sessionCount          = fields.sessionCount or 0,
+            characterKey          = fields.characterKey,
+            isCurrentBuild        = fields.isCurrentBuild or false,
+            isArchived            = fields.isArchived or false,
+            isLowConfidence       = fields.isLowConfidence or false,
+            isMigrated            = fields.isMigrated or false,
+            isMigratedWithWarnings = fields.isMigratedWithWarnings or false,
+        }
+        db.buildCatalog.order[#db.buildCatalog.order + 1] = buildId
+    else
+        -- Merge update: overwrite non-nil fields except firstSeenAt.
+        for k, v in pairs(fields) do
+            if k ~= "firstSeenAt" and v ~= nil then
+                existing[k] = v
+            end
+        end
+        -- Append new legacy hashes without duplicates.
+        if fields.legacyBuildHashes then
+            existing.legacyBuildHashes = existing.legacyBuildHashes or {}
+            for _, h in ipairs(fields.legacyBuildHashes) do
+                local found = false
+                for _, eh in ipairs(existing.legacyBuildHashes) do
+                    if eh == h then found = true; break end
+                end
+                if not found then
+                    existing.legacyBuildHashes[#existing.legacyBuildHashes + 1] = h
+                end
+            end
+        end
+    end
+end
+
+-- Return the build profile for the given buildId, or nil if not found.
+function CombatStore:GetBuildProfile(buildId)
+    if not buildId then return nil end
+    local db = self:GetDB()
+    return db.buildCatalog.byId[buildId]
+end
+
+-- Return all non-archived build profiles for a character, sorted by lastSeenAt
+-- descending. If characterKey is nil, returns profiles for all characters.
+function CombatStore:GetAllBuildProfiles(characterKey)
+    local db = self:GetDB()
+    local results = {}
+    for _, bid in ipairs(db.buildCatalog.order) do
+        local p = db.buildCatalog.byId[bid]
+        if p and not p.isArchived then
+            if not characterKey or p.characterKey == characterKey then
+                results[#results + 1] = p
+            end
+        end
+    end
+    table.sort(results, function(a, b)
+        return (a.lastSeenAt or 0) > (b.lastSeenAt or 0)
+    end)
+    return results
+end
+
+-- Set a named boolean flag on a build profile.
+function CombatStore:UpdateBuildProfileFlag(buildId, flag, value)
+    if not buildId or not flag then return end
+    local db = self:GetDB()
+    local profile = db.buildCatalog.byId[buildId]
+    if profile then
+        profile[flag] = value
+    end
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Scoped Session Query (feature 003-build-comparator-overhaul)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+-- Build a stable string key from scope for cache lookups.
+local function buildQueryCacheKey(buildId, scope)
+    scope = scope or {}
+    return table.concat({
+        buildId,
+        scope.characterKey or "",
+        tostring(scope.specId or ""),
+        scope.context or "",
+        scope.bracket or "",
+        tostring(scope.opponentClassId or ""),
+        tostring(scope.opponentSpecId or ""),
+        tostring(scope.dateFrom or ""),
+        tostring(scope.dateTo or ""),
+    }, ":")
+end
+
+-- Return all sessions whose playerSnapshot.buildId matches buildId, filtered
+-- by the optional scope fields. Nil scope fields are treated as wildcards.
+-- Results are cached per (buildId, scopeKey) for the session lifetime; cache
+-- is invalidated in PersistSession when a new session is added.
+function CombatStore:GetSessionsForBuild(buildId, scope)
+    if not buildId then return {} end
+    self._queryCache = self._queryCache or {}
+    local cacheKey = buildQueryCacheKey(buildId, scope)
+    if self._queryCache[cacheKey] then
+        return self._queryCache[cacheKey]
+    end
+
+    local db = self:GetDB()
+    scope = scope or {}
+    local results = {}
+
+    for _, sessionId in ipairs(db.combats.order) do
+        local session = db.combats.byId[sessionId]
+        if session then
+            local snap = session.playerSnapshot
+            -- Must match canonical buildId.
+            if snap and snap.buildId == buildId then
+                local match = true
+
+                if scope.characterKey and session.characterKey ~= scope.characterKey then
+                    match = false
+                end
+                if match and scope.specId and snap.specId ~= scope.specId then
+                    match = false
+                end
+                if match and scope.context and session.context ~= scope.context then
+                    match = false
+                end
+                if match and scope.bracket and session.subcontext ~= scope.bracket then
+                    match = false
+                end
+                if match and scope.opponentClassId then
+                    local opp = session.primaryOpponent
+                    if not opp or opp.classId ~= scope.opponentClassId then
+                        match = false
+                    end
+                end
+                if match and scope.opponentSpecId then
+                    local opp = session.primaryOpponent
+                    if not opp or opp.specId ~= scope.opponentSpecId then
+                        match = false
+                    end
+                end
+                if match and scope.dateFrom and (session.timestamp or 0) < scope.dateFrom then
+                    match = false
+                end
+                if match and scope.dateTo and (session.timestamp or 0) > scope.dateTo then
+                    match = false
+                end
+
+                if match then
+                    results[#results + 1] = session
+                end
+            end
+        end
+    end
+
+    self._queryCache[cacheKey] = results
+    return results
 end
 
 ns.Addon:RegisterModule("CombatStore", CombatStore)
