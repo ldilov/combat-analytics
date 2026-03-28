@@ -215,13 +215,63 @@ function SummaryView:Build(parent)
     self.emptyState:SetTextColor(unpack(Theme.textMuted))
     self.emptyState:SetText("No finalized combat sessions yet.")
 
+    -- Hero scorecards: result pill, context chip, duration, confidence pill
+    self.heroFrame = CreateFrame("Frame", nil, self.canvas)
+    self.heroFrame:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
+    self.heroFrame:SetSize(750, 28)
+
+    self.heroResultPill = ns.Widgets.CreatePill(self.heroFrame, 72, 22, Theme.accentSoft, Theme.borderStrong)
+    self.heroResultPill:SetPoint("LEFT", self.heroFrame, "LEFT", 0, 0)
+
+    self.heroContextChip = ns.Widgets.CreatePill(self.heroFrame, 90, 22, Theme.panelAlt, Theme.border)
+    self.heroContextChip:SetPoint("LEFT", self.heroResultPill, "RIGHT", 8, 0)
+
+    self.heroDuration = self.heroFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    self.heroDuration:SetPoint("LEFT", self.heroContextChip, "RIGHT", 12, 0)
+    self.heroDuration:SetTextColor(unpack(Theme.text))
+
+    self.heroConfidencePill = ns.Widgets.CreatePill(self.heroFrame, 84, 22, Theme.accentSoft, Theme.borderStrong)
+    self.heroConfidencePill:SetPoint("LEFT", self.heroDuration, "RIGHT", 12, 0)
+    self.heroFrame:Hide()
+
+    -- Output split bar (damage done / healing done / damage taken)
+    self.outputBarTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Output Split", "TOPLEFT", self.heroFrame, "BOTTOMLEFT", 0, -12)
+    self.outputBarAnchor = CreateFrame("Frame", nil, self.canvas)
+    self.outputBarAnchor:SetPoint("TOPLEFT", self.outputBarTitle, "BOTTOMLEFT", 0, -6)
+    self.outputBarAnchor:SetSize(750, 22)
+    self.outputBarTitle:Hide()
+    self.outputBarAnchor:Hide()
+
+    -- Top-5 spell contribution section
+    self.topSpellsTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Top 5 Spell Contribution", "TOPLEFT", self.outputBarAnchor, "BOTTOMLEFT", 0, -14)
+    self.topSpellRows = {}
+    for index = 1, 5 do
+        local row = ns.Widgets.CreateSpellRow(self.canvas, 750, 40)
+        if index == 1 then
+            row:SetPoint("TOPLEFT", self.topSpellsTitle, "BOTTOMLEFT", 0, -8)
+        else
+            row:SetPoint("TOPLEFT", self.topSpellRows[index - 1], "BOTTOMLEFT", 0, -4)
+        end
+        self.topSpellRows[index] = row
+    end
+    self.topSpellsTitle:Hide()
+    for _, r in ipairs(self.topSpellRows) do r:Hide() end
+
+    -- Fight story strip (one-line summary)
+    self.fightStoryStrip = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.fightStoryStrip:SetPoint("TOPLEFT", self.topSpellRows[#self.topSpellRows], "BOTTOMLEFT", 0, -10)
+    self.fightStoryStrip:SetTextColor(unpack(Theme.textMuted))
+    self.fightStoryStrip:SetJustifyH("LEFT")
+    self.fightStoryStrip:SetWidth(750)
+    self.fightStoryStrip:Hide()
+
     self.metricCards = {}
     local cardWidth = 370
     local cardHeight = 92
     for index = 1, 4 do
         local card = ns.Widgets.CreateMetricCard(self.canvas, cardWidth, cardHeight)
         if index == 1 then
-            card:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
+            card:SetPoint("TOPLEFT", self.fightStoryStrip, "BOTTOMLEFT", 0, -14)
         elseif index == 2 then
             card:SetPoint("TOPLEFT", self.metricCards[1], "TOPRIGHT", 10, 0)
         elseif index == 3 then
@@ -397,6 +447,13 @@ function SummaryView:Refresh(payload)
         if self.dummyNotice then
             self.dummyNotice:Hide()
         end
+        if self.heroFrame then self.heroFrame:Hide() end
+        if self.outputBarTitle then self.outputBarTitle:Hide() end
+        if self.outputBarAnchor then self.outputBarAnchor:Hide() end
+        if self.outputBarWidget then self.outputBarWidget:Hide() end
+        if self.topSpellsTitle then self.topSpellsTitle:Hide() end
+        for _, r in ipairs(self.topSpellRows or {}) do r:Hide() end
+        if self.fightStoryStrip then self.fightStoryStrip:Hide() end
         self.scoresTitle:Hide()
         self.scoresCaption:Hide()
         self.benchmarkTitle:Hide()
@@ -422,6 +479,117 @@ function SummaryView:Refresh(payload)
     end
 
     self.emptyState:Hide()
+
+    -- Hero scorecards: result pill, context chip, duration, confidence pill.
+    if self.heroFrame then
+        self.heroFrame:Show()
+
+        local resultText = string.upper(tostring(session.result or "LOG"))
+        local resultBg = Theme.panelAlt
+        if session.result == "won" then
+            resultBg = { 0.18, 0.40, 0.24, 1.0 }
+        elseif session.result == "lost" then
+            resultBg = { 0.42, 0.19, 0.16, 1.0 }
+        end
+        self.heroResultPill:SetData(resultText, Theme.text, resultBg, Theme.borderStrong)
+
+        local ctxLabel = session.context and string.upper(tostring(session.context)) or "GENERAL"
+        self.heroContextChip:SetData(ctxLabel, Theme.text, Theme.panelAlt, Theme.border)
+
+        self.heroDuration:SetText(Helpers.FormatDuration(session.duration or 0))
+
+        local conf = (session.captureQuality and session.captureQuality.confidence) or session.analysisConfidence or "limited"
+        local confBg = Theme.accentSoft
+        if conf == "high" then
+            confBg = Theme.severityLow
+        elseif conf == "medium" then
+            confBg = Theme.severityMedium
+        elseif conf == "limited" then
+            confBg = Theme.severityHigh
+        end
+        self.heroConfidencePill:SetData(string.upper(tostring(conf)), Theme.text, confBg, Theme.borderStrong)
+    end
+
+    -- Output split bar: damage done (red), healing done (green), damage taken (blue).
+    if self.outputBarAnchor and self.outputBarTitle then
+        local dmgDone = session.totals.damageDone or 0
+        local healDone = session.totals.healingDone or 0
+        local dmgTaken = session.totals.damageTaken or 0
+        if (dmgDone + healDone + dmgTaken) > 0 then
+            self.outputBarTitle:Show()
+            if self.outputBarWidget then
+                self.outputBarWidget:Hide()
+            end
+            self.outputBarWidget = ns.Widgets.CreateSegmentedBar(self.canvas, {
+                { value = dmgDone,  color = { 0.90, 0.30, 0.25, 1.0 }, label = Helpers.FormatNumber(dmgDone) .. " dmg" },
+                { value = healDone, color = { 0.44, 0.82, 0.60, 1.0 }, label = Helpers.FormatNumber(healDone) .. " heal" },
+                { value = dmgTaken, color = { 0.35, 0.55, 0.90, 1.0 }, label = Helpers.FormatNumber(dmgTaken) .. " taken" },
+            }, 750, 22)
+            self.outputBarWidget:SetPoint("TOPLEFT", self.outputBarAnchor, "TOPLEFT", 0, 0)
+            self.outputBarWidget:Show()
+            self.outputBarAnchor:Show()
+        else
+            self.outputBarTitle:Hide()
+            self.outputBarAnchor:Hide()
+            if self.outputBarWidget then
+                self.outputBarWidget:Hide()
+            end
+        end
+    end
+
+    -- Top 5 spell contribution (sorted by totalDamage).
+    if self.topSpellsTitle then
+        local topSpells = buildSpellRows(session, 5)
+        if #topSpells > 0 then
+            self.topSpellsTitle:Show()
+            for idx, row in ipairs(self.topSpellRows) do
+                local spell = topSpells[idx]
+                if spell then
+                    row:SetData(
+                        spell.icon,
+                        spell.name,
+                        string.format("Damage %s  |  Casts %d  |  %s of output", Helpers.FormatNumber(spell.damage), spell.casts or 0, formatPercent((spell.share or 0) * 100)),
+                        Helpers.FormatNumber(spell.amount),
+                        spell.share,
+                        Theme.accent
+                    )
+                    row:Show()
+                else
+                    row:Hide()
+                end
+            end
+        else
+            self.topSpellsTitle:Hide()
+            for _, r in ipairs(self.topSpellRows) do r:Hide() end
+        end
+    end
+
+    -- One-line fight story strip from timelineEvents.
+    if self.fightStoryStrip then
+        local timelineEvents = session.timelineEvents or {}
+        if #timelineEvents > 0 then
+            local laneCounts = {}
+            for _, evt in ipairs(timelineEvents) do
+                local lane = evt.lane or "unknown"
+                laneCounts[lane] = (laneCounts[lane] or 0) + 1
+            end
+            local parts = {}
+            for lane, count in pairs(laneCounts) do
+                parts[#parts + 1] = string.format("%s: %d", lane, count)
+            end
+            table.sort(parts)
+            local storyText = string.format("Fight story: %s over %s.",
+                table.concat(parts, "  |  "),
+                Helpers.FormatDuration(session.duration or 0))
+            self.fightStoryStrip:SetText(storyText)
+            self.fightStoryStrip:Show()
+        else
+            self.fightStoryStrip:SetText(string.format("Fight story: %s duration, %s damage dealt.",
+                Helpers.FormatDuration(session.duration or 0),
+                Helpers.FormatNumber(session.totals.damageDone or 0)))
+            self.fightStoryStrip:Show()
+        end
+    end
 
     -- Confidence badge next to title (gated by setting).
     if self.confidenceBadge then
@@ -876,8 +1044,9 @@ function SummaryView:Refresh(payload)
     extraHeight = extraHeight + (peerCount > 0 and (60 + peerCount * 18) or 0)
     extraHeight = extraHeight + (bgStatCount > 0 and (60 + bgStatCount * 20) or 0)
     extraHeight = extraHeight + (scoreboardCount > 0 and (60 + scoreboardCount * 16) or 0)
+    local heroSectionHeight = 28 + 12 + 20 + 22 + 14 + (5 * 44) + 10 + 18  -- hero + outputBar + topSpells + story
     local baseHeight = compSlotCount > 0 and 1440 or 1280
-    ns.Widgets.SetCanvasHeight(self.canvas, baseHeight + extraHeight)
+    ns.Widgets.SetCanvasHeight(self.canvas, baseHeight + extraHeight + heroSectionHeight)
 end
 
 ns.Addon:RegisterModule("SummaryView", SummaryView)

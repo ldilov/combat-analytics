@@ -8,6 +8,24 @@ local MatchupDetailView = {
     selectedSpecId = nil,
 }
 
+-- ---------------------------------------------------------------------------
+-- Constants
+-- ---------------------------------------------------------------------------
+local CONTENT_WIDTH = 740
+local DELTA_BAR_WIDTH = 340
+local DELTA_BAR_HEIGHT = 14
+local SPARKLINE_WIDTH = 160
+local SPARKLINE_HEIGHT = 20
+local PILL_HEIGHT = 18
+local SECTION_GAP = 14
+local ITEM_GAP = 6
+local SPELL_ROW_HEIGHT = 56
+local METRIC_BAR_WIDTH = 340
+local METRIC_BAR_HEIGHT = 58
+
+-- ---------------------------------------------------------------------------
+-- Build
+-- ---------------------------------------------------------------------------
 function MatchupDetailView:Build(parent)
     self.frame = CreateFrame("Frame", nil, parent)
     self.frame:SetAllPoints()
@@ -32,6 +50,80 @@ function MatchupDetailView:Build(parent)
     return self.frame
 end
 
+-- ---------------------------------------------------------------------------
+-- Helpers: element pool management
+-- ---------------------------------------------------------------------------
+local function track(self, element)
+    self.detailElements[#self.detailElements + 1] = element
+    return element
+end
+
+local function addLabel(self, yPos, text, color, font)
+    local fs = self.canvas:CreateFontString(nil, "OVERLAY", font or "GameFontHighlight")
+    fs:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+    fs:SetPoint("RIGHT", self.canvas, "RIGHT", -8, 0)
+    fs:SetTextColor(unpack(color or Theme.text))
+    fs:SetText(text)
+    fs:SetJustifyH("LEFT")
+    fs:SetWordWrap(true)
+    track(self, fs)
+    return fs, yPos - (fs:GetStringHeight() + ITEM_GAP)
+end
+
+local function addSectionTitle(self, yPos, text)
+    return addLabel(self, yPos, text, Theme.accent, "GameFontNormalLarge")
+end
+
+local function addMutedLabel(self, yPos, text)
+    return addLabel(self, yPos, text, Theme.textMuted, "GameFontHighlightSmall")
+end
+
+-- ---------------------------------------------------------------------------
+-- Helpers: compute per-spec averages from the specBucket
+-- ---------------------------------------------------------------------------
+local function computeSpecAverages(specBucket)
+    local fights = specBucket and specBucket.fights or 0
+    if fights == 0 then
+        return {
+            pressure = 0,
+            damage = 0,
+            deaths = 0,
+            survivability = 0,
+        }
+    end
+    return {
+        pressure = (specBucket.totalPressureScore or 0) / fights,
+        damage = (specBucket.totalDamageDone or 0) / fights,
+        deaths = (specBucket.totalDeaths or 0) / fights,
+        survivability = (specBucket.totalSurvivabilityScore or 0) / fights,
+    }
+end
+
+-- ---------------------------------------------------------------------------
+-- Helpers: compute overall player averages as baseline
+-- ---------------------------------------------------------------------------
+local function computeOverallBaseline(store, characterKey)
+    local baseline = store and store.GetSessionBaseline
+        and store:GetSessionBaseline(nil, nil, nil, nil, characterKey)
+    if not baseline or baseline.fights <= 0 then
+        return {
+            pressure = 0,
+            damage = 0,
+            deaths = 0,
+            survivability = 0,
+        }
+    end
+    return {
+        pressure = baseline.averagePressureScore or 0,
+        damage = baseline.averageDamageDone or 0,
+        deaths = 0,  -- baseline does not track per-death count; use 0
+        survivability = baseline.averageSurvivabilityScore or 0,
+    }
+end
+
+-- ---------------------------------------------------------------------------
+-- Refresh
+-- ---------------------------------------------------------------------------
 function MatchupDetailView:Refresh(payload)
     if payload and payload.specId then
         self.selectedSpecId = payload.specId
@@ -87,7 +179,6 @@ function MatchupDetailView:Refresh(payload)
     local wins = specBucket and specBucket.wins or 0
     local losses = specBucket and specBucket.losses or 0
     local winRate = fights > 0 and (wins / fights) or 0
-    local avgPressure = fights > 0 and ((specBucket and specBucket.totalPressureScore or 0) / fights) or 0
 
     local specName = (archetype and archetype.specName) or (guide and guide.specName) or (specBucket and specBucket.label) or "Unknown"
     local classFile = (archetype and archetype.classFile) or (guide and guide.classFile) or ""
@@ -96,47 +187,211 @@ function MatchupDetailView:Refresh(payload)
 
     local yPos = -8
 
-    local function addLabel(text, color, font)
-        local fs = self.canvas:CreateFontString(nil, "OVERLAY", font or "GameFontHighlight")
-        fs:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
-        fs:SetPoint("RIGHT", self.canvas, "RIGHT", -8, 0)
-        fs:SetTextColor(unpack(color or Theme.text))
-        fs:SetText(text)
-        fs:SetJustifyH("LEFT")
-        fs:SetWordWrap(true)
-        self.detailElements[#self.detailElements + 1] = fs
-        yPos = yPos - (fs:GetStringHeight() + 6)
-        return fs
-    end
-
-    -- Section 1: Header — Spec name + class (class-colored), archetype, range
+    -- -----------------------------------------------------------------------
+    -- Section 1: Header — Spec name + class (class-colored), archetype/range pills
+    -- -----------------------------------------------------------------------
     local headerColor = Theme.accent
     if classFile and classFile ~= "" and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile] then
         local cc = RAID_CLASS_COLORS[classFile]
         headerColor = { cc.r, cc.g, cc.b, 1 }
     end
-    addLabel(string.format("%s %s", classFile, specName), headerColor, "GameFontNormalLarge")
-    addLabel(string.format("Archetype: %s  |  Range: %s", archetypeLabel, rangeBucket), Theme.textMuted, "GameFontHighlightSmall")
 
-    -- Section 2: Win/Loss Stats
-    yPos = yPos - 6
-    addLabel("Win / Loss Stats", Theme.accent, "GameFontNormalLarge")
-    addLabel(string.format("Total Fights: %d", fights), Theme.text)
-    local winsColor = wins > 0 and Theme.success or Theme.text
-    local lossesColor = losses > 0 and Theme.warning or Theme.text
-    addLabel(string.format("Wins: %d  |  Losses: %d", wins, losses), Theme.text)
+    local _, nextY = addLabel(self, yPos, string.format("%s %s", classFile, specName), headerColor, "GameFontNormalLarge")
+    yPos = nextY
+
+    -- Archetype + range pills (inline)
+    local pillRow = CreateFrame("Frame", nil, self.canvas)
+    pillRow:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+    pillRow:SetSize(CONTENT_WIDTH, PILL_HEIGHT + 4)
+    track(self, pillRow)
+
+    local archetypePill = ns.Widgets.CreatePill(pillRow, nil, PILL_HEIGHT, Theme.accentSoft, Theme.borderStrong)
+    archetypePill:SetData(archetypeLabel, Theme.text)
+    local pillTextWidth = archetypePill.text:GetStringWidth() or 40
+    archetypePill:SetSize(pillTextWidth + 16, PILL_HEIGHT)
+    archetypePill:SetPoint("LEFT", pillRow, "LEFT", 0, 0)
+    track(self, archetypePill)
+
+    local rangePill = ns.Widgets.CreatePill(pillRow, nil, PILL_HEIGHT, Theme.panelAlt, Theme.border)
+    rangePill:SetData(rangeBucket, Theme.textMuted)
+    local rangePillTextWidth = rangePill.text:GetStringWidth() or 40
+    rangePill:SetSize(rangePillTextWidth + 16, PILL_HEIGHT)
+    rangePill:SetPoint("LEFT", archetypePill, "RIGHT", 6, 0)
+    track(self, rangePill)
+
+    yPos = yPos - (PILL_HEIGHT + ITEM_GAP + 4)
+
+    -- -----------------------------------------------------------------------
+    -- Section 2: Win/Loss Stats — metric cards row
+    -- -----------------------------------------------------------------------
+    yPos = yPos - SECTION_GAP
+    local _, wrTitleY = addSectionTitle(self, yPos, "Win / Loss Stats")
+    yPos = wrTitleY
 
     local wrColor = winRate >= 0.5 and Theme.success or Theme.warning
     if fights == 0 then wrColor = Theme.textMuted end
-    addLabel(string.format("Win Rate: %.0f%%", winRate * 100), wrColor)
-    addLabel(string.format("Avg Pressure Score: %.1f", avgPressure), Theme.textMuted, "GameFontHighlightSmall")
 
-    -- Section 3: Win Rate by MMR Band
-    yPos = yPos - 6
-    addLabel("Win Rate by MMR Band", Theme.accent, "GameFontNormalLarge")
+    local cardWidth = math.floor((CONTENT_WIDTH - 8 * 2) / 3)
+    local cardHeight = 70
+
+    local wrCard = ns.Widgets.CreateMetricCard(self.canvas, cardWidth, cardHeight)
+    wrCard:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+    wrCard:SetData(
+        string.format("%.0f%%", winRate * 100),
+        "Win Rate",
+        string.format("%dW - %dL", wins, losses),
+        wrColor
+    )
+    track(self, wrCard)
+
+    local fightCard = ns.Widgets.CreateMetricCard(self.canvas, cardWidth, cardHeight)
+    fightCard:SetPoint("LEFT", wrCard, "RIGHT", 4, 0)
+    fightCard:SetData(
+        tostring(fights),
+        "Total Fights",
+        "",
+        Theme.accent
+    )
+    track(self, fightCard)
+
+    local avgPressure = fights > 0 and ((specBucket.totalPressureScore or 0) / fights) or 0
+    local pressureCard = ns.Widgets.CreateMetricCard(self.canvas, cardWidth, cardHeight)
+    pressureCard:SetPoint("LEFT", fightCard, "RIGHT", 4, 0)
+    pressureCard:SetData(
+        string.format("%.1f", avgPressure),
+        "Avg Pressure",
+        "",
+        Theme.accent
+    )
+    track(self, pressureCard)
+
+    yPos = yPos - (cardHeight + ITEM_GAP)
+
+    -- -----------------------------------------------------------------------
+    -- Section 3: Mirrored Delta Bars — player avg vs matchup baseline
+    -- -----------------------------------------------------------------------
+    yPos = yPos - SECTION_GAP
+    local _, deltaTitleY = addSectionTitle(self, yPos, "Performance vs This Matchup")
+    yPos = deltaTitleY
+
+    local specAvg = computeSpecAverages(specBucket)
+    local overallBaseline = computeOverallBaseline(store, characterKey)
+
+    local deltaMetrics = {
+        { label = "Pressure",      left = overallBaseline.pressure,     right = specAvg.pressure,     fmt = "%.1f" },
+        { label = "Avg Damage",    left = overallBaseline.damage,       right = specAvg.damage,       fmt = Helpers.FormatNumber },
+        { label = "Survivability", left = overallBaseline.survivability, right = specAvg.survivability, fmt = "%.1f" },
+        { label = "Deaths/Fight",  left = overallBaseline.deaths,       right = specAvg.deaths,       fmt = "%.2f" },
+    }
+
+    -- Legend row
+    local legendRow = CreateFrame("Frame", nil, self.canvas)
+    legendRow:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+    legendRow:SetSize(CONTENT_WIDTH, 12)
+    track(self, legendRow)
+
+    local legendLeft = legendRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    legendLeft:SetPoint("LEFT", legendRow, "LEFT", 0, 0)
+    legendLeft:SetText("Your Overall Avg")
+    legendLeft:SetTextColor(unpack(Theme.accent))
+
+    local legendRight = legendRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    legendRight:SetPoint("LEFT", legendLeft, "RIGHT", 16, 0)
+    legendRight:SetText("vs This Spec Avg")
+    legendRight:SetTextColor(unpack(Theme.warning))
+
+    yPos = yPos - (16 + ITEM_GAP)
+
+    for _, metric in ipairs(deltaMetrics) do
+        local leftVal = metric.left or 0
+        local rightVal = metric.right or 0
+
+        -- Row container with label on top, bar below
+        local rowLabel = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        rowLabel:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+        rowLabel:SetText(metric.label)
+        rowLabel:SetTextColor(unpack(Theme.text))
+        track(self, rowLabel)
+
+        -- Format values for display
+        local leftText, rightText
+        if type(metric.fmt) == "function" then
+            leftText = metric.fmt(leftVal)
+            rightText = metric.fmt(rightVal)
+        else
+            leftText = string.format(metric.fmt, leftVal)
+            rightText = string.format(metric.fmt, rightVal)
+        end
+
+        local valLabel = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        valLabel:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", DELTA_BAR_WIDTH + 24, yPos)
+        valLabel:SetText(string.format("%s  vs  %s", leftText, rightText))
+        valLabel:SetTextColor(unpack(Theme.textMuted))
+        track(self, valLabel)
+
+        yPos = yPos - 14
+
+        local bar = ns.Widgets.CreateMirroredDeltaBar(
+            self.canvas,
+            leftVal,
+            rightVal,
+            Theme.accent,
+            Theme.warning,
+            "",
+            DELTA_BAR_WIDTH,
+            DELTA_BAR_HEIGHT
+        )
+        bar:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+        track(self, bar)
+
+        yPos = yPos - (DELTA_BAR_HEIGHT + ITEM_GAP + 2)
+    end
+
+    -- -----------------------------------------------------------------------
+    -- Section 4: Win Rate by MMR Band — sparkline + table
+    -- -----------------------------------------------------------------------
+    yPos = yPos - SECTION_GAP
+    local _, mmrTitleY = addSectionTitle(self, yPos, "Win Rate by MMR Band")
+    yPos = mmrTitleY
+
     if #mmrBands == 0 then
-        addLabel("No MMR band data available.", Theme.textMuted, "GameFontHighlightSmall")
+        local _, emptyY = addMutedLabel(self, yPos, "No MMR band data available.")
+        yPos = emptyY
     else
+        -- Build sparkline data from band win rates (only bands with fights)
+        local sparkData = {}
+        local hasAnySpark = false
+        for _, band in ipairs(mmrBands) do
+            if (band.fights or 0) > 0 then
+                sparkData[#sparkData + 1] = band.winRate or 0
+                hasAnySpark = true
+            else
+                sparkData[#sparkData + 1] = 0
+            end
+        end
+
+        -- Sparkline trend across bands
+        if hasAnySpark and #sparkData >= 2 then
+            local sparkLabel = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            sparkLabel:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+            sparkLabel:SetText("WR trend across bands:")
+            sparkLabel:SetTextColor(unpack(Theme.textMuted))
+            track(self, sparkLabel)
+
+            local sparkline = ns.Widgets.CreateSparkline(
+                self.canvas,
+                sparkData,
+                Theme.success,
+                SPARKLINE_WIDTH,
+                SPARKLINE_HEIGHT
+            )
+            sparkline:SetPoint("LEFT", sparkLabel, "RIGHT", 10, 0)
+            track(self, sparkline)
+
+            yPos = yPos - (SPARKLINE_HEIGHT + ITEM_GAP)
+        end
+
+        -- MMR band rows as MetricBars
         for _, band in ipairs(mmrBands) do
             local bandFights = band.fights or 0
             local bandWR = band.winRate or 0
@@ -144,86 +399,174 @@ function MatchupDetailView:Refresh(payload)
             if bandFights > 0 then
                 bandColor = bandWR >= 0.5 and Theme.success or Theme.warning
             end
-            addLabel(string.format("  %s — %d fights, %.0f%% WR (%dW-%dL)",
+
+            local bandBar = ns.Widgets.CreateMetricBar(self.canvas, METRIC_BAR_WIDTH, METRIC_BAR_HEIGHT)
+            bandBar:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+            bandBar:SetData(
                 band.label or "??",
-                bandFights,
-                bandWR * 100,
-                band.wins or 0,
-                band.losses or 0
-            ), bandColor, "GameFontHighlightSmall")
+                string.format("%.0f%% WR", bandWR * 100),
+                string.format("%dW - %dL  (%d fights)", band.wins or 0, band.losses or 0, bandFights),
+                bandFights > 0 and bandWR or 0,
+                bandColor
+            )
+            track(self, bandBar)
+
+            yPos = yPos - (METRIC_BAR_HEIGHT + 4)
         end
     end
 
-    -- Section 4: Top Opponent Spells
-    yPos = yPos - 6
-    addLabel("Top Opponent Spells", Theme.accent, "GameFontNormalLarge")
+    -- -----------------------------------------------------------------------
+    -- Section 5: Top Opponent Spells — SpellRows
+    -- -----------------------------------------------------------------------
+    yPos = yPos - SECTION_GAP
+    local _, spellTitleY = addSectionTitle(self, yPos, "Top Opponent Spells")
+    yPos = spellTitleY
+
     if #damageSignature == 0 then
-        addLabel("No spell data available.", Theme.textMuted, "GameFontHighlightSmall")
+        local _, emptyY = addMutedLabel(self, yPos, "No spell data available.")
+        yPos = emptyY
     else
+        -- Find max damage for relative bar sizing
+        local maxDamage = 1
+        for i = 1, math.min(5, #damageSignature) do
+            if (damageSignature[i].totalDamage or 0) > maxDamage then
+                maxDamage = damageSignature[i].totalDamage
+            end
+        end
+
         for i = 1, math.min(5, #damageSignature) do
             local spell = damageSignature[i]
             local spellInfo = ns.ApiCompat.GetSpellInfo(spell.spellId) or {}
             local name = spellInfo.name or string.format("Spell %d", spell.spellId)
-            addLabel(string.format("  %d. %s — %s damage, %d hits, %.0f%% crit",
-                i,
+            local iconID = spellInfo.iconID or spellInfo.icon or 134400
+            local share = (spell.totalDamage or 0) / maxDamage
+
+            local row = ns.Widgets.CreateSpellRow(self.canvas, CONTENT_WIDTH - 8, SPELL_ROW_HEIGHT)
+            row:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+            row:SetData(
+                iconID,
                 name,
+                string.format("%d hits, %.0f%% crit", spell.hitCount or 0, (spell.critRate or 0) * 100),
                 Helpers.FormatNumber(spell.totalDamage or 0),
-                spell.hitCount or 0,
-                (spell.critRate or 0) * 100
-            ), Theme.text, "GameFontHighlightSmall")
+                share,
+                headerColor
+            )
+            track(self, row)
+
+            yPos = yPos - (SPELL_ROW_HEIGHT + 4)
         end
     end
 
-    -- Section 5: Build Comparison
-    yPos = yPos - 6
-    addLabel("Build Comparison vs This Spec", Theme.accent, "GameFontNormalLarge")
+    -- -----------------------------------------------------------------------
+    -- Section 6: Build Comparison — metric bars + delta badge
+    -- -----------------------------------------------------------------------
+    yPos = yPos - SECTION_GAP
+    local _, buildTitleY = addSectionTitle(self, yPos, "Build Comparison vs This Spec")
+    yPos = buildTitleY
+
     local allBuilds = store and store.GetAllBuildsVsSpec and store:GetAllBuildsVsSpec(specId, buildHash) or {}
     if #allBuilds > 0 then
-        for i, build in ipairs(allBuilds) do
-            local marker = build.isCurrent and " (current)" or ""
-            local color = build.isCurrent and Theme.accent or Theme.text
-            local wrColor = build.winRate >= 0.5 and Theme.success or Theme.warning
-            addLabel(string.format("  %d. Build %s%s — %.0f%% WR (%dW-%dL, %d fights, avg pressure %.1f)",
-                i,
-                build.buildHash or "—",
-                marker,
-                build.winRate * 100,
-                build.wins or 0,
-                build.losses or 0,
-                build.fights or 0,
-                build.avgPressure or 0
-            ), wrColor, "GameFontHighlightSmall")
+        -- Find current build entry
+        local currentEntry = nil
+        for _, b in ipairs(allBuilds) do
+            if b.isCurrent then currentEntry = b; break end
         end
-        -- Check if a better build exists
+
+        for _, build in ipairs(allBuilds) do
+            local marker = build.isCurrent and " (current)" or ""
+            local buildWR = build.winRate or 0
+            local buildColor = buildWR >= 0.5 and Theme.success or Theme.warning
+
+            local buildBar = ns.Widgets.CreateMetricBar(self.canvas, METRIC_BAR_WIDTH, METRIC_BAR_HEIGHT)
+            buildBar:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+
+            local buildLabel = string.format("Build %s%s", build.buildHash or "--", marker)
+            -- If this is the current build, show pressure as marker
+            local markerPercent = nil
+            if currentEntry and not build.isCurrent and currentEntry.winRate > 0 then
+                markerPercent = currentEntry.winRate
+            end
+            buildBar:SetData(
+                buildLabel,
+                string.format("%.0f%% WR", buildWR * 100),
+                string.format("%dW - %dL, %d fights, avg pressure %.1f",
+                    build.wins or 0,
+                    build.losses or 0,
+                    build.fights or 0,
+                    build.avgPressure or 0),
+                buildWR,
+                buildColor,
+                markerPercent
+            )
+            track(self, buildBar)
+
+            yPos = yPos - (METRIC_BAR_HEIGHT + 4)
+        end
+
+        -- Best-build delta badge
         if #allBuilds > 1 and allBuilds[1] and not allBuilds[1].isCurrent then
             local best = allBuilds[1]
-            local currentEntry = nil
-            for _, b in ipairs(allBuilds) do
-                if b.isCurrent then currentEntry = b; break end
-            end
-            if currentEntry and best.winRate > currentEntry.winRate + 0.15 then
-                addLabel(string.format("  A better build has %.0f%% higher win rate vs this spec!",
-                    (best.winRate - currentEntry.winRate) * 100
-                ), Theme.warning, "GameFontHighlightSmall")
+            if currentEntry and best.winRate > currentEntry.winRate then
+                local wrDelta = (best.winRate - currentEntry.winRate) * 100
+
+                local badgeRow = CreateFrame("Frame", nil, self.canvas)
+                badgeRow:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+                badgeRow:SetSize(CONTENT_WIDTH, 22)
+                track(self, badgeRow)
+
+                local badgeLabel = badgeRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                badgeLabel:SetPoint("LEFT", badgeRow, "LEFT", 0, 0)
+                badgeLabel:SetText("Best build WR advantage:")
+                badgeLabel:SetTextColor(unpack(Theme.textMuted))
+
+                local badge = ns.Widgets.CreateDeltaBadge(badgeRow, wrDelta, "%.0f%% WR")
+                badge:SetPoint("LEFT", badgeLabel, "RIGHT", 8, 0)
+                track(self, badge)
+
+                yPos = yPos - (22 + ITEM_GAP)
             end
         end
     else
-        addLabel("Not enough build data yet (need 3+ fights).", Theme.textMuted, "GameFontHighlightSmall")
+        local _, emptyY = addMutedLabel(self, yPos, "Not enough build data yet (need 3+ fights).")
+        yPos = emptyY
     end
 
-    -- Section 6: Counter Guide
-    yPos = yPos - 6
-    addLabel("Counter Guide", Theme.accent, "GameFontNormalLarge")
+    -- -----------------------------------------------------------------------
+    -- Section 7: Counter Guide
+    -- -----------------------------------------------------------------------
+    yPos = yPos - SECTION_GAP
+    local _, guideTitleY = addSectionTitle(self, yPos, "Counter Guide")
+    yPos = guideTitleY
+
     if guide then
-        -- Threat tags
+        -- Threat tags as pills
         if guide.threatTags and #guide.threatTags > 0 then
-            addLabel("Threats: " .. table.concat(guide.threatTags, ", "), Theme.warning, "GameFontHighlightSmall")
+            local threatLabel = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            threatLabel:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+            threatLabel:SetText("Threats:")
+            threatLabel:SetTextColor(unpack(Theme.textMuted))
+            track(self, threatLabel)
+
+            local prevPill = threatLabel
+            local prevAnchor = "RIGHT"
+            for _, tag in ipairs(guide.threatTags) do
+                local pill = ns.Widgets.CreatePill(self.canvas, nil, PILL_HEIGHT, Theme.severityHigh, Theme.warning)
+                pill:SetData(tag, Theme.text)
+                local tagWidth = pill.text:GetStringWidth() or 40
+                pill:SetSize(tagWidth + 16, PILL_HEIGHT)
+                pill:SetPoint("LEFT", prevPill, prevAnchor, 6, 0)
+                track(self, pill)
+                prevPill = pill
+                prevAnchor = "RIGHT"
+            end
+
+            yPos = yPos - (PILL_HEIGHT + ITEM_GAP + 2)
         end
 
-        -- CC families — guide.ccFamilies is an array of {spellId, family} objects.
+        -- CC families as pills
         if guide.ccFamilies and #guide.ccFamilies > 0 then
             local families = {}
-            local seenFam  = {}
+            local seenFam = {}
             for _, entry in ipairs(guide.ccFamilies) do
                 local familyName = type(entry) == "table" and entry.family or tostring(entry)
                 if familyName and not seenFam[familyName] then
@@ -232,19 +575,42 @@ function MatchupDetailView:Refresh(payload)
                 end
             end
             table.sort(families)
-            addLabel("CC Families: " .. table.concat(families, ", "), Theme.textMuted, "GameFontHighlightSmall")
+
+            local ccLabel = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            ccLabel:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 8, yPos)
+            ccLabel:SetText("CC Families:")
+            ccLabel:SetTextColor(unpack(Theme.textMuted))
+            track(self, ccLabel)
+
+            local prevPill = ccLabel
+            local prevAnchor = "RIGHT"
+            for _, familyName in ipairs(families) do
+                local pill = ns.Widgets.CreatePill(self.canvas, nil, PILL_HEIGHT, Theme.panelAlt, Theme.border)
+                pill:SetData(familyName, Theme.textMuted)
+                local famWidth = pill.text:GetStringWidth() or 40
+                pill:SetSize(famWidth + 16, PILL_HEIGHT)
+                pill:SetPoint("LEFT", prevPill, prevAnchor, 6, 0)
+                track(self, pill)
+                prevPill = pill
+                prevAnchor = "RIGHT"
+            end
+
+            yPos = yPos - (PILL_HEIGHT + ITEM_GAP + 2)
         end
 
         -- Recommended actions
         if guide.recommendedActions and #guide.recommendedActions > 0 then
             yPos = yPos - 4
-            addLabel("Recommended Actions:", Theme.text)
+            local _, actTitleY = addLabel(self, yPos, "Recommended Actions:", Theme.text)
+            yPos = actTitleY
             for _, action in ipairs(guide.recommendedActions) do
-                addLabel("  " .. action, Theme.text, "GameFontHighlightSmall")
+                local _, actionY = addLabel(self, yPos, "  " .. action, Theme.text, "GameFontHighlightSmall")
+                yPos = actionY
             end
         end
     else
-        addLabel("No counter guide data available.", Theme.textMuted, "GameFontHighlightSmall")
+        local _, emptyY = addMutedLabel(self, yPos, "No counter guide data available.")
+        yPos = emptyY
     end
 
     ns.Widgets.SetCanvasHeight(self.canvas, math.abs(yPos) + 20)

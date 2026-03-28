@@ -5,8 +5,9 @@ local Helpers   = ns.Helpers
 local Theme     = ns.Widgets.THEME
 
 local CounterGuideView = {
-    viewId         = "counterguide",
-    selectedSpecId = nil,
+    viewId          = "counterguide",
+    selectedSpecId  = nil,
+    buildFilterMode = "all", -- "all" | "current" (T119)
 }
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -37,6 +38,27 @@ local CC_LABEL = {
     disarm       = "Disarm",
     knockback    = "Knockback",
 }
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Threat-bar color thresholds: green < 0.45, yellow 0.45–0.70, red > 0.70
+-- ─────────────────────────────────────────────────────────────────────────────
+local THREAT_THRESHOLDS = {
+    { value = 0.45, color = Theme.warning },
+    { value = 0.70, color = { 0.90, 0.20, 0.15, 1.0 } },
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Maps fight count to a SESSION_CONFIDENCE key for the ConfidencePill widget
+-- ─────────────────────────────────────────────────────────────────────────────
+local function fightCountToConfidence(fights)
+    if fights > 10 then
+        return "state_plus_damage_meter"
+    elseif fights >= 3 then
+        return "partial_roster"
+    else
+        return "estimated"
+    end
+end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Helpers
@@ -248,23 +270,6 @@ function CounterGuideView:RefreshDetail()
         addText(text, Theme.accent, "GameFontNormal")
     end
 
-    local function addBar(fillFraction, r, g, b, alpha)
-        local bg = canvas:CreateTexture(nil, "BACKGROUND")
-        bg:SetSize(BAR_W, BAR_H)
-        bg:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
-        bg:SetColorTexture(0.10, 0.10, 0.10, 0.9)
-        el[#el + 1] = bg
-
-        if fillFraction and fillFraction > 0 then
-            local fill = canvas:CreateTexture(nil, "ARTWORK")
-            fill:SetSize(math.max(2, math.floor(BAR_W * fillFraction)), BAR_H)
-            fill:SetPoint("TOPLEFT", bg, "TOPLEFT", 0, 0)
-            fill:SetColorTexture(r or 0.5, g or 0.5, b or 0.5, alpha or 0.85)
-            el[#el + 1] = fill
-        end
-        yPos = yPos - (BAR_H + 8)
-    end
-
     -- ── SPEC HEADER ──────────────────────────────────────────────────────────
     local specId    = guide.specId or self.selectedSpecId
     local specName  = guide.specName or "Unknown"
@@ -316,7 +321,7 @@ function CounterGuideView:RefreshDetail()
 
     yPos = yPos - (ICON_S + 12)
 
-    -- ── THREAT BAR ───────────────────────────────────────────────────────────
+    -- ── THREAT GAUGE (T078.1 — CreateGauge replaces manual bar) ─────────────
     addRule(2)
 
     local fights       = guide.historicalFights or 0
@@ -351,13 +356,31 @@ function CounterGuideView:RefreshDetail()
     yPos = yPos - 18
 
     do
-        local r, g, b = 0.90, 0.20, 0.15
-        if threatScore < 0.45 then r, g, b = 0.25, 0.80, 0.35
-        elseif threatScore < 0.70 then r, g, b = 0.90, 0.65, 0.10 end
-        addBar(threatScore, r, g, b, isEstimated and 0.45 or 0.85)
+        -- Pick fill color by threshold: green < 0.45, yellow 0.45-0.70, red > 0.70
+        local tr, tg, tb = 0.25, 0.80, 0.35
+        if threatScore >= 0.70 then
+            tr, tg, tb = 0.90, 0.20, 0.15
+        elseif threatScore >= 0.45 then
+            tr, tg, tb = 0.90, 0.65, 0.10
+        end
+        local gaugeAlpha = isEstimated and 0.45 or 0.85
+
+        local threatGauge = ns.Widgets.CreateGauge(
+            canvas,
+            threatScore,            -- value
+            0,                      -- min
+            1,                      -- max
+            THREAT_THRESHOLDS,      -- threshold markers at 0.45 and 0.70
+            { tr, tg, tb, gaugeAlpha }, -- fill color
+            BAR_W,                  -- width
+            BAR_H                   -- height
+        )
+        threatGauge:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+        el[#el + 1] = threatGauge
+        yPos = yPos - (BAR_H + 8)
     end
 
-    -- ── WIN-RATE BAR ─────────────────────────────────────────────────────────
+    -- ── WIN-RATE GAUGE (T078.2 — CreateGauge replaces manual bar) ───────────
     local wrLabel = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     wrLabel:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
     wrLabel:SetTextColor(unpack(Theme.textMuted))
@@ -380,12 +403,43 @@ function CounterGuideView:RefreshDetail()
     do
         local wr = guide.historicalWinRate
         if wr and fights >= 3 then
-            local r = wr >= 0.5 and 0.25 or 0.90
-            local g = wr >= 0.5 and 0.80 or 0.65
-            addBar(wr, r, g, 0.10)
+            local wrR = wr >= 0.5 and 0.25 or 0.90
+            local wrG = wr >= 0.5 and 0.80 or 0.65
+
+            local wrGauge = ns.Widgets.CreateGauge(
+                canvas,
+                wr,             -- value
+                0,              -- min
+                1,              -- max
+                { { value = 0.5, color = Theme.textMuted } }, -- 50% midpoint marker
+                { wrR, wrG, 0.10, 0.85 },  -- fill color
+                BAR_W,          -- width
+                BAR_H           -- height
+            )
+            wrGauge:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+            el[#el + 1] = wrGauge
         else
-            addBar(0, 0, 0, 0)
+            -- Empty gauge for no-data state
+            local wrGauge = ns.Widgets.CreateGauge(
+                canvas,
+                0,              -- value
+                0, 1, nil,      -- min, max, no thresholds
+                Theme.barShell, -- invisible fill
+                BAR_W, BAR_H
+            )
+            wrGauge:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+            el[#el + 1] = wrGauge
         end
+        yPos = yPos - (BAR_H + 4)
+    end
+
+    -- ── WIN-RATE CONFIDENCE PILL (T078.3) ───────────────────────────────────
+    do
+        local wrConfidence = fightCountToConfidence(fights)
+        local confPill = ns.Widgets.CreateConfidencePill(canvas, wrConfidence)
+        confPill:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+        el[#el + 1] = confPill
+        yPos = yPos - 24
     end
 
     -- ── THREAT TAGS ──────────────────────────────────────────────────────────
@@ -461,64 +515,43 @@ function CounterGuideView:RefreshDetail()
         yPos = yPos - (TAG_H + 10)
     end
 
-    -- ── KEY SPELLS TO WATCH (with icons) ─────────────────────────────────────
+    -- ── KEY SPELLS TO WATCH (T078.4 — CreateSpellRow with damage fill bars) ─
     if guide.topSpellsFromOpponent and #guide.topSpellsFromOpponent > 0 then
         addSection("Key Spells to Watch")
 
-        local ICO_S     = 24
-        local ROW_H     = ICO_S + 6
-        local COL_W     = math.floor(WIDTH / 2) - PAD
         local maxSpells = math.min(8, #guide.topSpellsFromOpponent)
-        -- Capture base position BEFORE the loop so row offsets stay correct
-        -- even though yPos is shared state with the rest of the layout.
-        local spellGridTop = yPos
+        local SPELL_ROW_W = WIDTH - PAD
+        local SPELL_ROW_H = 56
+
+        -- Determine the maximum damage across all listed spells for fill scaling
+        local maxDamage = 0
+        for i = 1, maxSpells do
+            local dmg = guide.topSpellsFromOpponent[i].totalDamage or 0
+            if dmg > maxDamage then maxDamage = dmg end
+        end
+        if maxDamage == 0 then maxDamage = 1 end
 
         for i = 1, maxSpells do
-            local spell = guide.topSpellsFromOpponent[i]
-            local col   = (i - 1) % 2
-            local row   = math.floor((i - 1) / 2)
-            local xOff  = PAD + col * (COL_W + 8)
-            local yOff  = spellGridTop - row * (ROW_H + 4)
-
-            -- Icon frame
-            local iconF = CreateFrame("Frame", nil, canvas)
-            iconF:SetSize(ICO_S, ICO_S)
-            iconF:SetPoint("TOPLEFT", canvas, "TOPLEFT", xOff, yOff)
-            iconF:SetFrameLevel(canvas:GetFrameLevel() + 1)
-
-            local iconT = iconF:CreateTexture(nil, "ARTWORK")
-            iconT:SetAllPoints()
+            local spell     = guide.topSpellsFromOpponent[i]
             local spellInfo = ApiCompat.GetSpellInfo(spell.spellId)
-            if spellInfo and spellInfo.iconID then
-                iconT:SetTexture(spellInfo.iconID)
-                iconT:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-            else
-                iconT:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-            end
-            el[#el + 1] = iconF
+            local spellName = spellInfo and spellInfo.name or ("Spell " .. spell.spellId)
+            local spellIcon = spellInfo and spellInfo.iconID or 134400
+            local totalDmg  = spell.totalDamage or 0
+            local hitCount  = spell.hitCount or 0
+            local fillShare = totalDmg / maxDamage
 
-            -- Spell name
-            local nameFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            nameFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", xOff + ICO_S + 4, yOff - 2)
-            nameFs:SetWidth(COL_W - ICO_S - 6)
-            local name = spellInfo and spellInfo.name or ("Spell " .. spell.spellId)
-            nameFs:SetText(name)
-            nameFs:SetTextColor(unpack(Theme.text))
-            el[#el + 1] = nameFs
+            local detailStr = string.format("%s  (%d hits)",
+                Helpers.FormatNumber(totalDmg), hitCount)
 
-            -- Damage / hit count
-            local dmgFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            dmgFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", xOff + ICO_S + 4, yOff - 14)
-            dmgFs:SetWidth(COL_W - ICO_S - 6)
-            dmgFs:SetText(string.format("%s  (%d hits)",
-                Helpers.FormatNumber(spell.totalDamage or 0), spell.hitCount or 0))
-            dmgFs:SetTextColor(unpack(Theme.textMuted))
-            el[#el + 1] = dmgFs
+            local row = ns.Widgets.CreateSpellRow(canvas, SPELL_ROW_W, SPELL_ROW_H)
+            row:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+            row:SetData(spellIcon, spellName, detailStr, Helpers.FormatNumber(totalDmg), fillShare)
+            el[#el + 1] = row
+
+            yPos = yPos - (SPELL_ROW_H + 4)
         end
 
-        -- Advance yPos past all rows at once.
-        local numRows = math.ceil(maxSpells / 2)
-        yPos = spellGridTop - numRows * (ROW_H + 4) - 4
+        yPos = yPos - 4
     end
 
     -- ── COUNTER STRATEGY CARDS ────────────────────────────────────────────────
@@ -567,13 +600,35 @@ function CounterGuideView:RefreshDetail()
             Theme.textMuted, "GameFontHighlightSmall")
     end
 
-    -- ── BEST BUILD VS THIS SPEC ───────────────────────────────────────────────
+    -- ── BEST BUILD VS THIS SPEC (T078.5 — DeltaBadge for WR difference) ─────
     if guide.bestBuildVsSpec then
         addSection("Best Build vs This Spec")
         local b = guide.bestBuildVsSpec
+
         addText(string.format("Build %s  →  %.0f%% WR  (%d fights)",
             b.buildHash or "—", (b.winRate or 0) * 100, b.fights or 0),
             Theme.accentSoft, "GameFontHighlightSmall")
+
+        -- Show a DeltaBadge if the recommended build differs from current build
+        -- and the WR delta can be computed.
+        if buildHash and b.buildHash and b.buildHash ~= buildHash and b.winRate then
+            local currentBuildWR = guide.historicalWinRate or 0
+            local delta = (b.winRate - currentBuildWR) * 100
+
+            local deltaBadge = ns.Widgets.CreateDeltaBadge(canvas, delta, "%.0f%% WR")
+            deltaBadge:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+            el[#el + 1] = deltaBadge
+
+            local noteFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            noteFs:SetPoint("LEFT", deltaBadge, "RIGHT", 6, 0)
+            noteFs:SetWidth(WIDTH - PAD - 100)
+            noteFs:SetJustifyH("LEFT")
+            noteFs:SetTextColor(unpack(Theme.textMuted))
+            noteFs:SetText("vs your current build")
+            el[#el + 1] = noteFs
+
+            yPos = yPos - 24
+        end
     end
 
     -- ── DATA GAP NOTICE ───────────────────────────────────────────────────────
@@ -582,6 +637,144 @@ function CounterGuideView:RefreshDetail()
         addText(
             "Not enough match history vs this spec yet — play more games to unlock personalised stats.",
             Theme.textMuted, "GameFontHighlightSmall")
+    end
+
+    -- ── MATCHUP MEMORY (T118 + T119) ────────────────────────────────────────
+    do
+        local ok, memSvc = pcall(function()
+            return ns.Addon:GetModule("MatchupMemoryService")
+        end)
+        if ok and memSvc and memSvc.BuildMatchupMemoryCard then
+            local db = store and store:GetDB() or nil
+            local allSessions = {}
+            if db and db.combats and db.combats.byId then
+                for _, sid in ipairs(db.combats.order or {}) do
+                    local s = db.combats.byId[sid]
+                    if s then allSessions[#allSessions + 1] = s end
+                end
+            end
+
+            -- T119: build filter toggle pills
+            local filterHash = nil
+            if buildHash then
+                local activeBg  = Theme.accent
+                local passiveBg = Theme.panel
+
+                local allPill = ns.Widgets.CreatePill(canvas, 80, 18)
+                allPill:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+                local curPill = ns.Widgets.CreatePill(canvas, 100, 18)
+                curPill:SetPoint("LEFT", allPill, "RIGHT", 4, 0)
+
+                local function refreshPills()
+                    local isAll = (self.buildFilterMode == "all")
+                    allPill:SetData("All Builds", isAll and Theme.text or Theme.textMuted,
+                        isAll and activeBg or passiveBg)
+                    curPill:SetData("Current Build", (not isAll) and Theme.text or Theme.textMuted,
+                        (not isAll) and activeBg or passiveBg)
+                end
+                refreshPills()
+
+                allPill:SetScript("OnMouseUp", function()
+                    self.buildFilterMode = "all"; self:RefreshDetail()
+                end)
+                curPill:SetScript("OnMouseUp", function()
+                    self.buildFilterMode = "current"; self:RefreshDetail()
+                end)
+                el[#el + 1] = allPill
+                el[#el + 1] = curPill
+                yPos = yPos - 26
+
+                if self.buildFilterMode == "current" then
+                    filterHash = buildHash
+                end
+            end
+
+            local ok2, card = pcall(function()
+                return memSvc:BuildMatchupMemoryCard(self.selectedSpecId, allSessions, filterHash)
+            end)
+            if ok2 and card then
+                addSection("Matchup Memory")
+
+                if not card.insufficientData then
+                    -- Death patterns (top 3)
+                    if card.commonDeathPatterns and #card.commonDeathPatterns > 0 then
+                        addText("Common Death Patterns:", Theme.textMuted, "GameFontHighlightSmall")
+                        for i, dp in ipairs(card.commonDeathPatterns) do
+                            local label = dp.pattern or "unknown"
+                            label = label:gsub("|", " / ")
+                            addText(string.format("%d.  %s  (%dx)", i, label, dp.count or 0),
+                                Theme.text, "GameFontHighlightSmall", PAD + 4)
+                        end
+                    end
+
+                    -- Average first go timing
+                    if card.averageFirstGoTiming then
+                        addText(string.format("Avg First Go: %.1fs", card.averageFirstGoTiming),
+                            Theme.accent, "GameFontHighlightSmall")
+                    end
+
+                    -- Best build DeltaBadge
+                    if card.bestBuildHash and card.bestBuildWR then
+                        local currentWR = card.winRate or 0
+                        local delta = (card.bestBuildWR - currentWR) * 100
+                        local deltaBadge = ns.Widgets.CreateDeltaBadge(canvas, delta, "%.0f%% WR")
+                        deltaBadge:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+                        el[#el + 1] = deltaBadge
+
+                        local buildFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                        buildFs:SetPoint("LEFT", deltaBadge, "RIGHT", 6, 0)
+                        buildFs:SetTextColor(unpack(Theme.textMuted))
+                        buildFs:SetText(string.format("Best build %s (%.0f%% WR)",
+                            tostring(card.bestBuildHash):sub(1, 8), card.bestBuildWR * 100))
+                        el[#el + 1] = buildFs
+                        yPos = yPos - 24
+                    end
+
+                    -- Top danger spells
+                    if card.topDangerSpells and #card.topDangerSpells > 0 then
+                        addText("Top Danger Spells:", Theme.textMuted, "GameFontHighlightSmall")
+                        for _, ds in ipairs(card.topDangerSpells) do
+                            addText(string.format("  %s  (%dx)", ds.spellName or "?", ds.count or 0),
+                                Theme.warning, "GameFontHighlightSmall", PAD + 4)
+                        end
+                    end
+
+                    -- Recent trend pill
+                    if card.recentTrend and card.recentTrend ~= "insufficient_data" then
+                        local trendColors = {
+                            improving = Theme.success,
+                            declining = { 0.90, 0.20, 0.15, 1.0 },
+                            stable    = Theme.textMuted,
+                        }
+                        local trendLabels = {
+                            improving = "Improving",
+                            declining = "Declining",
+                            stable    = "Stable",
+                        }
+                        local col = trendColors[card.recentTrend] or Theme.textMuted
+                        local pill = ns.Widgets.CreatePill(canvas, 80, 18, col)
+                        pill:SetData(trendLabels[card.recentTrend] or card.recentTrend)
+                        pill:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+                        el[#el + 1] = pill
+                        yPos = yPos - 26
+                    end
+                else
+                    -- Insufficient data state
+                    addText(string.format("Building profile — %d more game%s needed",
+                        card.neededSessions or 0,
+                        (card.neededSessions or 0) == 1 and "" or "s"),
+                        Theme.textMuted, "GameFontHighlightSmall")
+                    if card.fallbackAdvice then
+                        local fa = card.fallbackAdvice
+                        if fa.playStyle then
+                            addText(fa.playStyle, Theme.textMuted, "GameFontHighlightSmall", PAD + 4)
+                        elseif fa.archetype then
+                            addText("Archetype: " .. fa.archetype, Theme.textMuted, "GameFontHighlightSmall", PAD + 4)
+                        end
+                    end
+                end
+            end
+        end
     end
 
     ns.Widgets.SetCanvasHeight(canvas, math.abs(yPos) + 30)
