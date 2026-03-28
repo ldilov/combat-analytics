@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-03-28T16:46:26.961Z",
+  "generatedAt": "2026-03-28T19:53:14.941Z",
   "packageName": "@harness-forge/cli",
-  "packageVersion": "1.0.1",
+  "packageVersion": "1.1.1",
   "cliCommands": [
     {
       "command": "hforge",

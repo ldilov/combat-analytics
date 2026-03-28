@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "packageVersion": "1.0.1",
+  "packageVersion": "1.1.1",
   "runtimeSchemaVersion": 3,
   "installedTargets": [
     "claude-code"
@@ -13,7 +13,7 @@
     "capability:repo-intelligence",
     "capability:flow-orchestration"
   ],
-  "appliedPlanHash": "7a82e4b0f6cb585565e5a1005251d1186b29bb958cc7f6b75cb78a7429715a23",
+  "appliedPlanHash": "34de0dcee990c26fba8f1bbb7b1ccb026799ec338825acbdadb36f80dd3872bc",
   "fileWrites": [
     "D:\\Workspace\\repos\\combat-analytics\\.hforge\\state\\install-state.json",
     "D:\\Workspace\\repos\\combat-analytics\\.hforge\\runtime\\index.json",
@@ -111,7 +111,8 @@
     "D:\\Workspace\\repos\\combat-analytics\\.hforge\\runtime\\repo\\scan-summary.json",
     "D:\\Workspace\\repos\\combat-analytics\\.hforge\\runtime\\findings\\validation-gaps.json",
     "D:\\Workspace\\repos\\combat-analytics\\.hforge\\runtime\\findings\\risk-signals.json",
-    "D:\\Workspace\\repos\\combat-analytics\\.hforge\\agent-manifest.json"
+    "D:\\Workspace\\repos\\combat-analytics\\.hforge\\agent-manifest.json",
+    "D:\\Workspace\\repos\\combat-analytics\\AGENTS.md"
   ],
   "backupSnapshots": [
     "D:\\Workspace\\repos\\combat-analytics\\.claude",
@@ -164,11 +165,12 @@
     "D:\\Workspace\\repos\\combat-analytics\\.hforge\\library\\docs\\generated-artifacts.md",
     "D:\\Workspace\\repos\\combat-analytics\\.hforge\\library\\manifests\\catalog\\flow-artifacts.json",
     "D:\\Workspace\\repos\\combat-analytics\\.hforge\\library\\schemas\\runtime\\flow-state.schema.json",
-    "D:\\Workspace\\repos\\combat-analytics\\.hforge\\library\\scripts\\runtime\\flow-status.mjs"
+    "D:\\Workspace\\repos\\combat-analytics\\.hforge\\library\\scripts\\runtime\\flow-status.mjs",
+    "D:\\Workspace\\repos\\combat-analytics\\AGENTS.md"
   ],
   "timestamps": {
-    "createdAt": "2026-03-28T16:46:26.672Z",
-    "updatedAt": "2026-03-28T16:46:26.963Z"
+    "createdAt": "2026-03-28T19:46:59.710Z",
+    "updatedAt": "2026-03-28T19:53:14.943Z"
   },
   "lastValidationStatus": "unknown",
   "visibilityMode": "hidden-ai-layer",
@@ -181,6 +183,7 @@
     "D:\\Workspace\\repos\\combat-analytics\\.hforge\\runtime"
   ],
   "visibleBridgePaths": [
+    "D:\\Workspace\\repos\\combat-analytics\\AGENTS.md",
     "D:\\Workspace\\repos\\combat-analytics\\CLAUDE.md",
     "D:\\Workspace\\repos\\combat-analytics\\.agents\\skills",
     "D:\\Workspace\\repos\\combat-analytics\\.specify",

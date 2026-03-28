@@ -26,6 +26,7 @@ end
 local TRACKER_EVENT_MAP = {
     PLAYER_ENTERING_WORLD               = "HandlePlayerEnteringWorld",
     TRAIT_CONFIG_LIST_UPDATED            = "HandleTraitConfigListUpdated",
+    TRAIT_CONFIG_UPDATED                 = "HandleTraitConfigUpdated",
     -- COMBAT_LOG_EVENT_UNFILTERED is not routed here: registering that event
     -- via Frame:RegisterEvent() is forbidden in Midnight arena and raises a
     -- Lua error. Damage data flows from C_DamageMeter instead.
