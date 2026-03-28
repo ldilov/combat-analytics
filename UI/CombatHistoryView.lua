@@ -86,9 +86,19 @@ function CombatHistoryView:Build(parent)
     self.pageText:SetPoint("TOPRIGHT", self.prevButton, "BOTTOMRIGHT", 0, -6)
     self.pageText:SetTextColor(unpack(ns.Widgets.THEME.textMuted))
 
-    self.shell, self.scrollFrame, self.canvas = ns.Widgets.CreateScrollCanvas(self.frame, 808, 390)
-    self.shell:SetPoint("TOPLEFT", self.filterAllButton, "BOTTOMLEFT", 0, -10)
-    self.shell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 16)
+    -- 20-session results sparkline at top
+    self.sparklineLabel = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.sparklineLabel:SetPoint("TOPLEFT", self.filterAllButton, "BOTTOMLEFT", 0, -10)
+    self.sparklineLabel:SetTextColor(unpack(ns.Widgets.THEME.textMuted))
+    self.sparklineLabel:SetText("Last 20 sessions:")
+
+    self.sparkline = ns.Widgets.CreateSparkline(self.frame, {}, ns.Widgets.THEME.accent, 200, 14)
+    self.sparkline:SetPoint("LEFT", self.sparklineLabel, "RIGHT", 8, 0)
+    self.sparkline:Hide()
+
+    self.shell, self.scrollFrame, self.canvas = ns.Widgets.CreateScrollCanvas(self.frame, 808, 370)
+    self.shell:SetPoint("TOPLEFT", self.sparklineLabel, "BOTTOMLEFT", 0, -8)
+    self.shell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 48)
 
     self.rows = {}
     for index = 1, self.rowCount do
@@ -127,6 +137,75 @@ function CombatHistoryView:Build(parent)
         self.replayButtons[index] = btn
     end
 
+    -- Context filter toggle buttons at the bottom
+    self.ctxFilterFrame = CreateFrame("Frame", nil, self.frame)
+    self.ctxFilterFrame:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", 16, 12)
+    self.ctxFilterFrame:SetSize(400, 26)
+
+    self.ctxBtnAll = ns.Widgets.CreateButton(self.ctxFilterFrame, "All", 60, 22)
+    self.ctxBtnAll:SetPoint("LEFT", self.ctxFilterFrame, "LEFT", 0, 0)
+    self.ctxBtnAll:SetActive(true)
+    self.ctxBtnAll:SetScript("OnClick", function()
+        self.filterContext = nil
+        self.page = 1
+        self:UpdateContextFilterButtons()
+        self:Refresh()
+    end)
+
+    self.ctxBtnArena = ns.Widgets.CreateButton(self.ctxFilterFrame, "Arena", 64, 22)
+    self.ctxBtnArena:SetPoint("LEFT", self.ctxBtnAll, "RIGHT", 6, 0)
+    self.ctxBtnArena:SetScript("OnClick", function()
+        self.filterContext = Constants.CONTEXT and Constants.CONTEXT.ARENA or "ARENA"
+        self.page = 1
+        self:UpdateContextFilterButtons()
+        self:Refresh()
+    end)
+
+    self.ctxBtnDuel = ns.Widgets.CreateButton(self.ctxFilterFrame, "Duel", 60, 22)
+    self.ctxBtnDuel:SetPoint("LEFT", self.ctxBtnArena, "RIGHT", 6, 0)
+    self.ctxBtnDuel:SetScript("OnClick", function()
+        self.filterContext = Constants.CONTEXT and Constants.CONTEXT.DUEL or "DUEL"
+        self.page = 1
+        self:UpdateContextFilterButtons()
+        self:Refresh()
+    end)
+
+    self.ctxBtnDummy = ns.Widgets.CreateButton(self.ctxFilterFrame, "Dummy", 66, 22)
+    self.ctxBtnDummy:SetPoint("LEFT", self.ctxBtnDuel, "RIGHT", 6, 0)
+    self.ctxBtnDummy:SetScript("OnClick", function()
+        self.filterContext = Constants.CONTEXT and Constants.CONTEXT.TRAINING_DUMMY or "TRAINING_DUMMY"
+        self.page = 1
+        self:UpdateContextFilterButtons()
+        self:Refresh()
+    end)
+
+    -- Duel Lab opponent card pool (object pool, created once)
+    self.duelLabHeader = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    self.duelLabHeader:SetTextColor(unpack(ns.Widgets.THEME.text))
+    self.duelLabHeader:SetText("Duel Lab \226\128\148 Opponent Series")
+    self.duelLabHeader:Hide()
+
+    local DUEL_LAB_MAX = 10
+    local CARD_HEIGHT = 62
+    self.duelLabCards = {}
+    for i = 1, DUEL_LAB_MAX do
+        local card = ns.Widgets.CreateSurface(self.canvas, 750, CARD_HEIGHT, ns.Widgets.THEME.panelAlt, ns.Widgets.THEME.border)
+        card.nameText = card:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        card.nameText:SetPoint("TOPLEFT", card, "TOPLEFT", 12, -8)
+        card.scoreText = card:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        card.scoreText:SetPoint("LEFT", card.nameText, "RIGHT", 12, 0)
+        card.scoreText:SetTextColor(unpack(ns.Widgets.THEME.textMuted))
+        card.openerBar = ns.Widgets.CreateMetricBar(card, 200, 28)
+        card.openerBar:SetPoint("TOPLEFT", card.nameText, "BOTTOMLEFT", 0, -4)
+        card.trendPill = ns.Widgets.CreatePill(card, 70, 16, ns.Widgets.THEME.accentSoft, ns.Widgets.THEME.border)
+        card.trendPill:SetPoint("LEFT", card.openerBar, "RIGHT", 8, 0)
+        card.infoText = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.infoText:SetPoint("TOPRIGHT", card, "TOPRIGHT", -12, -8)
+        card.infoText:SetTextColor(unpack(ns.Widgets.THEME.textMuted))
+        card:Hide()
+        self.duelLabCards[i] = card
+    end
+
     ns.Widgets.SetCanvasHeight(self.canvas, (self.rowCount * 64) + 8)
 
     return self.frame
@@ -136,6 +215,14 @@ function CombatHistoryView:UpdateFilterButtons()
     self.filterAllButton:SetActive(self.filterResult == nil)
     self.filterWonButton:SetActive(self.filterResult == "won")
     self.filterLostButton:SetActive(self.filterResult == "lost")
+end
+
+function CombatHistoryView:UpdateContextFilterButtons()
+    local ctx = self.filterContext
+    if self.ctxBtnAll then self.ctxBtnAll:SetActive(ctx == nil) end
+    if self.ctxBtnArena then self.ctxBtnArena:SetActive(ctx == (Constants.CONTEXT and Constants.CONTEXT.ARENA or "ARENA")) end
+    if self.ctxBtnDuel then self.ctxBtnDuel:SetActive(ctx == (Constants.CONTEXT and Constants.CONTEXT.DUEL or "DUEL")) end
+    if self.ctxBtnDummy then self.ctxBtnDummy:SetActive(ctx == (Constants.CONTEXT and Constants.CONTEXT.TRAINING_DUMMY or "TRAINING_DUMMY")) end
 end
 
 function CombatHistoryView:Refresh()
@@ -166,6 +253,33 @@ function CombatHistoryView:Refresh()
     self.nextButton:SetEnabled(self.page < totalPages)
     if self.scrollFrame and self.scrollFrame.scrollBar then
         self.scrollFrame.scrollBar:SetValue(0)
+    end
+
+    -- 20-session results sparkline
+    if self.sparkline then
+        local allSessions, allTotal = store:ListCombats(1, 20, {}, characterKey)
+        local sparkData = {}
+        for i = 1, math.min(allTotal, 20) do
+            local s = allSessions[i]
+            if s then
+                sparkData[#sparkData + 1] = (s.result == "won") and 1 or 0
+            end
+        end
+        if #sparkData > 0 then
+            self.sparkline:Hide()
+            local anchor = { self.sparkline:GetPoint(1) }
+            self.sparkline = ns.Widgets.CreateSparkline(
+                self.frame, sparkData, ns.Widgets.THEME.success, 200, 14
+            )
+            if anchor[1] then
+                self.sparkline:SetPoint(anchor[1], anchor[2], anchor[3], anchor[4], anchor[5])
+            else
+                self.sparkline:SetPoint("LEFT", self.sparklineLabel, "RIGHT", 8, 0)
+            end
+            self.sparkline:Show()
+        else
+            self.sparkline:Hide()
+        end
     end
 
     for index = 1, self.rowCount do
@@ -216,6 +330,7 @@ function CombatHistoryView:Refresh()
                 confidenceLabel = richLabel,
                 dataConfidence = session.dataConfidence or nil,
             })
+
         else
             row:Hide()
             row.sessionId = nil
@@ -226,6 +341,90 @@ function CombatHistoryView:Refresh()
             end
         end
     end
+
+    -- Duel Lab section: show when duel context filter active or duel data available
+    local duelCtx = Constants.CONTEXT and Constants.CONTEXT.DUEL or "DUEL"
+    local showDuelLab = (self.filterContext == duelCtx)
+    local duelGroups = {}
+    if showDuelLab and self.duelLabCards then
+        local okSvc, duelLabSvc = pcall(function() return ns.Addon:GetModule("DuelLabService") end)
+        if okSvc and duelLabSvc then
+            local allDuels = store:ListCombats(1, 500, { context = duelCtx }, characterKey)
+            local okGroup, grouped = pcall(function() return duelLabSvc:GroupDuelsByOpponent(allDuels) end)
+            if okGroup and grouped then
+                for _, entry in pairs(grouped) do
+                    duelGroups[#duelGroups + 1] = entry
+                end
+                table.sort(duelGroups, function(a, b) return (a.totalDuels or 0) > (b.totalDuels or 0) end)
+            end
+        end
+    end
+
+    local DUEL_LAB_MAX = 10
+    local CARD_HEIGHT = 62
+    local GAP = 8
+    local visibleCards = math.min(#duelGroups, DUEL_LAB_MAX)
+
+    if visibleCards > 0 and self.duelLabHeader then
+        -- Find last visible row for anchor
+        local lastRow = self.rows[self.rowCount]
+        self.duelLabHeader:ClearAllPoints()
+        self.duelLabHeader:SetPoint("TOPLEFT", lastRow, "BOTTOMLEFT", 0, -16)
+        self.duelLabHeader:Show()
+    elseif self.duelLabHeader then
+        self.duelLabHeader:Hide()
+    end
+
+    local TREND_COLORS = {
+        improving = ns.Widgets.THEME.success,
+        declining = ns.Widgets.THEME.warning,
+        stable    = ns.Widgets.THEME.textMuted,
+    }
+
+    for i = 1, DUEL_LAB_MAX do
+        local card = self.duelLabCards[i]
+        if not card then break end
+        local entry = duelGroups[i]
+        if entry then
+            card:ClearAllPoints()
+            if i == 1 then
+                card:SetPoint("TOPLEFT", self.duelLabHeader, "BOTTOMLEFT", 0, -GAP)
+            else
+                card:SetPoint("TOPLEFT", self.duelLabCards[i - 1], "BOTTOMLEFT", 0, -GAP)
+            end
+            -- Class-colored name
+            local nameColor = ns.Widgets.THEME.text
+            if entry.opponentClass and RAID_CLASS_COLORS and RAID_CLASS_COLORS[entry.opponentClass] then
+                local cc = RAID_CLASS_COLORS[entry.opponentClass]
+                nameColor = { cc.r, cc.g, cc.b, 1.0 }
+            end
+            card.nameText:SetText(entry.opponentName or "Unknown")
+            card.nameText:SetTextColor(unpack(nameColor))
+            -- Set score W-L (D)
+            local sc = entry.setScore or {}
+            card.scoreText:SetText(string.format("%d-%d (%d)", sc.wins or 0, sc.losses or 0, sc.draws or 0))
+            -- Opener success bar
+            local opRate = entry.openerSuccessRate or 0
+            card.openerBar:SetData("Opener", string.format("%.0f%%", opRate * 100), "", opRate, ns.Widgets.THEME.accent)
+            -- Trend pill
+            local trend = entry.adaptationTrend or "stable"
+            local tColor = TREND_COLORS[trend] or ns.Widgets.THEME.textMuted
+            card.trendPill:SetData(trend, tColor, ns.Widgets.THEME.panelAlt, ns.Widgets.THEME.border)
+            -- Info text
+            local avgDur = entry.averageDuration or 0
+            card.infoText:SetText(string.format("%d duels | avg %s", entry.totalDuels or 0, ns.Helpers.FormatDuration(avgDur)))
+            card:Show()
+        else
+            card:Hide()
+        end
+    end
+
+    -- Adjust canvas height to accommodate duel lab cards
+    local extraHeight = 0
+    if visibleCards > 0 then
+        extraHeight = 16 + 20 + GAP + (visibleCards * (CARD_HEIGHT + GAP))
+    end
+    ns.Widgets.SetCanvasHeight(self.canvas, (self.rowCount * 64) + 8 + extraHeight)
 end
 
 ns.Addon:RegisterModule("CombatHistoryView", CombatHistoryView)

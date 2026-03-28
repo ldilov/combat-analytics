@@ -389,6 +389,73 @@ function Addon:HandleCommand(input)
     end
 
     if command == "debug" then
+        -- T122: Diagnostic export subcommand
+        if argument == "export" then
+            local store = self:GetModule("CombatStore")
+            local session = nil
+            if self.runtime.reviewedSessionId and store then
+                session = store:GetSessionById(self.runtime.reviewedSessionId)
+            end
+            if not session and store then
+                session = store:GetLatestSession(store:GetCurrentCharacterKey())
+            end
+            if not session then
+                self:PrintWarning("No session available for diagnostic export.")
+                return
+            end
+            self:Print("|cff35c7e5--- Diagnostic Export ---|r")
+            self:Print(string.format("  id: %s", session.id or "?"))
+            self:Print(string.format("  context: %s | subcontext: %s", session.context or "?", session.subcontext or "?"))
+            self:Print(string.format("  result: %s | duration: %.1fs", session.result or "?", session.duration or 0))
+            self:Print(string.format("  confidence: %s", session.captureQuality and session.captureQuality.confidence or "?"))
+            -- Match/round identity
+            local arena = session.arena or {}
+            self:Print(string.format("  matchKey: %s | roundKey: %s", arena.matchKey or "none", arena.roundKey or "none"))
+            -- Slot confidence
+            local roster = arena.roster or {}
+            for i, slot in ipairs(roster) do
+                local fc = slot.fieldConfidence or {}
+                local parts = {}
+                for k, v in pairs(fc) do parts[#parts + 1] = k .. "=" .. tostring(v) end
+                self:Print(string.format("  slot[%d]: %s (%s) conf={%s}", i, slot.name or "?", slot.specName or "?", table.concat(parts, ",")))
+            end
+            -- DM session IDs
+            local dm = session.damageMeterImport or {}
+            self:Print(string.format("  dmSessionIds: %d", #(dm.sessionIds or {})))
+            -- Timeline event counts by lane
+            local laneCounts = {}
+            for _, evt in ipairs(session.timelineEvents or {}) do
+                local lane = evt.lane or "unknown"
+                laneCounts[lane] = (laneCounts[lane] or 0) + 1
+            end
+            local laneStr = {}
+            for lane, count in pairs(laneCounts) do
+                laneStr[#laneStr + 1] = string.format("%s=%d", lane, count)
+            end
+            self:Print(string.format("  timelineEvents: %d total {%s}", #(session.timelineEvents or {}), table.concat(laneStr, ", ")))
+            -- Provenance map
+            local prov = session.provenance or {}
+            local provParts = {}
+            for field, source in pairs(prov) do
+                provParts[#provParts + 1] = string.format("%s:%s", field, type(source) == "table" and source.source or tostring(source))
+            end
+            self:Print(string.format("  provenance: {%s}", table.concat(provParts, ", ")))
+            -- Also save to export key
+            local db = self:GetDB()
+            if db then
+                db.diagnosticExport = {
+                    sessionId = session.id,
+                    exportedAt = os.time(),
+                    context = session.context,
+                    confidence = session.captureQuality and session.captureQuality.confidence,
+                    timelineEventCount = #(session.timelineEvents or {}),
+                    laneCounts = laneCounts,
+                }
+            end
+            self:Print("|cff35c7e5--- End Diagnostic Export ---|r")
+            return
+        end
+
         local enabled = not self:IsDebugEnabled()
         self:SetSetting("enableDebugLogging", enabled)
         self:PrintSuccess(string.format("Debug %s.", enabled and "enabled" or "disabled"))
@@ -448,6 +515,34 @@ function Addon:HandleCommand(input)
         else
             self:Print("Minimap button |cffe64d40hidden|r. Use |cff35c7e5/ca minimap|r to show it again.")
         end
+        return
+    end
+
+    -- T123: Manual regression matrix checklist
+    if command == "regression" then
+        self:Print("|cff35c7e5--- Regression Matrix ---|r")
+        self:Print("|cffFFD700Arena:|r")
+        self:Print("  [ ] 2v2 Skirmish — session created, opponent identified, timeline populated")
+        self:Print("  [ ] 3v3 Rated — matchKey/roundKey stable, roster resolved, DM import")
+        self:Print("  [ ] Solo Shuffle — round tracking, scout card, adaptation card")
+        self:Print("  [ ] Inspect failure — graceful fallback, no error spam")
+        self:Print("|cffFFD700Duel:|r")
+        self:Print("  [ ] Accepted duel — session created, opponent identified")
+        self:Print("  [ ] Cancelled duel — no stale session left")
+        self:Print("  [ ] To-the-death — subcontext classified correctly")
+        self:Print("|cffFFD700Dummy:|r")
+        self:Print("  [ ] Single target — session captured, benchmark updated")
+        self:Print("  [ ] Repeated pulls — each finalized, aggregates increment")
+        self:Print("|cffFFD700General:|r")
+        self:Print("  [ ] /reload during arena prep — no orphan sessions")
+        self:Print("  [ ] Logout after match — session finalized before save")
+        self:Print("  [ ] Legacy DB (v2-v5) — migration runs, UI renders without error")
+        self:Print("  [ ] Mixed-version DB — v2+v3+v4+v5+v6 sessions load together")
+        self:Print("|cffFFD700Data Quality:|r")
+        self:Print("  [ ] ConfidencePill shows correct label for each session type")
+        self:Print("  [ ] Provenance fields populated for new sessions")
+        self:Print("  [ ] Timeline events have correct lanes")
+        self:Print("|cff35c7e5--- End Regression Matrix ---|r")
         return
     end
 

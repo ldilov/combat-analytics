@@ -34,6 +34,9 @@ local function buildEmptyDb()
             openerSequenceEffectiveness = {},
             comps = {},
             matchupArchetypes = {},
+            openers = {},
+            matchupMemory = {},
+            duelSeries = {},
         },
         dummyBenchmarks = {},
         suggestionCache = {
@@ -83,6 +86,9 @@ local function ensureDefaults(db)
     db.aggregates.openerSequenceEffectiveness = db.aggregates.openerSequenceEffectiveness or {}
     db.aggregates.comps = db.aggregates.comps or {}
     db.aggregates.matchupArchetypes = db.aggregates.matchupArchetypes or {}
+    db.aggregates.openers = db.aggregates.openers or {}
+    db.aggregates.matchupMemory = db.aggregates.matchupMemory or {}
+    db.aggregates.duelSeries = db.aggregates.duelSeries or {}
 
     db.dummyBenchmarks = db.dummyBenchmarks or {}
 
@@ -513,7 +519,119 @@ function CombatStore:MigrateSchema(db)
         db.schemaVersion = 5
     end
 
+    -- v5 → v6: Midnight compliance overhaul — add timelineEvents, provenance,
+    -- fieldConfidence on arena slots, new aggregate buckets, and map old
+    -- ANALYSIS_CONFIDENCE labels to the new SESSION_CONFIDENCE enum.
+    if version < 6 then
+        -- Confidence label migration map (old → new)
+        local confidenceMap = {
+            full_raw       = Constants.SESSION_CONFIDENCE.LEGACY_CLEU_IMPORT,
+            enriched       = Constants.SESSION_CONFIDENCE.LEGACY_CLEU_IMPORT,
+            restricted_raw = Constants.SESSION_CONFIDENCE.STATE_PLUS_DAMAGE_METER,
+            degraded       = Constants.SESSION_CONFIDENCE.DAMAGE_METER_ONLY,
+            partial_roster = Constants.SESSION_CONFIDENCE.PARTIAL_ROSTER,
+            unknown        = Constants.SESSION_CONFIDENCE.ESTIMATED,
+        }
+
+        for _, sessionId in ipairs(db.combats.order or {}) do
+            local session = db.combats.byId[sessionId]
+            if session then
+                -- T006: Add timelineEvents and provenance to all existing sessions
+                if session.timelineEvents == nil then
+                    session.timelineEvents = {}
+                end
+                if session.provenance == nil then
+                    session.provenance = {}
+                end
+
+                -- T007: Map old confidence labels to new SessionConfidence
+                if session.captureQuality then
+                    local oldConf = session.captureQuality.confidence
+                    if oldConf and confidenceMap[oldConf] then
+                        session.captureQuality.confidence = confidenceMap[oldConf]
+                    end
+                end
+
+                -- T008: Add fieldConfidence to existing arena slot records
+                if type(session.arena) == "table" then
+                    local rounds = session.arena.rounds
+                    if type(rounds) == "table" then
+                        for _, round in pairs(rounds) do
+                            local slots = round and round.slots
+                            if type(slots) == "table" then
+                                for _, slot in pairs(slots) do
+                                    if type(slot) == "table" and not slot.fieldConfidence then
+                                        local fc = {}
+                                        -- Infer initial confidence from existing data
+                                        if slot.prepSpecId then
+                                            fc.spec = "prep"
+                                            fc.class = "prep"
+                                        end
+                                        if slot.guid then
+                                            fc.guid = "visible"
+                                            fc.name = "visible"
+                                            if not fc.class then
+                                                fc.class = "visible"
+                                            end
+                                        end
+                                        if slot.pvpTalents then
+                                            fc.pvpTalents = "inspect"
+                                            fc.talentImportString = "inspect"
+                                            fc.spec = "inspect" -- upgrade from prep
+                                        end
+                                        slot.fieldConfidence = fc
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        -- T009: Initialize new aggregate buckets
+        db.aggregates.openers = db.aggregates.openers or {}
+        db.aggregates.matchupMemory = db.aggregates.matchupMemory or {}
+        db.aggregates.duelSeries = db.aggregates.duelSeries or {}
+
+        db.schemaVersion = 6
+    end
+
     -- Future migrations go here as additional `if version < N then` blocks.
+
+    -- T121: Post-migration validation for mixed-version datasets.
+    -- Ensures all sessions have required fields regardless of original schema version.
+    local validationErrors = 0
+    for _, sessionId in ipairs(db.combats.order or {}) do
+        local session = db.combats.byId[sessionId]
+        if session then
+            -- Ensure timelineEvents is always a table (never nil)
+            if type(session.timelineEvents) ~= "table" then
+                session.timelineEvents = {}
+                validationErrors = validationErrors + 1
+            end
+            -- Ensure provenance is always a table
+            if type(session.provenance) ~= "table" then
+                session.provenance = {}
+                validationErrors = validationErrors + 1
+            end
+            -- Ensure captureQuality has a confidence field
+            if not session.captureQuality then
+                session.captureQuality = { confidence = Constants.SESSION_CONFIDENCE.ESTIMATED }
+                validationErrors = validationErrors + 1
+            elseif not session.captureQuality.confidence then
+                session.captureQuality.confidence = Constants.SESSION_CONFIDENCE.ESTIMATED
+                validationErrors = validationErrors + 1
+            end
+            -- Ensure metrics is a table
+            if session.metrics == nil then
+                session.metrics = {}
+            end
+        end
+    end
+    if validationErrors > 0 then
+        ns.Addon:Trace("migration.validation_fixes", { count = validationErrors })
+    end
 end
 
 function CombatStore:GetDB()
@@ -1441,6 +1559,9 @@ function CombatStore:ResetAggregates()
         openerSequenceEffectiveness = {},
         comps = {},
         matchupArchetypes = {},
+        openers = {},
+        matchupMemory = {},
+        duelSeries = {},
     }
     db.dummyBenchmarks = {}
     db.suggestionCache = {

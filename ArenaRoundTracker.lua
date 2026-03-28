@@ -50,6 +50,33 @@ local function shallowCopy(src)
     return dst
 end
 
+-- Maps a GUID to its arena slot via indexed lookup (round.guidToSlot), falling
+-- back to a linear scan over all slots. Returns nil when no slot matches.
+local function findSlotByGuid(round, guid)
+    if not round or not guid then return nil end
+    local indexed = round.guidToSlot and round.guidToSlot[guid]
+    if indexed and round.slots[indexed] and round.slots[indexed].guid == guid then
+        return round.slots[indexed]
+    end
+    for _, s in pairs(round.slots) do
+        if s.guid == guid then return s end
+    end
+    return nil
+end
+
+-- Initializes selection evidence on a slot if not already present. Idempotent.
+local function ensureSelectionEvidence(slot)
+    if not slot.selectionEvidence then
+        slot.selectionEvidence = {
+            damageToPlayer = 0,
+            deathRecap     = 0,
+            identityBias   = 0,
+            visibilityBias = 0,
+        }
+    end
+    return slot.selectionEvidence
+end
+
 -- Build a snapshot from a live unit frame. Returns nil if unit not visible.
 local function buildUnitSnapshot(unitToken)
     if not ApiCompat.UnitExists(unitToken) then return nil end
@@ -145,6 +172,7 @@ local function ensureSlot(round, slot)
             pressureScore           = 0,
             isDead                  = false,
             updateHistory           = {},
+            fieldConfidence         = {},
         }
     end
     return round.slots[slot]
@@ -241,6 +269,7 @@ function ArenaRoundTracker:BeginRound(reason)
     local round = {
         roundIndex          = roundIndex,
         state               = "active",
+        completionState     = "complete",  -- T044: default; upgraded by EndRound
         startReason         = reason or "unknown",
         startedAt           = nowServer(),
         slots               = {},
@@ -250,6 +279,7 @@ function ArenaRoundTracker:BeginRound(reason)
     }
 
     -- Seed slot prep data from any previously captured ARENA_PREP specs.
+    local seedTs = nowServer()
     for slot, prep in pairs(matchRecord.prepOpponents) do
         local s = ensureSlot(round, slot)
         s.prepSpecId     = prep.specId
@@ -257,6 +287,11 @@ function ArenaRoundTracker:BeginRound(reason)
         s.prepSpecIconId = prep.specIconId
         s.prepRole       = prep.role
         s.prepClassFile  = prep.classFile
+        -- T040/T043: Set field confidence for prep-sourced fields.
+        s.fieldConfidence.spec           = "prep"
+        s.fieldConfidence.specLearnedAt  = seedTs
+        s.fieldConfidence.class          = "prep"
+        s.fieldConfidence.classLearnedAt = seedTs
     end
 
     round.rosterSignature = buildRosterSignature(round.slots)
@@ -283,9 +318,61 @@ function ArenaRoundTracker:EndRound(reason, winner, duration)
     round.endedAt         = nowServer()
     round.winner          = winner
     round.duration        = duration
+
+    -- T044: Determine completionState based on roster and disconnect signals.
+    local hasUnresolved  = false
+    local hasDisconnect  = false
+    for slot = 1, 5 do
+        local s = round.slots[slot]
+        if s then
+            -- A slot that was created but never became visible is unresolved.
+            if not s.visible and not s.guid then
+                hasUnresolved = true
+            end
+            -- Check update history for disconnect-related reasons.
+            for _, entry in ipairs(s.updateHistory or {}) do
+                if entry.reason == "disconnect" or entry.reason == "destroyed" then
+                    hasDisconnect = true
+                end
+            end
+        end
+    end
+    -- Also treat unresolved enemy GUIDs as evidence of a leaver.
+    for _ in pairs(round.unresolvedEnemyGuids or {}) do
+        hasUnresolved = true
+        break
+    end
+    if hasDisconnect then
+        round.completionState = "partial_disconnect"
+    elseif hasUnresolved then
+        round.completionState = "partial_leaver"
+    else
+        round.completionState = "complete"
+    end
+
     -- Recompute stable keys with full roster data now available.
     round.rosterSignature = buildRosterSignature(round.slots)
     round.roundKey        = buildRoundKey(matchRecord.matchKey, round.roundIndex, round.slots)
+
+    -- T089: Show adaptation card between rounds in Solo Shuffle
+    if matchRecord.subcontext == Constants.SUBCONTEXT.SOLO_SHUFFLE then
+        local scoutService = ns.Addon:GetModule("ArenaScoutService")
+        local scoutView = ns.Addon:GetModule("ArenaScoutView")
+        if scoutService and scoutView then
+            local previousRoundSession = nil
+            -- Find the most recent finalized session from CombatStore
+            local store = ns.Addon:GetModule("CombatStore")
+            if store then
+                local sessions = store:GetRecentSessions(1)
+                previousRoundSession = sessions and sessions[1] or nil
+            end
+            local currentPrepState = { slots = round.slots, roundNumber = matchRecord.roundCount or 1 }
+            local ok, adaptCard = pcall(scoutService.BuildAdaptationCard, scoutService, previousRoundSession, currentPrepState)
+            if ok and adaptCard then
+                scoutView:ShowAdaptation(adaptCard)
+            end
+        end
+    end
 
     matchRecord.currentRound = nil
 
@@ -333,6 +420,7 @@ function ArenaRoundTracker:CapturePrepSpecs()
     -- Also propagate into active round if one exists.
     local round = matchRecord.currentRound
     if round then
+        local ts = nowServer()
         for slot, prep in pairs(matchRecord.prepOpponents) do
             local s = ensureSlot(round, slot)
             s.prepSpecId     = s.prepSpecId     or prep.specId
@@ -340,6 +428,11 @@ function ArenaRoundTracker:CapturePrepSpecs()
             s.prepSpecIconId = s.prepSpecIconId or prep.specIconId
             s.prepRole       = s.prepRole       or prep.role
             s.prepClassFile  = s.prepClassFile  or prep.classFile
+            -- T040/T043: Set field confidence for prep-sourced fields.
+            s.fieldConfidence.spec           = "prep"
+            s.fieldConfidence.specLearnedAt  = ts
+            s.fieldConfidence.class          = "prep"
+            s.fieldConfidence.classLearnedAt = ts
         end
         round.rosterSignature = buildRosterSignature(round.slots)
         round.roundKey        = buildRoundKey(matchRecord.matchKey, round.roundIndex, round.slots)
@@ -410,6 +503,15 @@ function ArenaRoundTracker:HandleArenaOpponentUpdate(unitToken, updateReason)
 
             -- If we had this GUID staged as unresolved, clear it.
             round.unresolvedEnemyGuids[snapshot.guid] = nil
+
+            -- T041/T043: Set field confidence for visible-sourced fields.
+            local visTs = nowServer()
+            s.fieldConfidence.guid           = "visible"
+            s.fieldConfidence.guidLearnedAt  = visTs
+            s.fieldConfidence.name           = "visible"
+            s.fieldConfidence.nameLearnedAt  = visTs
+            s.fieldConfidence.class          = "visible"
+            s.fieldConfidence.classLearnedAt = visTs
         end
 
         -- Merge prep data (non-destructive; only fill if not already set).
@@ -495,8 +597,14 @@ function ArenaRoundTracker:HandleInspectReady()
         end
     end
 
+    -- T042/T043: Timestamp for inspect-sourced field confidence.
+    local inspTs = nowServer()
+
     if #pvpTalents > 0 then
         round.slots[slot].pvpTalents = pvpTalents
+        -- T042/T043: Field confidence for pvpTalents.
+        round.slots[slot].fieldConfidence.pvpTalents          = "inspect"
+        round.slots[slot].fieldConfidence.pvpTalentsLearnedAt = inspTs
         ns.Addon:Trace("arena_round.inspect.pvp_talents", {
             slot = slot,
             unit = unitToken,
@@ -509,6 +617,9 @@ function ArenaRoundTracker:HandleInspectReady()
         local okImport, importString = pcall(C_Traits.GenerateInspectImportString, unitToken)
         if okImport and importString and type(importString) == "string" and importString ~= "" then
             round.slots[slot].talentImportString = importString
+            -- T042/T043: Field confidence for talentImportString.
+            round.slots[slot].fieldConfidence.talentImportString          = "inspect"
+            round.slots[slot].fieldConfidence.talentImportStringLearnedAt = inspTs
             ns.Addon:Trace("arena_round.inspect.talent_import", {
                 slot = slot,
                 unit = unitToken,
@@ -516,6 +627,10 @@ function ArenaRoundTracker:HandleInspectReady()
             })
         end
     end
+
+    -- T042/T043: Upgrade spec confidence to "inspect" (from "prep" or "visible").
+    round.slots[slot].fieldConfidence.spec          = "inspect"
+    round.slots[slot].fieldConfidence.specLearnedAt = inspTs
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────
@@ -554,96 +669,175 @@ function ArenaRoundTracker:HandleDiminishStateUpdated(unitTarget, trackerInfo)
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- CLEU routing
--- Called from CombatTracker:HandleNormalizedEvent()
+-- Session-pressure hydration
+-- Called from CopyStateIntoSession before exporting to the session record.
+-- Reads post-session evidence (attribution + death recap timeline) and writes
+-- per-slot primarySelectionScore and selectionEvidence for GetPrimaryEnemy.
 -- ──────────────────────────────────────────────────────────────────────────────
 
-function ArenaRoundTracker:HandleCombatLogEvent(eventRecord)
-    if not eventRecord then return end
-    local round = self:GetCurrentRound()
+function ArenaRoundTracker:ApplySessionPressure(round, session)
     if not round then return end
+    local myGuid = ApiCompat.GetPlayerGUID()
 
-    local playerGuid = ApiCompat.GetPlayerGUID()
-
-    -- Identify the enemy in this event relative to the local player.
-    local enemyGuid, enemyName
-    if eventRecord.sourceMine and eventRecord.destGuid and eventRecord.destGuid ~= playerGuid then
-        enemyGuid = eventRecord.destGuid
-        enemyName = eventRecord.destName
-    elseif eventRecord.destMine and eventRecord.sourceGuid and eventRecord.sourceGuid ~= playerGuid then
-        enemyGuid = eventRecord.sourceGuid
-        enemyName = eventRecord.sourceName
+    -- Step 1: Reset all derived selection fields to zero for a clean slate.
+    for _, s in pairs(round.slots) do
+        s.primarySelectionScore = 0
+        ensureSelectionEvidence(s)
+        s.selectionEvidence.damageToPlayer = 0
+        s.selectionEvidence.deathRecap     = 0
+        s.selectionEvidence.identityBias   = 0
+        s.selectionEvidence.visibilityBias = 0
     end
 
-    if not enemyGuid then return end
-
-    -- Resolve enemy to a slot, or stage as unresolved for later reconciliation.
-    local slotIndex = round.guidToSlot[enemyGuid]
-    local s = slotIndex and round.slots[slotIndex] or nil
-
-    if not s then
-        -- Stage GUID — will be linked when ARENA_OPPONENT_UPDATE fires.
-        if not round.unresolvedEnemyGuids[enemyGuid] then
-            round.unresolvedEnemyGuids[enemyGuid] = {
-                guid      = enemyGuid,
-                name      = enemyName,
-                firstSeen = nowServer(),
-                lastSeen  = nowServer(),
-                actions   = 0,
-            }
-        else
-            round.unresolvedEnemyGuids[enemyGuid].lastSeen = nowServer()
-            round.unresolvedEnemyGuids[enemyGuid].name =
-                round.unresolvedEnemyGuids[enemyGuid].name or enemyName
+    -- Step 2: Hydrate damageToPlayer from session.attribution.bySource.
+    -- Each bySource entry is keyed by enemy GUID; totalAmount is the aggregate.
+    local bySource = session and type(session.attribution) == "table" and session.attribution.bySource
+    if bySource then
+        for sourceGuid, sourceData in pairs(bySource) do
+            if sourceGuid ~= myGuid then
+                local slot = findSlotByGuid(round, sourceGuid)
+                if slot then
+                    local ev = ensureSelectionEvidence(slot)
+                    ev.damageToPlayer = ev.damageToPlayer + (sourceData.totalAmount or 0)
+                end
+            end
         end
-        round.unresolvedEnemyGuids[enemyGuid].actions =
-            round.unresolvedEnemyGuids[enemyGuid].actions + 1
-        return
     end
 
-    -- Accumulate pressure metrics per slot.
-    local evType = eventRecord.eventType
-    if evType == "damage" then
-        if eventRecord.destMine and eventRecord.sourceGuid == enemyGuid then
-            s.damageToPlayer = (s.damageToPlayer or 0) + (eventRecord.amount or 0)
-        elseif eventRecord.sourceMine and eventRecord.destGuid == enemyGuid then
-            s.damageTakenFromPlayer = (s.damageTakenFromPlayer or 0) + (eventRecord.amount or 0)
+    -- Step 3: Hydrate deathRecap from DM_ENEMY_SPELL timeline events of type "death_recap".
+    for _, ev in ipairs(session and session.timelineEvents or {}) do
+        if ev.lane == Constants.TIMELINE_LANE.DM_ENEMY_SPELL and ev.type == "death_recap" then
+            local sourceGuid = ev.meta and ev.meta.sourceGuid
+            if sourceGuid and sourceGuid ~= myGuid then
+                local slot = findSlotByGuid(round, sourceGuid)
+                if slot then
+                    local sev = ensureSelectionEvidence(slot)
+                    sev.deathRecap = sev.deathRecap + (ev.amount or 0)
+                end
+            end
         end
-        refreshPressure(s)
-    elseif evType == "aura" and eventRecord.destMine and eventRecord.sourceGuid == enemyGuid then
-        -- Count CC applications onto the player (AURA_APPLIED on self).
-        if eventRecord.subEvent == "SPELL_AURA_APPLIED" then
-            s.ccOnPlayer = (s.ccOnPlayer or 0) + 1
-            refreshPressure(s)
+    end
+
+    -- Step 4: Apply identity and visibility biases; compute composite score.
+    -- preferredOpponentGuid is the slot GUID from the last successful export.
+    local preferredGuid = round.preferredOpponentGuid
+    for _, s in pairs(round.slots) do
+        if s.guid and s.guid ~= myGuid then
+            local sev = ensureSelectionEvidence(s)
+
+            -- Identity bias: +12 when this slot is the previously preferred enemy.
+            if preferredGuid and s.guid == preferredGuid then
+                sev.identityBias = 12
+            end
+
+            -- Visibility bias: +1 for currently visible slots.
+            if s.visible then
+                sev.visibilityBias = 1
+            end
+
+            -- Composite score: damageToPlayer has highest weight, followed by kill
+            -- participation, with identity and visibility as tie-breaker adjustments.
+            s.primarySelectionScore =
+                sev.damageToPlayer   * 0.45 +
+                (s.killParticipation or 0) * 0.10 +
+                sev.identityBias +
+                sev.visibilityBias
         end
-    elseif evType == "death" and eventRecord.destGuid == enemyGuid then
-        s.isDead          = true
-        s.killParticipation = (s.killParticipation or 0) + 1
-        refreshPressure(s)
     end
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- Primary enemy selection (weighted pressure score)
+-- Primary enemy selection (evidence-based stable ranking)
 -- ──────────────────────────────────────────────────────────────────────────────
 
-function ArenaRoundTracker:GetPrimaryEnemy()
+-- GetPrimaryEnemy(preferredGuid) — returns (slot, strategy).
+--
+-- Ranking policy (stable, deterministic):
+--   1. Highest primarySelectionScore (set by ApplySessionPressure)
+--   2. Visible slots over hidden
+--   3. Most recently seen (lastSeenAt)
+--   4. Lowest slot index (deterministic tie-breaker)
+--
+-- 85% sticky GUID rule: when meaningful pressure data exists (bestScore > 0),
+-- the previously preferred opponent is retained if its score is >= 85% of the
+-- best slot's score, preventing identity flapping between nearly-tied enemies.
+--
+-- Strategy labels:
+--   "preferred_guid_sticky" — retained by sticky rule
+--   "highest_score"         — normal score-based selection
+--   "latest_visible"        — fallback: no pressure data, picked by visibility
+--   "no_visible_slot"       — all eligible slots are invisible or tied at zero
+--   "no_round"              — no active or recent round exists
+--
+-- The player's own GUID is always excluded from consideration.
+function ArenaRoundTracker:GetPrimaryEnemy(preferredGuid)
     local round = self:GetCurrentRound()
-    if not round then return nil end
-    -- Never return the player's own slot as the primary enemy.  In edge cases
-    -- (arena unit-token reuse after match end, brief transition states) a slot
-    -- can be populated with the local player's GUID; guard against that here.
+    if not round then return nil, "no_round" end
+
     local myGuid = ApiCompat.GetPlayerGUID()
-    local best = nil
+
+    -- Collect eligible slots: non-nil GUID, not the local player.
+    local eligible = {}
     for slot = 1, 5 do
         local s = round.slots[slot]
         if s and s.guid and s.guid ~= myGuid then
-            if not best or (s.pressureScore or 0) > (best.pressureScore or 0) then
-                best = s
+            eligible[#eligible + 1] = s
+        end
+    end
+
+    if #eligible == 0 then return nil, "no_visible_slot" end
+
+    -- Find the best score across all eligible slots.
+    local bestScore = 0
+    for _, s in ipairs(eligible) do
+        local score = s.primarySelectionScore or 0
+        if score > bestScore then bestScore = score end
+    end
+
+    -- 85% sticky preferred GUID rule (only when pressure data is meaningful).
+    if preferredGuid and bestScore > 0 then
+        for _, s in ipairs(eligible) do
+            if s.guid == preferredGuid then
+                local prefScore = s.primarySelectionScore or 0
+                if prefScore >= bestScore * 0.85 then
+                    return s, "preferred_guid_sticky"
+                end
+                break
             end
         end
     end
-    return best
+
+    -- Stable sort: score → visible → recently seen → lowest slot index.
+    table.sort(eligible, function(a, b)
+        local aScore = a.primarySelectionScore or 0
+        local bScore = b.primarySelectionScore or 0
+        if aScore ~= bScore then return aScore > bScore end
+
+        local aVis = a.visible and 1 or 0
+        local bVis = b.visible and 1 or 0
+        if aVis ~= bVis then return aVis > bVis end
+
+        local aSeen = a.lastSeenAt or 0
+        local bSeen = b.lastSeenAt or 0
+        if aSeen ~= bSeen then return aSeen > bSeen end
+
+        return (a.slot or 99) < (b.slot or 99)
+    end)
+
+    local best = eligible[1]
+    if not best then return nil, "no_visible_slot" end
+
+    -- Determine strategy label.
+    local strategy
+    if (best.primarySelectionScore or 0) > 0 then
+        strategy = "highest_score"
+    elseif best.visible then
+        strategy = "latest_visible"
+    else
+        strategy = "no_visible_slot"
+    end
+
+    return best, strategy
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────
@@ -661,14 +855,22 @@ function ArenaRoundTracker:CopyStateIntoSession(session)
         -- If match is already ended, pick the last completed round.
         or (matchRecord.rounds[#matchRecord.rounds])
 
+    -- Step 1: Hydrate slot pressure scores from post-session evidence before
+    -- exporting. This must run while session.attribution and session.timelineEvents
+    -- are fully populated (i.e. after DamageMeter import completes).
+    if round then
+        self:ApplySessionPressure(round, session)
+    end
+
     session.arena = {
         matchKey         = matchRecord.matchKey,
         mapId            = matchRecord.mapId,
         joinedAt         = matchRecord.joinedAt,
-        roundIndex       = round and round.roundIndex       or nil,
-        roundKey         = round and round.roundKey         or nil,
-        rosterSignature  = round and round.rosterSignature  or nil,
-        state            = round and round.state            or "unknown",
+        roundIndex       = round and round.roundIndex        or nil,
+        roundKey         = round and round.roundKey          or nil,
+        rosterSignature  = round and round.rosterSignature   or nil,
+        state            = round and round.state             or "unknown",
+        completionState  = round and round.completionState   or "complete",  -- T044
         slots            = {},
         guidToSlot       = {},
         unresolvedGuids  = {},
@@ -696,24 +898,74 @@ function ArenaRoundTracker:CopyStateIntoSession(session)
     end
     session.arena.ccDurationReceived = totalCcDuration
 
-    -- Overlay primaryOpponent from weighted pressure data.
-    local primary = self:GetPrimaryEnemy()
+    -- Step 2: Select primary opponent using evidence-based stable ranking.
+    -- Pass the existing primaryOpponent.guid as the preferred GUID for the
+    -- 85% sticky rule so identity is stable across back-to-back rounds.
+    local preferredGuid = session.primaryOpponent and session.primaryOpponent.guid or nil
+    local primary, strategy = self:GetPrimaryEnemy(preferredGuid)
+
     if primary and primary.guid then
+        -- Remember this selection as the preferred GUID for the next round.
+        if round then round.preferredOpponentGuid = primary.guid end
+
         local opp = session.primaryOpponent or {}
-        opp.guid        = opp.guid        or primary.guid
-        opp.name        = opp.name        or primary.name
-        opp.classFile   = opp.classFile   or primary.classFile or primary.prepClassFile
-        opp.specId      = opp.specId      or primary.prepSpecId
-        opp.specIconId  = opp.specIconId  or primary.prepSpecIconId
-        opp.pressureScore = primary.pressureScore
+        opp.guid       = opp.guid       or primary.guid
+        opp.name       = opp.name       or primary.name
+        opp.classFile  = opp.classFile  or primary.classFile  or primary.prepClassFile
+        -- className and specName backfill from arena prep data.
+        opp.className  = opp.className  or primary.className  or primary.prepClassFile
+        opp.specName   = opp.specName   or primary.prepSpecName
+        opp.specId     = opp.specId     or primary.prepSpecId
+        opp.specIconId = opp.specIconId or primary.prepSpecIconId
+        opp.pressureScore = primary.primarySelectionScore or 0
+
+        -- Persist selection diagnostics for post-hoc inspection.
+        local sev = primary.selectionEvidence or {}
+        opp.selection = {
+            strategy          = strategy or "highest_score",
+            slot              = primary.slot,
+            score             = primary.primarySelectionScore or 0,
+            damageToPlayer    = sev.damageToPlayer or 0,
+            killParticipation = primary.killParticipation or 0,
+            preferredGuid     = preferredGuid,
+            evidence = {
+                damageToPlayer = sev.damageToPlayer or 0,
+                deathRecap     = sev.deathRecap     or 0,
+                identityBias   = sev.identityBias   or 0,
+                visibilityBias = sev.visibilityBias or 0,
+            },
+        }
         session.primaryOpponent = opp
+    else
+        -- No eligible enemy slot found. Record the fallback strategy so the
+        -- session is never missing selection metadata (SC-005).
+        local opp = session.primaryOpponent or {}
+        opp.selection = opp.selection or {
+            strategy          = strategy or "no_visible_slot",
+            slot              = nil,
+            score             = 0,
+            damageToPlayer    = 0,
+            killParticipation = 0,
+            preferredGuid     = preferredGuid,
+            evidence = {
+                damageToPlayer = 0,
+                deathRecap     = 0,
+                identityBias   = 0,
+                visibilityBias = 0,
+            },
+        }
+        if next(opp) then
+            session.primaryOpponent = opp
+        end
     end
 
     ns.Addon:Trace("arena_round.session.export", {
-        matchKey   = session.arena.matchKey or "nil",
-        roundIndex = session.arena.roundIndex or 0,
-        roundKey   = session.arena.roundKey or "nil",
-        slots      = session.arena.slots and (function()
+        matchKey      = session.arena.matchKey or "nil",
+        roundIndex    = session.arena.roundIndex or 0,
+        roundKey      = session.arena.roundKey or "nil",
+        strategy      = session.primaryOpponent and session.primaryOpponent.selection and session.primaryOpponent.selection.strategy or "none",
+        score         = session.primaryOpponent and session.primaryOpponent.selection and session.primaryOpponent.selection.score or 0,
+        slots         = session.arena.slots and (function()
             local n = 0
             for _ in pairs(session.arena.slots) do n = n + 1 end
             return n

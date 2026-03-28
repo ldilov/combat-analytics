@@ -102,25 +102,9 @@ local function createUnitInfo(unitToken)
     }
 end
 
-local function createInfoFromEvent(classifier, eventRecord, guid, name, isPlayer, isHostile, flags)
-    if not guid or isMineGuid(guid) then
-        return nil
-    end
-
-    local creatureId = ApiCompat.GetCreatureIdFromGUID(guid)
-    return {
-        guid = guid,
-        name = name,
-        unitToken = nil,
-        isPlayer = isPlayer and true or false,
-        isHostile = isHostile and true or false,
-        creatureId = creatureId,
-        flags = flags,
-        isTrainingDummyById = creatureId and Constants.TRAINING_DUMMY_CREATURE_IDS[creatureId] or false,
-        isTrainingDummyByName = classifier:IsTrainingDummyName(name),
-        subEvent = eventRecord and eventRecord.subEvent or nil,
-    }
-end
+-- NOTE: createInfoFromEvent was removed (T031). All context inference now goes
+-- through ResolveContextFromState() which uses unit-token-based state queries
+-- instead of CLEU event records.
 
 local function getIdentitySourceTag(source)
     return source or "state"
@@ -134,16 +118,26 @@ function SessionClassifier:RefreshZone()
     self.zoneName, self.mapId = ApiCompat.GetCurrentZoneName()
 end
 
+-- T032: Pending duel timeout — 30 seconds prevents stale state from canceled
+-- or ignored duel requests that never receive DUEL_INBOUNDS.
+local DUEL_PENDING_TIMEOUT_SECONDS = 30
+
 function SessionClassifier:ExpirePendingDuel()
     local pending = ns.Addon.runtime.pendingDuel
     if not pending or pending.state ~= "pending" then
         return
     end
 
-    local ageSeconds = ApiCompat.GetServerTime() - (pending.requestedAt or 0)
-    if ageSeconds > (Constants.DUEL_PENDING_TIMEOUT_SECONDS or 20) then
+    local ageSeconds
+    if pending.requestedAtPrecise then
+        ageSeconds = Helpers.Now() - pending.requestedAtPrecise
+    else
+        ageSeconds = ApiCompat.GetServerTime() - (pending.requestedAt or 0)
+    end
+    if ageSeconds > DUEL_PENDING_TIMEOUT_SECONDS then
         ns.Addon:Trace("session.identity.duel_expired", {
             opponent = pending.opponentNameNormalized or "unknown",
+            ageSeconds = ageSeconds,
         })
         ns.Addon.runtime.pendingDuel = nil
     end
@@ -155,6 +149,7 @@ function SessionClassifier:SetPendingDuel(opponentName, isToTheDeath)
         opponentNameNormalized = normalizeName(opponentName),
         opponentGuid = nil,
         requestedAt = ApiCompat.GetServerTime(),
+        requestedAtPrecise = Helpers.Now(),
         confirmedAt = nil,
         isToTheDeath = isToTheDeath and true or false,
         state = "pending",
@@ -217,33 +212,15 @@ function SessionClassifier:GetTrainingDummyScore(info)
     return 0
 end
 
-function SessionClassifier:IsTrainingDummyEvent(eventRecord)
-    if not eventRecord then
-        return false
-    end
+-- NOTE: IsTrainingDummyEvent was removed (T033). Dummy detection now uses
+-- creature ID + UnitClassification via ResolveContextFromState() and
+-- GetTrainingDummyScore(), not CLEU event records.
 
-    local sourceInfo = createInfoFromEvent(self, eventRecord, eventRecord.sourceGuid, eventRecord.sourceName, eventRecord.sourcePlayer, false, eventRecord.sourceFlags)
-    local destInfo = createInfoFromEvent(self, eventRecord, eventRecord.destGuid, eventRecord.destName, eventRecord.destPlayer, false, eventRecord.destFlags)
+-- NOTE: IsWorldPvpEvent was removed (T031). World PvP detection is now
+-- handled by ResolveContextFromState() via hostile-player unit checks.
 
-    return (eventRecord.sourceMine and self:GetTrainingDummyScore(destInfo) >= Constants.TRAINING_DUMMY_PROMOTION_THRESHOLD)
-        or (eventRecord.destMine and self:GetTrainingDummyScore(sourceInfo) >= Constants.TRAINING_DUMMY_PROMOTION_THRESHOLD)
-end
-
-function SessionClassifier:IsWorldPvpEvent(eventRecord)
-    if not eventRecord then
-        return false
-    end
-    local mineInvolved = eventRecord.sourceMine or eventRecord.destMine
-    local hostilePlayerInvolved = eventRecord.sourceHostilePlayer or eventRecord.destHostilePlayer
-    return mineInvolved and hostilePlayerInvolved and not ApiCompat.IsBattleground() and not ApiCompat.IsMatchConsideredArena()
-end
-
-function SessionClassifier:IsPlayerEngagement(eventRecord)
-    if not eventRecord then
-        return false
-    end
-    return eventRecord.sourceMine or eventRecord.destMine
-end
+-- NOTE: IsPlayerEngagement was removed (T031). It was event-record-based and
+-- had no remaining call sites after the CLEU removal.
 
 function SessionClassifier:ResolveArenaSubcontext()
     if ApiCompat.IsWargame() then
@@ -334,11 +311,14 @@ function SessionClassifier:InitializeSessionIdentity(session, context, subcontex
         identity.evidence.sawBattlegroundState = true
         identity.reason = "state_battleground"
     elseif identity.kind == Constants.CONTEXT.DUEL then
-        identity.provisional = true
-        identity.confidence = 70
-        identity.evidence.sawPendingDuel = self:GetPendingDuel() ~= nil
-        identity.evidence.duelScore = 70
-        identity.reason = "duel_requested"
+        -- T034: Duel sessions are now only created after DUEL_INBOUNDS, so
+        -- confidence starts at 95 (confirmed by the game client).
+        local pending = self:GetPendingDuel()
+        identity.provisional = false
+        identity.confidence = 95
+        identity.evidence.sawPendingDuel = pending ~= nil
+        identity.evidence.duelScore = 95
+        identity.reason = "duel_inbounds"
     elseif identity.kind == Constants.CONTEXT.TRAINING_DUMMY then
         identity.provisional = true
         identity.confidence = 70
@@ -436,7 +416,7 @@ end
 
 function SessionClassifier:TryConfirmPendingDuelInfo(info, source)
     local pending = self:GetPendingDuel()
-    if not pending or (pending.state ~= "pending" and pending.state ~= "confirmed") then
+    if not pending or (pending.state ~= "pending" and pending.state ~= "confirmed" and pending.state ~= "active") then
         return false
     end
     if not info or not info.guid or not info.name or not info.isPlayer or not info.isHostile then
@@ -457,19 +437,10 @@ function SessionClassifier:TryConfirmPendingDuelInfo(info, source)
     return true
 end
 
-function SessionClassifier:TryConfirmPendingDuel(eventRecord)
-    if not eventRecord then
-        return false
-    end
-
-    if eventRecord.sourceMine and eventRecord.destGuid then
-        return self:TryConfirmPendingDuelInfo(createInfoFromEvent(self, eventRecord, eventRecord.destGuid, eventRecord.destName, eventRecord.destPlayer, eventRecord.destHostilePlayer, eventRecord.destFlags), "cleu")
-    end
-    if eventRecord.destMine and eventRecord.sourceGuid then
-        return self:TryConfirmPendingDuelInfo(createInfoFromEvent(self, eventRecord, eventRecord.sourceGuid, eventRecord.sourceName, eventRecord.sourcePlayer, eventRecord.sourceHostilePlayer, eventRecord.sourceFlags), "cleu")
-    end
-    return false
-end
+-- NOTE: TryConfirmPendingDuel(eventRecord) was removed (T031/T032). Duel
+-- confirmation now uses DUEL_* events exclusively. The unit-based
+-- TryConfirmPendingDuelInfo() is retained for target/focus resolution
+-- in ResolveContextFromState().
 
 function SessionClassifier:GetWorldPvpScore(session, info, source)
     if not session or not info or not info.guid or not info.isPlayer or not info.isHostile then
@@ -564,48 +535,6 @@ function SessionClassifier:AccumulateUnitEvidence(session, unitToken, source)
     return false
 end
 
-function SessionClassifier:AccumulateEvidence(session, eventRecord)
-    if not session or not eventRecord then
-        return false
-    end
-
-    local promoted = false
-    if eventRecord.sourceMine and eventRecord.destGuid then
-        local destInfo = createInfoFromEvent(self, eventRecord, eventRecord.destGuid, eventRecord.destName, eventRecord.destPlayer, eventRecord.destHostilePlayer, eventRecord.destFlags)
-        if destInfo then
-            local identity = self:EnsureSessionIdentity(session, "cleu")
-            if identity then
-                if self:TryConfirmPendingDuelInfo(destInfo, "cleu") then
-                    identity.evidence.sawConfirmedDuelGuid = true
-                    identity.evidence.duelScore = math.max(identity.evidence.duelScore or 0, 95)
-                    promoted = self:PromoteSessionIdentity(session, Constants.CONTEXT.DUEL, self:GetPendingDuel() and self:GetPendingDuel().isToTheDeath and Constants.SUBCONTEXT.TO_THE_DEATH or nil, 95, "cleu", "pending_duel_guid_confirmed", destInfo) or promoted
-                end
-                local dummyScore = self:GetTrainingDummyScore(destInfo)
-                if dummyScore > 0 then
-                    identity.evidence.dummyScore = math.max(identity.evidence.dummyScore or 0, dummyScore)
-                    if dummyScore >= (Constants.TRAINING_DUMMY_PROMOTION_THRESHOLD or 70) then
-                        promoted = self:PromoteSessionIdentity(session, Constants.CONTEXT.TRAINING_DUMMY, nil, dummyScore, "cleu", "dummy_guid_confirmed", destInfo) or promoted
-                    end
-                end
-            end
-        end
-    elseif eventRecord.destMine and eventRecord.sourceGuid then
-        local sourceInfo = createInfoFromEvent(self, eventRecord, eventRecord.sourceGuid, eventRecord.sourceName, eventRecord.sourcePlayer, eventRecord.sourceHostilePlayer, eventRecord.sourceFlags)
-        if sourceInfo then
-            local identity = self:EnsureSessionIdentity(session, "cleu")
-            if identity then
-                if self:TryConfirmPendingDuelInfo(sourceInfo, "cleu") then
-                    identity.evidence.sawConfirmedDuelGuid = true
-                    identity.evidence.duelScore = math.max(identity.evidence.duelScore or 0, 95)
-                    promoted = self:PromoteSessionIdentity(session, Constants.CONTEXT.DUEL, self:GetPendingDuel() and self:GetPendingDuel().isToTheDeath and Constants.SUBCONTEXT.TO_THE_DEATH or nil, 95, "cleu", "pending_duel_guid_confirmed", sourceInfo) or promoted
-                end
-            end
-        end
-    end
-
-    return promoted
-end
-
 function SessionClassifier:RefreshSessionIdentity(session, preferredUnitToken, source)
     if not session then
         return nil
@@ -686,43 +615,16 @@ function SessionClassifier:SyncSessionIdentityFromOpponent(session, opponent, so
     end
 end
 
-function SessionClassifier:ResolveContext(eventRecord)
-    local pendingDuel = self:GetPendingDuel()
-    if pendingDuel and self:TryConfirmPendingDuel(eventRecord) then
-        return Constants.CONTEXT.DUEL, pendingDuel.isToTheDeath and Constants.SUBCONTEXT.TO_THE_DEATH or nil
-    elseif pendingDuel then
-        return Constants.CONTEXT.DUEL, pendingDuel.isToTheDeath and Constants.SUBCONTEXT.TO_THE_DEATH or nil
-    end
+-- NOTE: ResolveContext(eventRecord) was removed (T031). All context inference
+-- now flows through ResolveContextFromState() which uses WoW API state queries
+-- (C_PvP, unit tokens, pending duel flags) instead of CLEU event records.
 
-    if ApiCompat.IsMatchConsideredArena() or ApiCompat.IsSoloShuffle() then
-        return Constants.CONTEXT.ARENA, self:ResolveArenaSubcontext()
-    end
-
-    if ApiCompat.IsBattleground() then
-        return Constants.CONTEXT.BATTLEGROUND, self:ResolveBattlegroundSubcontext()
-    end
-
-    if self:IsTrainingDummyEvent(eventRecord) then
-        local subcontext = nil
-        if ApiCompat.AreTrainingGroundsEnabled() then
-            subcontext = Constants.SUBCONTEXT.TRAINING_GROUNDS
-        end
-        return Constants.CONTEXT.TRAINING_DUMMY, subcontext
-    end
-
-    if self:IsWorldPvpEvent(eventRecord) then
-        -- Previously returned nil, nil which silently dropped world PvP sessions
-        -- even though CONTEXT.WORLD_PVP is defined and has a priority weight.
-        return Constants.CONTEXT.WORLD_PVP, nil
-    end
-
-    if (eventRecord.sourceHostilePlayer or eventRecord.destHostilePlayer) and ns.Addon:GetSetting("includeGeneralCombat") then
-        return Constants.CONTEXT.GENERAL, nil
-    end
-
-    return nil, nil
-end
-
+-- T031: ResolveContextFromState() is the SOLE PRODUCTION PATH for context
+-- detection. All event-record-based inference (ResolveContext, AccumulateEvidence,
+-- ShouldStartNewSession, IsTrainingDummyEvent, IsWorldPvpEvent) has been removed.
+-- Context is determined entirely from WoW API state: C_PvP queries for arena/BG,
+-- DUEL_* event flags for duels, creature ID + UnitClassification for dummies,
+-- and hostile-player unit checks for world PvP.
 function SessionClassifier:ResolveContextFromState()
     local pendingDuel = self:GetPendingDuel()
 
@@ -734,29 +636,60 @@ function SessionClassifier:ResolveContextFromState()
         return Constants.CONTEXT.BATTLEGROUND, self:ResolveBattlegroundSubcontext(), nil
     end
 
+    -- T032: Duel detection — only fire when pending state is "active" (set by
+    -- DUEL_INBOUNDS). A "pending" state from DUEL_REQUESTED alone does NOT
+    -- produce a session (T034).
+    if pendingDuel and pendingDuel.state == "active" then
+        return Constants.CONTEXT.DUEL, pendingDuel.isToTheDeath and Constants.SUBCONTEXT.TO_THE_DEATH or nil, nil
+    end
+
     for _, unitToken in ipairs({ "target", "focus" }) do
         local info = createUnitInfo(unitToken)
         if info then
             info.isTrainingDummyById = info.creatureId and Constants.TRAINING_DUMMY_CREATURE_IDS[info.creatureId] or false
             info.isTrainingDummyByName = self:IsTrainingDummyName(info.name)
 
-            if pendingDuel and self:TryConfirmPendingDuelInfo(info, "state") then
+            -- T032: Confirm duel opponent from visible unit when duel is active.
+            if pendingDuel and pendingDuel.state == "active" and self:TryConfirmPendingDuelInfo(info, "state") then
                 return Constants.CONTEXT.DUEL, pendingDuel.isToTheDeath and Constants.SUBCONTEXT.TO_THE_DEATH or nil, unitToken
             end
 
-            if self:GetTrainingDummyScore(info) >= (Constants.TRAINING_DUMMY_PROMOTION_THRESHOLD or 70) then
-                return Constants.CONTEXT.TRAINING_DUMMY, nil, unitToken
+            -- T033: Dummy detection — creature ID from SeedDummyCatalog +
+            -- UnitClassification check. Name-based patterns are a fallback.
+            local dummyScore = self:GetTrainingDummyScore(info)
+            if dummyScore >= (Constants.TRAINING_DUMMY_PROMOTION_THRESHOLD or 70) then
+                -- Extra guard: if detection was name-only (no creature ID match),
+                -- verify UnitClassification to avoid false positives from NPCs
+                -- whose names happen to contain "dummy" or "training".
+                local passedClassificationCheck = true
+                if not info.isTrainingDummyById and info.isTrainingDummyByName then
+                    local classification = UnitClassification and UnitClassification(unitToken) or nil
+                    -- Training dummies are typically "trivial" or "minus" classification.
+                    -- If we can query classification and it's a normal/elite/boss NPC,
+                    -- do not treat it as a dummy.
+                    if classification and classification ~= "trivial" and classification ~= "minus" then
+                        passedClassificationCheck = false
+                    end
+                end
+                if passedClassificationCheck then
+                    local subcontext = nil
+                    if ApiCompat.AreTrainingGroundsEnabled() then
+                        subcontext = Constants.SUBCONTEXT.TRAINING_GROUNDS
+                    end
+                    return Constants.CONTEXT.TRAINING_DUMMY, subcontext, unitToken
+                end
             end
 
-            if info.isPlayer and info.isHostile and ns.Addon:GetSetting("includeGeneralCombat") then
-                return Constants.CONTEXT.GENERAL, nil, unitToken
+            -- World PvP detection — hostile player outside arena/BG instances.
+            -- Arena/BG are already handled above with early returns.
+            if info.isPlayer and info.isHostile then
+                return Constants.CONTEXT.WORLD_PVP, nil, unitToken
             end
         end
     end
 
-    if pendingDuel then
-        return Constants.CONTEXT.DUEL, pendingDuel.isToTheDeath and Constants.SUBCONTEXT.TO_THE_DEATH or nil, nil
-    end
+    -- A pending duel (DUEL_REQUESTED but not yet DUEL_INBOUNDS) does NOT
+    -- produce a context — session creation waits for DUEL_INBOUNDS (T034).
 
     if ns.Addon:GetSetting("includeGeneralCombat") then
         return Constants.CONTEXT.GENERAL, nil, nil
@@ -787,23 +720,6 @@ function SessionClassifier:CanPromoteExistingSession(currentSession, context, su
     end
 
     return false
-end
-
-function SessionClassifier:ShouldStartNewSession(currentSession, eventRecord)
-    local context, subcontext = self:ResolveContext(eventRecord)
-    if not context then
-        return false, nil, nil
-    end
-    if not currentSession then
-        return true, context, subcontext
-    end
-    if currentSession.context == context and currentSession.subcontext == subcontext then
-        return false, context, subcontext
-    end
-    if self:CanPromoteExistingSession(currentSession, context, subcontext) then
-        return false, context, subcontext
-    end
-    return true, context, subcontext
 end
 
 function SessionClassifier:ShouldExpandTrackedActors(session, eventRecord)
