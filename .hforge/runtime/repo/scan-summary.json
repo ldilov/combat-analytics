@@ -1,0 +1,40 @@
+{
+  "generatedAt": "2026-03-28T16:46:26.919Z",
+  "root": "D:\\Workspace\\repos\\combat-analytics",
+  "repoType": "legacy",
+  "dominantLanguages": [
+    {
+      "id": "python",
+      "confidence": 1,
+      "evidence": [
+        "scripts/fetch_blizzard_data.py",
+        "scripts/fetch_bnet_seed.py",
+        "scripts/fetch_counter_data.py",
+        "scripts/generate_seed_data.py",
+        "scripts/generate_seed_from_api.py"
+      ],
+      "count": 6
+    },
+    {
+      "id": "shell",
+      "confidence": 0.33,
+      "evidence": [
+        ".claude/hooks/post-tool-use.sh",
+        ".claude/hooks/pre-tool-use.sh"
+      ],
+      "count": 2
+    }
+  ],
+  "frameworkMatches": [],
+  "buildSignals": [],
+  "testSignals": [],
+  "deploymentSignals": [
+    {
+      "id": "deploy:github-actions",
+      "confidence": 0.8,
+      "evidence": [
+        ".github/workflows/update-seed-data.yml"
+      ]
+    }
+  ]
+}
