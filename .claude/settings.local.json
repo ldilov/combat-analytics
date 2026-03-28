@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git check-ignore:*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f''''{len\\(d\\)} entries''''\\); print\\(list\\(d.items\\(\\)\\)[:5]\\)\")",
+      "Bash(python3 -c \":*)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(Score)",
+      "Bash(guid \")",
+      "Bash(xargs grep:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(luac -p \"D:/Workspace/repos/combat-analytics/CombatStore.lua\")",
+      "Bash(echo \"exit:$?\")",
+      "Bash(luac -p \"D:\\\\Workspace\\\\repos\\\\combat-analytics\\\\UI\\\\ReplayView.lua\")",
+      "Bash(luac -p \"UI\\\\CombatHistoryView.lua\")",
+      "Bash(luac -p \"CombatStore.lua\")",
+      "Bash(luac -p ApiCompat.lua)",
+      "Bash(luac -p \"D:\\\\Workspace\\\\repos\\\\combat-analytics\\\\UI\\\\BuildComparatorView.lua\")",
+      "Bash(luac -p \"UI\\\\MainFrame.lua\")",
+      "Bash(luac -p \"UI\\\\ReplayView.lua\")"
+    ]
+  }
+}
