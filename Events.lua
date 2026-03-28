@@ -190,11 +190,118 @@ Events.RegisterHandler("INSPECT_READY", function()
     end
 end)
 
+-- ── Timeline Producer Wiring ─────────────────────────────────────────────────
+-- T027-T030: Route sanctioned events to TimelineProducer for timeline event creation.
+
+-- T028: UNIT_SPELLCAST_SUCCEEDED → PlayerCastProducer + spell stats
+Events.RegisterHandler("UNIT_SPELLCAST_SUCCEEDED", function(event, unitTarget, castGUID, spellID)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandleUnitSpellcastSucceeded then
+        tp:HandleUnitSpellcastSucceeded(unitTarget, castGUID, spellID)
+    end
+end)
+
+-- T029: UNIT_AURA → VisibleAuraProducer + aura stats
+Events.RegisterHandler("UNIT_AURA", function(event, unitTarget, updateInfo)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandleUnitAura then
+        tp:HandleUnitAura(unitTarget, updateInfo)
+    end
+end)
+
+-- T030: LOSS_OF_CONTROL_ADDED → CCReceivedProducer
+Events.RegisterHandler("LOSS_OF_CONTROL_ADDED", function(event, ...)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandleLossOfControlAdded then
+        tp:HandleLossOfControlAdded(...)
+    end
+end)
+
+-- PLAYER_CONTROL_LOST → CCReceivedProducer
+Events.RegisterHandler("PLAYER_CONTROL_LOST", function(event, ...)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandlePlayerControlLost then
+        tp:HandlePlayerControlLost(...)
+    end
+end)
+
+-- PLAYER_CONTROL_GAINED → CCReceivedProducer (end marker)
+Events.RegisterHandler("PLAYER_CONTROL_GAINED", function(event, ...)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandlePlayerControlGained then
+        tp:HandlePlayerControlGained(...)
+    end
+end)
+
+-- PVP_MATCH_ACTIVE → MatchStateProducer
+Events.RegisterHandler("PVP_MATCH_ACTIVE", function(event, ...)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandlePvpMatchActive then
+        tp:HandlePvpMatchActive(...)
+    end
+end)
+
+-- PVP_MATCH_COMPLETE → MatchStateProducer
+Events.RegisterHandler("PVP_MATCH_COMPLETE", function(event, ...)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandlePvpMatchComplete then
+        tp:HandlePvpMatchComplete(...)
+    end
+end)
+
+-- DUEL_INBOUNDS → MatchStateProducer
+Events.RegisterHandler("DUEL_INBOUNDS", function(event, ...)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandleDuelInbounds then
+        tp:HandleDuelInbounds(...)
+    end
+end)
+
+-- DUEL_FINISHED → MatchStateProducer
+Events.RegisterHandler("DUEL_FINISHED", function(event, ...)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandleDuelFinished then
+        tp:HandleDuelFinished(...)
+    end
+end)
+
+-- DAMAGE_METER_COMBAT_SESSION_UPDATED → DamageMeterCheckpointProducer
+Events.RegisterHandler("DAMAGE_METER_COMBAT_SESSION_UPDATED", function(event, ...)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandleDamageMeterCombatSessionUpdated then
+        tp:HandleDamageMeterCombatSessionUpdated(...)
+    end
+end)
+
+-- DAMAGE_METER_CURRENT_SESSION_UPDATED → DamageMeterCheckpointProducer
+Events.RegisterHandler("DAMAGE_METER_CURRENT_SESSION_UPDATED", function(event, ...)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandleDamageMeterCurrentSessionUpdated then
+        tp:HandleDamageMeterCurrentSessionUpdated(...)
+    end
+end)
+
+-- INSPECT_READY → InspectProducer (timeline marker)
+Events.RegisterHandler("INSPECT_READY", function(event, ...)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandleInspectReady then
+        tp:HandleInspectReady(...)
+    end
+end)
+
 -- Register UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED for native DR tracking.
 Events.RegisterHandler("UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED", function(event, unitTarget, trackerInfo)
     local art = ns.Addon:GetModule("ArenaRoundTracker")
     if art and art.HandleDiminishStateUpdated then
         art:HandleDiminishStateUpdated(unitTarget, trackerInfo)
+    end
+end)
+
+-- UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED → DRUpdateProducer
+Events.RegisterHandler("UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED", function(event, unitTarget, trackerInfo)
+    local tp = ns.Addon:GetModule("TimelineProducer")
+    if tp and tp.HandleDiminishStateUpdated then
+        tp:HandleDiminishStateUpdated(unitTarget, trackerInfo)
     end
 end)
 

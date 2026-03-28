@@ -3,6 +3,16 @@ local _, ns = ...
 local Helpers = ns.Helpers
 local Theme = ns.Widgets.THEME
 
+-- Human-readable labels for SESSION_CONFIDENCE values shown in chart tooltips.
+local CONFIDENCE_LABELS = {
+    state_plus_damage_meter = "State + Damage Meter",
+    damage_meter_only       = "Damage Meter Only",
+    visible_cc_only         = "Visible CC Only",
+    partial_roster          = "Partial Roster",
+    estimated               = "Estimated",
+    legacy_cleu_import      = "Legacy Import",
+}
+
 local RatingView = {
     viewId = "rating",
     activeFilter = "all",
@@ -164,6 +174,12 @@ function RatingView:Build(parent)
         self.statCards[i] = card
     end
 
+    -- Confidence pill — anchored after the last stat card; updated on refresh
+    self.confidencePillAnchor = CreateFrame("Frame", nil, self.summaryBar)
+    self.confidencePillAnchor:SetPoint("TOPLEFT", self.statCards[4], "TOPRIGHT", 12, 0)
+    self.confidencePillAnchor:SetSize(100, STAT_ROW_HEIGHT - 4)
+    self.confidencePill = nil
+
     -- Chart background surface — fills space between filter bar and summary bar
     self.chartShell = ns.Widgets.CreateSurface(self.frame, 1, 1, Theme.panel, Theme.border)
     self.chartShell:SetPoint("TOPLEFT", self.filterBar, "BOTTOMLEFT", 0, -10)
@@ -303,6 +319,17 @@ function RatingView:Refresh()
 
         local entryData = entry
         local entryIndex = i
+
+        -- Pre-resolve confidence label for this data point so the tooltip
+        -- closure does not need to call store:GetCombatById on every hover.
+        local confidenceLabel = "Unknown"
+        if entryData.sessionId then
+            local session = store:GetCombatById(entryData.sessionId)
+            if session and session.captureQuality and session.captureQuality.confidence then
+                confidenceLabel = CONFIDENCE_LABELS[session.captureQuality.confidence] or session.captureQuality.confidence
+            end
+        end
+
         tooltipFrame:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:AddLine(string.format("Session %d", entryIndex), 1, 1, 1)
@@ -325,6 +352,7 @@ function RatingView:Refresh()
             end
             local resultText = entryData.result == "won" and "|cff70d196Won|r" or "|cffe64d40Lost|r"
             GameTooltip:AddLine(resultText, 1, 1, 1)
+            GameTooltip:AddLine(string.format("Confidence: %s", confidenceLabel), unpack(Theme.textMuted))
             GameTooltip:Show()
         end)
         tooltipFrame:SetScript("OnLeave", function()
@@ -349,11 +377,60 @@ function RatingView:Refresh()
     self:UpdateSummaryStats(data)
 end
 
+function RatingView:UpdateConfidencePill(data)
+    -- Hide any existing pill before potentially creating a new one.
+    if self.confidencePill then
+        self.confidencePill:Hide()
+    end
+
+    if not data or #data == 0 then
+        return
+    end
+
+    local store = ns.Addon:GetModule("CombatStore")
+    local latestEntry = data[#data]
+    local confidence = nil
+
+    if latestEntry.sessionId then
+        local session = store:GetCombatById(latestEntry.sessionId)
+        if session and session.captureQuality and session.captureQuality.confidence then
+            confidence = session.captureQuality.confidence
+        end
+    end
+
+    if not confidence then
+        return
+    end
+
+    -- Create a fresh pill each refresh (cheap; one small frame + font string).
+    self.confidencePill = ns.Widgets.CreateConfidencePill(self.confidencePillAnchor, confidence)
+    self.confidencePill:SetPoint("TOPLEFT", self.confidencePillAnchor, "TOPLEFT", 0, -6)
+
+    -- For degraded confidence levels, replace the default tooltip with a warning.
+    local WARNING_LEVELS = { estimated = true, partial_roster = true }
+    if WARNING_LEVELS[confidence] then
+        local warningLabel = CONFIDENCE_LABELS[confidence] or confidence
+        self.confidencePill:SetScript("OnEnter", function(pill)
+            GameTooltip:SetOwner(pill, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Data Quality Warning", 0.96, 0.74, 0.38)
+            GameTooltip:AddLine(
+                string.format("Latest session confidence: %s. Rating and stat accuracy may be limited.", warningLabel),
+                0.8, 0.8, 0.8, true
+            )
+            GameTooltip:Show()
+        end)
+        self.confidencePill:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+    end
+end
+
 function RatingView:UpdateSummaryStats(data)
     if not data or #data == 0 then
         for i = 1, 4 do
             self.statCards[i]:SetData("--", ({ "Current Rating", "Peak Rating", "Win Streak", "Loss Streak" })[i], "No rated data")
         end
+        self:UpdateConfidencePill(data)
         return
     end
 
@@ -394,6 +471,8 @@ function RatingView:UpdateSummaryStats(data)
     self.statCards[2]:SetData(tostring(peakRating), "Peak Rating", string.format("Over last %d sessions", #data), Theme.warning)
     self.statCards[3]:SetData(tostring(bestWinStreak), "Best Win Streak", string.format("%d sessions tracked", #data), Theme.success)
     self.statCards[4]:SetData(tostring(bestLossStreak), "Worst Loss Streak", string.format("%d sessions tracked", #data), { 0.90, 0.30, 0.25, 1.0 })
+
+    self:UpdateConfidencePill(data)
 end
 
 ns.Addon:RegisterModule("RatingView", RatingView)

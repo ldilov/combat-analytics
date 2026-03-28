@@ -1,19 +1,17 @@
 local _, ns = ...
 
 local Constants = ns.Constants
-local ApiCompat = ns.ApiCompat
 
--- SpellAttributionPipeline
+-- SpellAttributionPipeline  (DamageMeter-only attribution)
 -- Tracks enemy-source damage attribution independently of session.spells.
 -- session.spells is player-only and feeds existing rotation/metric views.
 -- session.attribution is enemy-source-aware and feeds PvP analytics:
 --   "which enemy did how much damage with which spell to the player"
 --
 -- Data sources:
---   1. CLEU (via HandleCombatLogEvent) — real-time, available in unrestricted
---      sessions. Records per-source, per-spell aggregates.
---   2. DamageMeter post-combat import (via MergeDamageMeterSources) — available
---      in restricted sessions. Provides per-source, per-spell, per-target rows.
+--   All attribution is derived from C_DamageMeter via MergeDamageMeterSource,
+--   called post-combat by DamageMeterService. No CLEU ingestion paths exist.
+--   Provides per-source, per-spell, per-target rows with provenance tagging.
 --
 -- Attribution state is stored on session.attribution. It is initialized to false
 -- on session create (schema v2) and replaced with the live table on first event.
@@ -47,12 +45,6 @@ local function newDamageAggregate(spellId)
     }
 end
 
-local function updateMinMax(agg, amount)
-    amount = tonumber(amount) or 0
-    agg.maxAmount = math.max(agg.maxAmount or 0, amount)
-    agg.minAmount = agg.minAmount and math.min(agg.minAmount, amount) or amount
-end
-
 -- Build a stable string key for a target. GUID-based when available so keys
 -- survive name changes. Fallback is name+class+spec to handle NPC targets.
 local function targetKey(guid, name, classFile, specIconId)
@@ -64,25 +56,6 @@ local function targetKey(guid, name, classFile, specIconId)
         tostring(classFile or "?"),
         tostring(specIconId or 0)
     )
-end
-
--- Resolve pet → owner via the summons table.
-local function responsibleGuid(state, sourceGuid)
-    if not sourceGuid then return nil end
-    return state.summons[sourceGuid] or sourceGuid
-end
-
--- Check whether the given timestampOffset falls inside any CC window.
-local function isDuringCC(session, offset)
-    if not session.ccTimeline or #session.ccTimeline == 0 then return false end
-    for _, cc in ipairs(session.ccTimeline) do
-        local ccStart = cc.startOffset or 0
-        local ccEnd   = ccStart + (cc.duration or 0)
-        if offset >= ccStart and offset <= ccEnd then
-            return true
-        end
-    end
-    return false
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────
@@ -102,7 +75,9 @@ local function getOrInitState(session)
             bySourceSpell    = {},
             -- [sourceGuid][targetKey][spellId] = aggregate
             bySourceTargetSpell = {},
-            -- [petGuid] = ownerGuid — built from SPELL_SUMMON/SPELL_CREATE
+            -- [petGuid] = ownerGuid — pet ownership is now derived from
+            -- UNIT_SPELLCAST_SUCCEEDED events (visible player pet casts via
+            -- TimelineProducer). Populated externally; used by query helpers.
             summons          = {},
             reconciliation   = {
                 localDamage    = 0,
@@ -160,31 +135,6 @@ local function ensureSourceTargetSpell(state, sourceGuid, tKey, spellId)
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- Aggregate application
--- ──────────────────────────────────────────────────────────────────────────────
-
-local function applyDamage(agg, ev)
-    local amount = tonumber(ev.amount) or 0
-    agg.totalAmount = (agg.totalAmount or 0) + amount
-    agg.hitCount    = (agg.hitCount    or 0) + 1
-    agg.overkill    = (agg.overkill    or 0) + (tonumber(ev.overkill)  or 0)
-    agg.absorbed    = (agg.absorbed    or 0) + (tonumber(ev.absorbed)  or 0)
-    agg.blocked     = (agg.blocked     or 0) + (tonumber(ev.blocked)   or 0)
-    agg.resisted    = (agg.resisted    or 0) + (tonumber(ev.resisted)  or 0)
-    if ev.critical then
-        agg.critCount = (agg.critCount or 0) + 1
-    end
-    updateMinMax(agg, amount)
-end
-
-local function applyMiss(agg, ev)
-    agg.missCount = (agg.missCount or 0) + 1
-    local mt = ev.missType or "UNKNOWN"
-    agg.missByType[mt] = (agg.missByType[mt] or 0) + 1
-    agg.absorbed = (agg.absorbed or 0) + (tonumber(ev.absorbed) or 0)
-end
-
--- ──────────────────────────────────────────────────────────────────────────────
 -- Module lifecycle
 -- ──────────────────────────────────────────────────────────────────────────────
 
@@ -193,82 +143,10 @@ function SpellAttributionPipeline:Initialize()
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- CLEU event ingestion
--- Called from CombatTracker:HandleNormalizedEvent() for every tracked event.
--- Only ingests events where the enemy is the source and player is the target,
--- or where ownership information (summons) is being established.
--- ──────────────────────────────────────────────────────────────────────────────
-
-function SpellAttributionPipeline:HandleCombatLogEvent(session, eventRecord)
-    if not session or not eventRecord then return end
-    local state = getOrInitState(session)
-
-    -- Track summon ownership unconditionally — needed regardless of session context.
-    if eventRecord.eventType == "summon" then
-        if eventRecord.sourceGuid and eventRecord.destGuid then
-            state.summons[eventRecord.destGuid] = eventRecord.sourceGuid
-        end
-        return
-    end
-
-    -- Only attribute damage/miss events that target the local player.
-    if not eventRecord.destMine then return end
-    if eventRecord.eventType ~= "damage" and eventRecord.eventType ~= "miss" then return end
-
-    local rawSourceGuid = eventRecord.sourceGuid
-    if not rawSourceGuid then return end
-
-    -- Resolve pet → owner.
-    local sourceGuid = responsibleGuid(state, rawSourceGuid)
-    local tKey       = targetKey(eventRecord.destGuid, eventRecord.destName, nil, nil)
-    local spellId    = eventRecord.spellId or 0
-
-    -- Update source record.
-    local src = ensureSource(state, sourceGuid)
-    src.name      = src.name      or eventRecord.sourceName
-    -- Enrich class/spec from actor table if available.
-    local actor = session.actors and session.actors[sourceGuid] or nil
-    if actor then
-        src.classFile  = src.classFile  or actor.classFile
-        src.specId     = src.specId     or actor.specId
-        src.specIconId = src.specIconId or actor.specIconId
-    end
-
-    -- Update target record.
-    local tgt = ensureTargetRecord(state, tKey, eventRecord.destGuid)
-    tgt.name = tgt.name or eventRecord.destName
-
-    local srcSpell = ensureSourceSpell(state, sourceGuid, spellId)
-    local srcTgtSpell = ensureSourceTargetSpell(state, sourceGuid, tKey, spellId)
-
-    if eventRecord.eventType == "damage" then
-        local amount = tonumber(eventRecord.amount) or 0
-        applyDamage(srcSpell,    eventRecord)
-        applyDamage(srcTgtSpell, eventRecord)
-        src.totalAmount = (src.totalAmount or 0) + amount
-        tgt.totalAmount = (tgt.totalAmount or 0) + amount
-        state.reconciliation.localDamage =
-            (state.reconciliation.localDamage or 0) + amount
-
-        -- Task 1.6: Tag damage taken during CC and accumulate per-source + session total.
-        if isDuringCC(session, eventRecord.timestampOffset or 0) then
-            eventRecord.duringCC = true
-            src.damageDuringCC = (src.damageDuringCC or 0) + amount
-            srcSpell.damageDuringCC = (srcSpell.damageDuringCC or 0) + amount
-            session.totals.damageTakenDuringCC = (session.totals.damageTakenDuringCC or 0) + amount
-        end
-    elseif eventRecord.eventType == "miss" then
-        applyMiss(srcSpell,    eventRecord)
-        applyMiss(srcTgtSpell, eventRecord)
-    end
-end
-
--- ──────────────────────────────────────────────────────────────────────────────
 -- DamageMeter source merge
 -- Called from DamageMeterService after CollectEnemyDamageSnapshotForSession.
 -- Merges per-source, per-spell, per-target detail rows into attribution.
--- Uses max() for totals (not addition) to avoid double-counting when both
--- CLEU and DamageMeter data are present.
+-- Uses max() for totals (not addition) to deduplicate overlapping snapshots.
 -- ──────────────────────────────────────────────────────────────────────────────
 
 function SpellAttributionPipeline:MergeDamageMeterSource(session, combatSource, combatSourceDetail)
@@ -286,13 +164,15 @@ function SpellAttributionPipeline:MergeDamageMeterSource(session, combatSource, 
     src.name      = src.name      or combatSource.name
     src.classFile = src.classFile or combatSource.classFilename
     src.specIconId = src.specIconId or combatSource.specIconID
-    -- Use max to avoid inflating if CLEU already counted this damage.
+    src.source    = Constants.PROVENANCE_SOURCE.DAMAGE_METER
+    -- Use max to deduplicate overlapping DM snapshots.
     src.totalAmount = math.max(src.totalAmount or 0, tonumber(combatSource.totalAmount) or 0)
 
     -- Merge per-spell details from this source.
     for _, combatSpell in ipairs(combatSourceDetail and combatSourceDetail.combatSpells or {}) do
         local spellId  = combatSpell.spellID or 0
         local srcSpell = ensureSourceSpell(state, srcKey, spellId)
+        srcSpell.source = Constants.PROVENANCE_SOURCE.DAMAGE_METER
         srcSpell.totalAmount = math.max(
             srcSpell.totalAmount or 0,
             tonumber(combatSpell.totalAmount) or 0
@@ -311,6 +191,7 @@ function SpellAttributionPipeline:MergeDamageMeterSource(session, combatSource, 
             tgt.specIconId = tgt.specIconId or detail.specIconID
 
             local srcTgtSpell = ensureSourceTargetSpell(state, srcKey, tKey, spellId)
+            srcTgtSpell.source = Constants.PROVENANCE_SOURCE.DAMAGE_METER
             local detailAmount = tonumber(detail.amount) or 0
             -- Use addition here — DamageMeter rows within a spell are per-hit entries.
             srcTgtSpell.totalAmount = (srcTgtSpell.totalAmount or 0) + detailAmount

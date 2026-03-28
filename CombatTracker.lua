@@ -12,6 +12,15 @@ local AFFILIATION_MINE = Constants.CLEU_FLAGS.AFFILIATION_MINE
 local TYPE_PLAYER      = Constants.CLEU_FLAGS.TYPE_PLAYER
 local REACTION_HOSTILE = Constants.CLEU_FLAGS.REACTION_HOSTILE
 
+-- Default delay (seconds) after PLAYER_REGEN_ENABLED before finalizing a
+-- session.  Gives the C_DamageMeter backend time to settle and push its final
+-- totals so the import pipeline captures complete data.
+local DM_STABILIZATION_DELAY = 1.5
+
+-- Maximum age (seconds) for a session that survived a /reload in "active"
+-- state.  Sessions older than this are considered stale and discarded.
+local STALE_SESSION_MAX_AGE = 60
+
 local function hasFlag(value, flag)
     return flag ~= 0 and value ~= nil and bit.band(value, flag) > 0
 end
@@ -192,6 +201,32 @@ end
 
 function CombatTracker:Initialize()
     ns.Addon:GetModule("SessionClassifier"):Initialize()
+
+    -- T037: Re-entrant safety — recover from /reload while a session was active.
+    -- runtime.currentSession is wiped on reload (it is not in SavedVariables),
+    -- but a module could theoretically restore one from persisted state.  Guard
+    -- against a leftover "active" session that would otherwise never finalize.
+    local session = self:GetCurrentSession()
+    if session and session.state == "active" then
+        local age = session.startedAt and (Helpers.Now() - session.startedAt) or math.huge
+        if age > STALE_SESSION_MAX_AGE then
+            ns.Addon:Trace("session.reload.discard", {
+                id = session.id or "unknown",
+                age = age,
+                reason = "stale_after_reload",
+            })
+            session.state = "abandoned"
+            session.result = Constants.SESSION_RESULT.UNKNOWN
+            self:SetCurrentSession(nil)
+        else
+            ns.Addon:Trace("session.reload.finalize", {
+                id = session.id or "unknown",
+                age = age,
+                reason = "reload",
+            })
+            self:FinalizeSession(Constants.SESSION_RESULT.UNKNOWN, "reload")
+        end
+    end
 end
 
 function CombatTracker:InvalidatePendingFinalize(session)
@@ -285,6 +320,19 @@ function CombatTracker:RefreshSessionIdentity(session, preferredUnitToken, sourc
 end
 
 function CombatTracker:CreateSession(context, subcontext, identitySource)
+    -- T038: Duplicate session guard — if an active session already exists,
+    -- finalize it before creating the replacement.
+    local existing = self:GetCurrentSession()
+    if existing and existing.state == "active" then
+        ns.Addon:Trace("session.create.guard", {
+            reason = "active_session_exists",
+            existingId = existing.id or "unknown",
+            existingContext = existing.context or "nil",
+            newContext = context or "nil",
+        })
+        self:FinalizeSession(Constants.SESSION_RESULT.UNKNOWN, "superseded")
+    end
+
     ns.Addon:Trace("session.create.begin", {
         context = context or "nil",
         subcontext = subcontext or "nil",
@@ -314,6 +362,8 @@ function CombatTracker:CreateSession(context, subcontext, identitySource)
         actors = {},
         trackedActorGuids = {},
         rawEvents = {},
+        timelineEvents = {},
+        provenance = {},
         spells = {},
         auras = {},
         cooldowns = {},
@@ -387,7 +437,9 @@ function CombatTracker:CreateSession(context, subcontext, identitySource)
         },
         captureQuality = {
             rawEvents = Constants.CAPTURE_QUALITY.OK,
+            timeline = Constants.CAPTURE_QUALITY.TIMELINE_OK,
             enemyBuild = Constants.CAPTURE_QUALITY.DEGRADED,
+            confidence = Constants.SESSION_CONFIDENCE.ESTIMATED,
         },
         -- arena is populated at FinalizeSession by ArenaRoundTracker.
         -- false = not an arena session; nil = arena session, not yet exported.
@@ -402,6 +454,24 @@ function CombatTracker:CreateSession(context, subcontext, identitySource)
 
     if classifier and classifier.InitializeSessionIdentity then
         classifier:InitializeSessionIdentity(session, context or Constants.CONTEXT.GENERAL, subcontext, identitySource or "state")
+    end
+
+    -- T014: Inherit preMatchRatingSnapshot from matchRecord.metadata when the
+    -- session is created after PVP_MATCH_ACTIVE fires. This handles the common
+    -- Midnight case where session creation is deferred to the first damage event.
+    local preSnap = matchRecord and matchRecord.metadata and matchRecord.metadata.preMatchRatingSnapshot
+    if preSnap and not session.isRated then
+        session.isRated = preSnap.isRated
+        if preSnap.isRated then
+            session.ratingSnapshot = {}
+            if preSnap.before then
+                session.ratingSnapshot.before = preSnap.before
+            elseif preSnap.missingReason then
+                session.ratingSnapshot.missingReason = preSnap.missingReason
+            end
+        else
+            session.ratingSnapshot = { missingReason = preSnap.missingReason or "not_rated" }
+        end
     end
 
     ns.Addon:Trace("session.snapshot.request", { reason = "session_start" })
@@ -587,216 +657,9 @@ function CombatTracker:UpdatePrimaryOpponent(session, eventRecord)
     end
 end
 
-function CombatTracker:NormalizeCombatLogEvent(...)
-    local rawTimestamp, rawSubEvent, _, rawSrcGuid, rawSrcName, rawSrcFlags, _, rawDstGuid, rawDstName, rawDstFlags = ...
-
-    -- Bail early if core fields are nil or secret.
-    local timestamp = rawTimestamp
-    local subEvent = ApiCompat.SanitizeString(rawSubEvent)
-    if not timestamp or not subEvent then
-        return nil
-    end
-
-    -- Sanitize all header fields: in restricted CLEU sessions, any of these
-    -- may be secret values that crash on use.
-    local sourceGuid  = ApiCompat.SanitizeString(rawSrcGuid)
-    local sourceName  = ApiCompat.SanitizeString(rawSrcName)
-    local sourceFlags = ApiCompat.SanitizeNumber(rawSrcFlags)
-    local destGuid    = ApiCompat.SanitizeString(rawDstGuid)
-    local destName    = ApiCompat.SanitizeString(rawDstName)
-    local destFlags   = ApiCompat.SanitizeNumber(rawDstFlags)
-
-    local payload = { select(12, ...) }
-    local eventRecord = {
-        timestamp   = timestamp,
-        subEvent    = subEvent,
-        sourceGuid  = sourceGuid,
-        sourceName  = sourceName,
-        sourceFlags = sourceFlags,
-        destGuid    = destGuid,
-        destName    = destName,
-        destFlags   = destFlags,
-        sourceMine  = isMineGuid(sourceGuid) or hasFlag(sourceFlags, AFFILIATION_MINE),
-        destMine    = isMineGuid(destGuid)   or hasFlag(destFlags, AFFILIATION_MINE),
-        sourcePlayer = ApiCompat.IsGuidPlayer(sourceGuid) or hasFlag(sourceFlags, TYPE_PLAYER),
-        destPlayer   = ApiCompat.IsGuidPlayer(destGuid)   or hasFlag(destFlags, TYPE_PLAYER),
-        sourceHostilePlayer = (ApiCompat.IsGuidPlayer(sourceGuid) or hasFlag(sourceFlags, TYPE_PLAYER)) and hasFlag(sourceFlags, REACTION_HOSTILE),
-        destHostilePlayer   = (ApiCompat.IsGuidPlayer(destGuid)   or hasFlag(destFlags, TYPE_PLAYER)) and hasFlag(destFlags, REACTION_HOSTILE),
-        eventType   = "other",
-    }
-
-    -- ── Damage events ──────────────────────────────────────────────────────────
-    -- SWING_DAMAGE payload (1-indexed, positions 1..10):
-    --   1=amount, 2=overkill, 3=schoolMask, 4=resisted, 5=blocked,
-    --   6=absorbed, 7=critical, 8=glancing, 9=crushing, 10=isOffHand
-    -- NOTE: absorbed is at position 6, NOT position 5.
-    -- The previous code read payload[5] (blocked) as absorbed — this was wrong.
-    if subEvent == "SWING_DAMAGE" then
-        eventRecord.eventType  = "damage"
-        eventRecord.spellId    = 6603
-        eventRecord.spellName  = ApiCompat.GetSpellName(6603) or "Melee"
-        eventRecord.amount     = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.overkill   = ApiCompat.SanitizeNumber(payload[2])
-        eventRecord.schoolMask = ApiCompat.SanitizeNumber(payload[3])
-        eventRecord.resisted   = ApiCompat.SanitizeNumber(payload[4])
-        eventRecord.blocked    = ApiCompat.SanitizeNumber(payload[5])
-        eventRecord.absorbed   = ApiCompat.SanitizeNumber(payload[6])
-        eventRecord.critical   = ApiCompat.SanitizeBool(payload[7])
-        eventRecord.glancing   = ApiCompat.SanitizeBool(payload[8])
-        eventRecord.crushing   = ApiCompat.SanitizeBool(payload[9])
-        eventRecord.isOffHand  = ApiCompat.SanitizeBool(payload[10])
-
-    -- SPELL_DAMAGE / RANGE_DAMAGE / SPELL_PERIODIC_DAMAGE payload (1-indexed):
-    --   1=spellId, 2=spellName, 3=spellSchool, 4=amount, 5=overkill,
-    --   6=schoolMask, 7=resisted, 8=absorbed, 9=critical,
-    --   10=glancing, 11=crushing, 12=isOffHand, 13=hideCaster
-    elseif subEvent == "RANGE_DAMAGE" or subEvent == "SPELL_DAMAGE" or subEvent == "SPELL_PERIODIC_DAMAGE" then
-        eventRecord.eventType  = "damage"
-        eventRecord.spellId    = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.spellName  = ApiCompat.SanitizeString(payload[2])
-        eventRecord.spellSchool = ApiCompat.SanitizeNumber(payload[3])
-        eventRecord.amount     = ApiCompat.SanitizeNumber(payload[4])
-        eventRecord.overkill   = ApiCompat.SanitizeNumber(payload[5])
-        eventRecord.schoolMask = ApiCompat.SanitizeNumber(payload[6])
-        eventRecord.resisted   = ApiCompat.SanitizeNumber(payload[7])
-        eventRecord.absorbed   = ApiCompat.SanitizeNumber(payload[8])
-        eventRecord.critical   = ApiCompat.SanitizeBool(payload[9])
-        eventRecord.glancing   = ApiCompat.SanitizeBool(payload[10])
-        eventRecord.crushing   = ApiCompat.SanitizeBool(payload[11])
-        eventRecord.isOffHand  = ApiCompat.SanitizeBool(payload[12])
-        eventRecord.hideCaster = ApiCompat.SanitizeBool(payload[13])
-
-    -- ENVIRONMENTAL_DAMAGE payload:
-    --   1=envType, 2=amount, 3=overkill, 4=schoolMask, 5=resisted,
-    --   6=blocked, 7=absorbed, 8=critical, 9=glancing, 10=crushing
-    elseif subEvent == "ENVIRONMENTAL_DAMAGE" then
-        eventRecord.eventType  = "damage"
-        eventRecord.spellId    = 0
-        eventRecord.spellName  = ApiCompat.SanitizeString(payload[1])
-        eventRecord.amount     = ApiCompat.SanitizeNumber(payload[2])
-        eventRecord.overkill   = ApiCompat.SanitizeNumber(payload[3])
-        eventRecord.schoolMask = ApiCompat.SanitizeNumber(payload[4])
-        eventRecord.resisted   = ApiCompat.SanitizeNumber(payload[5])
-        eventRecord.blocked    = ApiCompat.SanitizeNumber(payload[6])
-        eventRecord.absorbed   = ApiCompat.SanitizeNumber(payload[7])
-        eventRecord.critical   = ApiCompat.SanitizeBool(payload[8])
-        eventRecord.glancing   = ApiCompat.SanitizeBool(payload[9])
-        eventRecord.crushing   = ApiCompat.SanitizeBool(payload[10])
-
-    -- ── Healing events ────────────────────────────────────────────────────────
-    elseif subEvent == "SPELL_HEAL" or subEvent == "SPELL_PERIODIC_HEAL" then
-        eventRecord.eventType   = "healing"
-        eventRecord.spellId     = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.spellName   = ApiCompat.SanitizeString(payload[2])
-        eventRecord.spellSchool = ApiCompat.SanitizeNumber(payload[3])
-        eventRecord.amount      = ApiCompat.SanitizeNumber(payload[4])
-        eventRecord.overhealing = ApiCompat.SanitizeNumber(payload[5])
-        eventRecord.absorbed    = ApiCompat.SanitizeNumber(payload[6])
-        eventRecord.critical    = ApiCompat.SanitizeBool(payload[7])
-
-    -- ── Cast events ───────────────────────────────────────────────────────────
-    elseif subEvent == "SPELL_CAST_SUCCESS" or subEvent == "SPELL_CAST_START" or subEvent == "SPELL_CAST_FAILED" then
-        eventRecord.eventType    = "cast"
-        eventRecord.spellId      = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.spellName    = ApiCompat.SanitizeString(payload[2])
-        eventRecord.spellSchool  = ApiCompat.SanitizeNumber(payload[3])
-        eventRecord.failedReason = ApiCompat.SanitizeString(payload[4])
-
-    -- ── Summon / create events ─────────────────────────────────────────────────
-    -- These are critical for pet attribution — they establish the summon → owner
-    -- relationship that SpellAttributionPipeline uses to credit pet damage.
-    elseif subEvent == "SPELL_SUMMON" or subEvent == "SPELL_CREATE" then
-        eventRecord.eventType   = "summon"
-        eventRecord.spellId     = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.spellName   = ApiCompat.SanitizeString(payload[2])
-        eventRecord.spellSchool = ApiCompat.SanitizeNumber(payload[3])
-
-    -- ── Aura events ───────────────────────────────────────────────────────────
-    -- Handle BROKEN variants before the generic find() catch-all.
-    -- SPELL_AURA_BROKEN payload: 1=spellId, 2=spellName, 3=spellSchool, 4=auraType
-    -- SPELL_AURA_BROKEN_SPELL payload: same base + 5=extraSpellId, 6=extraSpellName, 7=extraSpellSchool
-    -- Generic AURA payload: 1=spellId, 2=spellName, 3=spellSchool, 4=auraType, 5=amount/stackCount
-    elseif subEvent == "SPELL_AURA_BROKEN" then
-        eventRecord.eventType   = "aura"
-        eventRecord.spellId     = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.spellName   = ApiCompat.SanitizeString(payload[2])
-        eventRecord.spellSchool = ApiCompat.SanitizeNumber(payload[3])
-        eventRecord.auraId      = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.auraType    = ApiCompat.SanitizeString(payload[4])
-
-    elseif subEvent == "SPELL_AURA_BROKEN_SPELL" then
-        eventRecord.eventType    = "aura"
-        eventRecord.spellId      = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.spellName    = ApiCompat.SanitizeString(payload[2])
-        eventRecord.spellSchool  = ApiCompat.SanitizeNumber(payload[3])
-        eventRecord.auraId       = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.auraType     = ApiCompat.SanitizeString(payload[4])
-        eventRecord.extraSpellId = ApiCompat.SanitizeNumber(payload[5])
-
-    elseif string.find(subEvent, "AURA", 1, true) then
-        eventRecord.eventType   = "aura"
-        eventRecord.spellId     = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.spellName   = ApiCompat.SanitizeString(payload[2])
-        eventRecord.spellSchool = ApiCompat.SanitizeNumber(payload[3])
-        eventRecord.auraId      = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.auraType    = ApiCompat.SanitizeString(payload[4])
-        eventRecord.stackCount  = ApiCompat.SanitizeNumber(payload[5])
-
-    -- ── Miss events ───────────────────────────────────────────────────────────
-    -- SWING_MISSED: 1=missType, 2=isOffHand, 3=amountMissed
-    -- SPELL_MISSED / RANGE_MISSED / SPELL_PERIODIC_MISSED: 1=spellId, 2=spellName, 3=spellSchool, 4=missType, 5=isOffHand, 6=amountMissed
-    elseif string.find(subEvent, "MISSED", 1, true) then
-        eventRecord.eventType = "miss"
-        if subEvent == "SWING_MISSED" then
-            eventRecord.spellId    = 6603
-            eventRecord.spellName  = ApiCompat.GetSpellName(6603) or "Melee"
-            eventRecord.missType   = ApiCompat.SanitizeString(payload[1])
-            eventRecord.isOffHand  = ApiCompat.SanitizeBool(payload[2])
-            eventRecord.absorbed   = ApiCompat.SanitizeNumber(payload[3])
-        else
-            eventRecord.spellId     = ApiCompat.SanitizeNumber(payload[1])
-            eventRecord.spellName   = ApiCompat.SanitizeString(payload[2])
-            eventRecord.spellSchool = ApiCompat.SanitizeNumber(payload[3])
-            eventRecord.missType    = ApiCompat.SanitizeString(payload[4])
-            eventRecord.isOffHand   = ApiCompat.SanitizeBool(payload[5])
-            eventRecord.absorbed    = ApiCompat.SanitizeNumber(payload[6])
-        end
-
-    -- ── Utility events ────────────────────────────────────────────────────────
-    elseif subEvent == "SPELL_INTERRUPT" then
-        eventRecord.eventType    = "interrupt"
-        eventRecord.spellId      = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.spellName    = ApiCompat.SanitizeString(payload[2])
-        eventRecord.spellSchool  = ApiCompat.SanitizeNumber(payload[3])
-        eventRecord.extraSpellId = ApiCompat.SanitizeNumber(payload[4])
-
-    elseif subEvent == "SPELL_DISPEL" or subEvent == "SPELL_STOLEN" then
-        eventRecord.eventType    = "dispel"
-        eventRecord.spellId      = ApiCompat.SanitizeNumber(payload[1])
-        eventRecord.spellName    = ApiCompat.SanitizeString(payload[2])
-        eventRecord.spellSchool  = ApiCompat.SanitizeNumber(payload[3])
-        eventRecord.extraSpellId = ApiCompat.SanitizeNumber(payload[4])
-
-    -- ── Death events ──────────────────────────────────────────────────────────
-    elseif subEvent == "UNIT_DIED" or subEvent == "UNIT_DESTROYED" or subEvent == "PARTY_KILL" then
-        eventRecord.eventType = "death"
-    end
-
-    -- Negative-space guard: if the subEvent fell through every branch above
-    -- (eventType remains "other") AND the event involves the player or pet,
-    -- emit a trace so unknown CLEU subEvents that touch us are visible in logs.
-    -- Deliberately trace-only (not Warn) to avoid spam from cast/summon events.
-    if eventRecord.eventType == "other" and (eventRecord.sourceMine or eventRecord.destMine) then
-        ns.Addon:Trace("cleu.unhandled_subevent", {
-            subEvent = subEvent,
-            sourceMine = eventRecord.sourceMine and true or false,
-            destMine   = eventRecord.destMine   and true or false,
-            spellId    = ApiCompat.SanitizeNumber(payload and payload[1]) or 0,
-        })
-    end
-
-    return eventRecord
-end
+-- T013: NormalizeCombatLogEvent deleted — no production callers remain.
+-- Was only called by HandleCombatLogEvent (also deleted, T014).
+-- Session data now sourced from DamageMeter + visible-unit state APIs.
 
 function CombatTracker:ShouldTrackEvent(session, eventRecord)
     if not eventRecord then
@@ -821,17 +684,14 @@ function CombatTracker:StartSessionFromEvent(eventRecord, context, subcontext)
         damageMeterService:MarkSessionStart()
     end
 
-    local session = self:CreateSession(context, subcontext, "cleu")
+    local session = self:CreateSession(context, subcontext, "state")
     session.startLogTimestamp = eventRecord.timestamp
     session.lastLogTimestamp = eventRecord.timestamp
     self:UpdatePrimaryOpponent(session, eventRecord)
     self:TrackActorGuid(session, ApiCompat.GetPlayerGUID())
     self:TrackActorGuid(session, eventRecord.sourceGuid)
     self:TrackActorGuid(session, eventRecord.destGuid)
-    local classifier = ns.Addon:GetModule("SessionClassifier")
-    if classifier and classifier.AccumulateEvidence then
-        classifier:AccumulateEvidence(session, eventRecord)
-    end
+    -- T031: AccumulateEvidence removed — context detection uses ResolveContextFromState()
     return session
 end
 
@@ -898,8 +758,8 @@ function CombatTracker:UpdateSpellStats(session, eventRecord)
     then
         -- Negative-space guard: a mine-side event with a spellId arrived with
         -- an eventType that no branch above handles.  This usually means a new
-        -- CLEU event type was introduced that UpdateSpellStats doesn't know
-        -- about yet.  Trace-only to avoid spam.
+        -- event type was introduced that UpdateSpellStats doesn't know about
+        -- yet.  Trace-only to avoid spam.
         ns.Addon:Trace("spell_stats.unhandled_event_type", {
             eventType = eventRecord.eventType or "nil",
             subEvent  = eventRecord.subEvent  or "nil",
@@ -1181,38 +1041,18 @@ function CombatTracker:UpdateAuraWindowContribution(session, eventRecord)
 end
 
 function CombatTracker:HandleNormalizedEvent(eventRecord)
-    local classifier = ns.Addon:GetModule("SessionClassifier")
-    if not classifier then
-        ns.Addon:Warn("HandleNormalizedEvent: SessionClassifier module not found")
-        return
-    end
+    -- T015/T031: Gated behind dev flag — AccumulateEvidence and
+    -- ShouldStartNewSession have been removed from SessionClassifier.
+    -- CA_DEV_LEGACY is never set in production; function body kept for later refactor.
+    if not CA_DEV_LEGACY then return end
+
     local session = self:GetCurrentSession()
-    local shouldStart, context, subcontext = classifier:ShouldStartNewSession(session, eventRecord)
-    if shouldStart or session or eventRecord.sourceMine or eventRecord.destMine then
-        ns.Addon:Trace("cleu.route", {
-            context = context or "nil",
-            destMine = eventRecord.destMine and true or false,
-            session = session and session.id or "none",
-            shouldStart = shouldStart and true or false,
-            sourceMine = eventRecord.sourceMine and true or false,
-            subEvent = eventRecord.subEvent or "unknown",
-            subcontext = subcontext or "nil",
-        })
-    end
-
-    if not session and not shouldStart then
+    if not session then
         return
-    end
-
-    if shouldStart then
-        if session and session.state == "active" then
-            self:FinalizeSession(nil, "context_transition")
-        end
-        session = self:StartSessionFromEvent(eventRecord, context, subcontext)
     end
 
     if not self:ShouldTrackEvent(session, eventRecord) then
-        ns.Addon:Trace("cleu.untracked", {
+        ns.Addon:Trace("timeline.untracked", {
             context = session and session.context or "none",
             subEvent = eventRecord.subEvent or "unknown",
         })
@@ -1224,10 +1064,8 @@ function CombatTracker:HandleNormalizedEvent(eventRecord)
     self:TrackActorGuid(session, eventRecord.sourceGuid)
     self:TrackActorGuid(session, eventRecord.destGuid)
     self:UpdatePrimaryOpponent(session, eventRecord)
-    if classifier and classifier.AccumulateEvidence then
-        classifier:AccumulateEvidence(session, eventRecord)
-    end
-    self:RefreshSessionIdentity(session, nil, "cleu")
+    -- T031: AccumulateEvidence removed — context detection uses ResolveContextFromState()
+    self:RefreshSessionIdentity(session, nil, "state")
 
     if not session.startLogTimestamp then
         session.startLogTimestamp = eventRecord.timestamp
@@ -1252,13 +1090,15 @@ function CombatTracker:HandleNormalizedEvent(eventRecord)
     -- Only meaningful during arena sessions but safe to call unconditionally.
     if session.context == Constants.CONTEXT.ARENA then
         local art = ns.Addon:GetModule("ArenaRoundTracker")
-        if art then art:HandleCombatLogEvent(eventRecord) end
+        -- Legacy path removed: ArenaRoundTracker pressure now from DamageMeter
+        -- if art then art:HandleCombatLogEvent(eventRecord) end
     end
 
     -- Forward to SpellAttributionPipeline for enemy-source attribution.
     -- Tracks incoming damage and summon ownership regardless of context.
     local sap = ns.Addon:GetModule("SpellAttributionPipeline")
-    if sap then sap:HandleCombatLogEvent(session, eventRecord) end
+    -- Legacy path removed: SpellAttribution now from DamageMeter only
+    -- if sap then sap:HandleCombatLogEvent(session, eventRecord) end
 end
 
 function CombatTracker:CloseOpenAuras(session)
@@ -1328,9 +1168,9 @@ end
 -- ResolveDataConfidence: returns one of the Constants.ANALYSIS_CONFIDENCE values
 -- based on the richest available signal for this session.
 -- Priority:
---   1. SpellAttributionPipeline reconciliation (has seen both CLEU and DamageMeter)
---   2. CLEU-only (unrestricted session, no import needed)
---   3. Restricted session (no per-event CLEU, DamageMeter only)
+--   1. SpellAttributionPipeline reconciliation (state + DamageMeter data)
+--   2. State-only (unrestricted session, no DamageMeter import needed)
+--   3. Restricted session (DamageMeter only, limited state data)
 --   4. Nothing useful captured → UNKNOWN
 function CombatTracker:ResolveDataConfidence(session)
     local AC = Constants.ANALYSIS_CONFIDENCE
@@ -1363,8 +1203,8 @@ function CombatTracker:ResolveDataConfidence(session)
         return AC.UNKNOWN
     end
 
-    -- CLEU present, no DamageMeter reconciliation ran (e.g. training dummy with
-    -- restricted log would still have rawEvents from the unrestricted window).
+    -- Raw events present, no DamageMeter reconciliation ran (e.g. training dummy
+    -- with unrestricted state would still have rawEvents from the local window).
     if ApiCompat.IsCombatLogRestricted() then
         return AC.RESTRICTED_RAW
     end
@@ -1388,18 +1228,20 @@ function CombatTracker:ResolveAnalysisConfidence(session)
     return "limited"
 end
 
--- Task 2.3: Death Cause Attribution
--- Scans raw events backwards from each player death to identify the killing
--- damage sources and whether the player was crowd-controlled at time of death.
+-- Task 2.3 / T056: Death Cause Attribution
+-- Scans timelineEvents for death-lane entries and looks backwards through the
+-- timeline for the damage events leading up to each death.  Also checks the
+-- ccTimeline to determine if the player was crowd-controlled at death time.
 local function analyzeDeath(session)
-    if not session or not session.rawEvents or #session.rawEvents == 0 then return end
-    -- Check if player died
     if (session.survival and session.survival.deaths or 0) == 0 then return end
 
-    -- Find death events (eventType "death" where destMine == true)
+    local timeline = session.timelineEvents
+    if not timeline or #timeline == 0 then return end
+
+    -- Collect indices of death-lane events for the player.
     local deathIndices = {}
-    for i, evt in ipairs(session.rawEvents) do
-        if evt.eventType == "death" and evt.destMine then
+    for i, ev in ipairs(timeline) do
+        if ev.lane == Constants.TIMELINE_LANE.DEATH and ev.destMine then
             deathIndices[#deathIndices + 1] = i
         end
     end
@@ -1408,7 +1250,7 @@ local function analyzeDeath(session)
     session.deathCauses = session.deathCauses or {}
 
     for _, deathIdx in ipairs(deathIndices) do
-        local deathEvt = session.rawEvents[deathIdx]
+        local deathEvt = timeline[deathIdx]
         local killingSpells = {}
         local totalBurstDamage = 0
         local sourceGuid, sourceName, sourceSpecId = nil, nil, nil
@@ -1417,24 +1259,24 @@ local function analyzeDeath(session)
         local count = 0
         for i = deathIdx - 1, 1, -1 do
             if count >= 6 then break end
-            local evt = session.rawEvents[i]
-            if evt and evt.eventType == "damage" and evt.destMine then
+            local ev = timeline[i]
+            if ev and ev.amount and ev.amount > 0 and ev.destMine then
                 -- Resolve source name from session actors table
                 local resolvedName = nil
-                if evt.sourceGuid and session.actors and session.actors[evt.sourceGuid] then
-                    resolvedName = session.actors[evt.sourceGuid].name
+                if ev.sourceGuid and session.actors and session.actors[ev.sourceGuid] then
+                    resolvedName = session.actors[ev.sourceGuid].name
                 end
                 killingSpells[#killingSpells + 1] = {
-                    spellId = evt.spellId,
-                    amount = evt.amount or 0,
-                    critical = evt.critical,
-                    sourceGuid = evt.sourceGuid,
+                    spellId = ev.spellId,
+                    amount = ev.amount or 0,
+                    critical = ev.critical,
+                    sourceGuid = ev.sourceGuid,
                     sourceName = resolvedName,
-                    timestampOffset = evt.timestampOffset,
+                    timestampOffset = ev.timestampOffset,
                 }
-                totalBurstDamage = totalBurstDamage + (evt.amount or 0)
-                if not sourceGuid and evt.sourceGuid then
-                    sourceGuid = evt.sourceGuid
+                totalBurstDamage = totalBurstDamage + (ev.amount or 0)
+                if not sourceGuid and ev.sourceGuid then
+                    sourceGuid = ev.sourceGuid
                     sourceName = resolvedName
                 end
                 count = count + 1
@@ -1612,6 +1454,9 @@ end
 
 function CombatTracker:FinalizeSession(explicitResult, reason)
     local session = self:GetCurrentSession()
+    -- Idempotent: only finalizes sessions in "active" state.  Repeated calls
+    -- (e.g. from overlapping timers, OnUpdate fallback, or manual flush) are
+    -- safely ignored once the session has transitioned out of "active".
     if not session or session.state ~= "active" then
         return nil
     end
@@ -1619,24 +1464,21 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
     self:CloseOpenAuras(session)
     analyzeDeath(session)
 
-    -- Extract opener sequence (first 5 successful player casts)
-    if session.rawEvents and #session.rawEvents > 0 then
-        local openerSpells = {}
-        local limit = session.rawEventWrap and #session.rawEvents or #session.rawEvents
-        for i = 1, limit do
-            if #openerSpells >= 5 then break end
-            local evt = session.rawEvents[i]
-            if evt and evt.sourceMine and evt.spellId and (evt.eventType == "cast" or evt.subEvent == "SPELL_CAST_SUCCESS") then
-                openerSpells[#openerSpells + 1] = evt.spellId
-            end
+    -- T055: Extract opener sequence from timelineEvents (player_cast lane)
+    -- instead of rawEvents.  Scans for the first 5 player-cast timeline entries.
+    local openerSpells = {}
+    for _, ev in ipairs(session.timelineEvents or {}) do
+        if #openerSpells >= 5 then break end
+        if ev.lane == Constants.TIMELINE_LANE.PLAYER_CAST and ev.spellId then
+            openerSpells[#openerSpells + 1] = ev.spellId
         end
-        if #openerSpells > 0 then
-            local hashInput = table.concat(openerSpells, ":")
-            session.openerSequence = {
-                spellIds = openerSpells,
-                hash = string.format("%08x", ns.Math.HashString32(hashInput)),
-            }
-        end
+    end
+    if #openerSpells > 0 then
+        local hashInput = table.concat(openerSpells, ":")
+        session.openerSequence = {
+            spellIds = openerSpells,
+            hash = string.format("%08x", ns.Math.HashString32(hashInput)),
+        }
     end
 
     -- Phase 3 analytics extraction (runs before DamageMeter import and metrics).
@@ -1649,9 +1491,9 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
 
     session.endedAt = ApiCompat.GetServerTime()
 
-    -- Sanitize totals: if CLEU was restricted, localTotals may contain secret
-    -- values that leaked through despite our sanitization.  Force them to
-    -- safe numbers before any arithmetic in finalization/metrics.
+    -- Sanitize totals: in restricted PvP sessions, localTotals may contain
+    -- secret values that leaked through despite our sanitization.  Force them
+    -- to safe numbers before any arithmetic in finalization/metrics.
     for _, bucket in ipairs({ session.localTotals, session.totals, session.importedTotals }) do
         if bucket then
             for key, val in pairs(bucket) do
@@ -1675,7 +1517,13 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
                 weeklyPlayed     = ratedInfo.weeklyPlayed,
                 weeklyWon        = ratedInfo.weeklyWon,
             }
+        elseif not session.ratingSnapshot.missingReason then
+            session.ratingSnapshot.missingReason = "api_unavailable"
         end
+    end
+    -- T052: Ensure non-rated sessions always have a missingReason.
+    if not session.isRated and not session.ratingSnapshot then
+        session.ratingSnapshot = { missingReason = "not_rated" }
     end
 
     session.damageMeterImportAttempts = session.damageMeterImportAttempts or 0
@@ -1720,6 +1568,14 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         return nil
     end
 
+    -- T011: Export arena round state BEFORE classifier sync, metrics, and
+    -- suggestions so all downstream analytics consume the hardened opponent
+    -- identity rather than the first-hit placeholder.
+    if session.context == Constants.CONTEXT.ARENA then
+        local art = ns.Addon:GetModule("ArenaRoundTracker")
+        if art then art:CopyStateIntoSession(session) end
+    end
+
     local classifier = ns.Addon:GetModule("SessionClassifier")
     if classifier and classifier.SyncSessionIdentityFromOpponent and session.primaryOpponent then
         classifier:SyncSessionIdentityFromOpponent(session, session.primaryOpponent, "finalize")
@@ -1749,14 +1605,6 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         ns.Addon:Debug("%s", errSuggestions)
     end
 
-    -- Export arena round metadata from ArenaRoundTracker into the session before
-    -- persisting. Must happen after DamageMeter import so primaryOpponent from
-    -- tracker can override the first-hit placeholder if pressure data is better.
-    if session.context == Constants.CONTEXT.ARENA then
-        local art = ns.Addon:GetModule("ArenaRoundTracker")
-        if art then art:CopyStateIntoSession(session) end
-    end
-
     -- Classify enemy comp archetype from arena slot spec IDs.
     -- session.arena.slots is keyed by slot integer; each entry has prepSpecId.
     -- Only runs for arena sessions where CopyStateIntoSession populated slots.
@@ -1778,6 +1626,43 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
     -- dataConfidence must be set before ResolveAnalysisConfidence reads it.
     session.dataConfidence     = self:ResolveDataConfidence(session)
     session.analysisConfidence = self:ResolveAnalysisConfidence(session)
+
+    -- T053: Populate provenance map — records which sanctioned API produced
+    -- each persisted field group.  Adjust source based on actual data paths.
+    local dmSuccess = session.import and session.import.source ~= "none"
+    local PS = Constants.PROVENANCE_SOURCE
+    session.provenance = {
+        totals          = dmSuccess and PS.DAMAGE_METER or PS.STATE,
+        spells          = PS.STATE,
+        auras           = PS.VISIBLE_UNIT,
+        attribution     = dmSuccess and PS.DAMAGE_METER or PS.ESTIMATED,
+        arena           = PS.STATE,
+        openerSequence  = PS.STATE,
+        metrics         = PS.ESTIMATED,
+        suggestions     = PS.ESTIMATED,
+    }
+
+    -- T054: Resolve session confidence using SESSION_CONFIDENCE enum.
+    local SC = Constants.SESSION_CONFIDENCE
+    local hasTimeline = session.timelineEvents and #session.timelineEvents > 0
+    local hasCC = false
+    for _, ev in ipairs(session.timelineEvents or {}) do
+        if ev.lane == Constants.TIMELINE_LANE.CC_RECEIVED then hasCC = true; break end
+    end
+    local partialRoster = session.arena and session.arena.completionState == "partial_leaver"
+
+    if dmSuccess and hasTimeline then
+        session.captureQuality.confidence = SC.STATE_PLUS_DAMAGE_METER
+    elseif dmSuccess then
+        session.captureQuality.confidence = SC.DAMAGE_METER_ONLY
+    elseif hasCC then
+        session.captureQuality.confidence = SC.VISIBLE_CC_ONLY
+    elseif partialRoster then
+        session.captureQuality.confidence = SC.PARTIAL_ROSTER
+    else
+        session.captureQuality.confidence = SC.ESTIMATED
+    end
+
     session.state = "finalized"
 
     ns.Addon:Trace("session.finalized", {
@@ -1836,43 +1721,9 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
     return session
 end
 
-function CombatTracker:HandleCombatLogEvent()
-    local isRestricted = ApiCompat.IsCombatLogRestricted()
-    local eventRecord = self:NormalizeCombatLogEvent(ApiCompat.GetCombatLogEventInfo())
-    if not eventRecord then
-        return
-    end
-
-    local currentSession = self:GetCurrentSession()
-    if currentSession or eventRecord.sourceMine or eventRecord.destMine then
-        ns.Addon:Trace("cleu.begin", {
-            destMine = eventRecord.destMine and true or false,
-            restricted = isRestricted and true or false,
-            session = currentSession and currentSession.id or "none",
-            sourceMine = eventRecord.sourceMine and true or false,
-            spellId = eventRecord.spellId or 0,
-            subEvent = eventRecord.subEvent or "unknown",
-        })
-    end
-
-    self:HandleNormalizedEvent(eventRecord)
-
-    if isRestricted then
-        local session = self:GetCurrentSession()
-        if session then
-            session.captureQuality.rawEvents = Constants.CAPTURE_QUALITY.RESTRICTED
-        end
-    end
-
-    currentSession = self:GetCurrentSession()
-    if currentSession or eventRecord.sourceMine or eventRecord.destMine then
-        ns.Addon:Trace("cleu.end", {
-            context = currentSession and currentSession.context or "none",
-            session = currentSession and currentSession.id or "none",
-            subEvent = eventRecord.subEvent or "unknown",
-        })
-    end
-end
+-- T014: HandleCombatLogEvent deleted — no active event registration (dead code).
+-- Was the only caller of NormalizeCombatLogEvent (also deleted, T013).
+-- Session data now sourced from DamageMeter + visible-unit state APIs.
 
 function CombatTracker:HandleUnitSpellcastSucceeded(unitTarget, _, spellId)
     if unitTarget ~= "player" and unitTarget ~= "pet" then
@@ -2121,7 +1972,11 @@ function CombatTracker:HandlePlayerRegenEnabled()
         damageMeterService:CaptureCurrentSessionSnapshot(session)
     end
 
-    local delay = 1.5
+    -- T035: Configurable DamageMeter stabilization delay.  After PLAYER_REGEN_ENABLED
+    -- fires we wait before finalizing so that C_DamageMeter data has time to settle.
+    -- Context-specific overrides extend the default for game modes where data arrives
+    -- later (world PvP) or where arena/BG post-match events need extra time.
+    local delay = DM_STABILIZATION_DELAY
     if session.context == Constants.CONTEXT.WORLD_PVP then
         delay = 5
     elseif session.context == Constants.CONTEXT.BATTLEGROUND or session.context == Constants.CONTEXT.ARENA then
@@ -2237,31 +2092,69 @@ function CombatTracker:HandlePvpMatchActive()
     local art = ns.Addon:GetModule("ArenaRoundTracker")
     if art then art:BeginRound("pvp_match_active") end
 
-    -- Task 1.2: capture rating snapshot before match
+    -- T088: Hide scout overlay when match goes active
+    local scoutView = ns.Addon:GetModule("ArenaScoutView")
+    if scoutView then scoutView:Hide() end
+
+    -- T013: Capture pre-match rating snapshot on matchRecord.metadata so it
+    -- survives late session creation. PVP_MATCH_ACTIVE can fire before the
+    -- combat session exists (common in Midnight where session creation is
+    -- triggered by the first damage event). Storing on match metadata allows
+    -- CreateSession (T014) to inherit the snapshot regardless of timing.
+    local isRated = ApiCompat.DoesMatchOutcomeAffectRating()
+    local preMatchSnapshot
+    if isRated then
+        local ratedInfo = ApiCompat.GetPVPActiveMatchPersonalRatedInfo()
+        if ratedInfo then
+            preMatchSnapshot = {
+                isRated = true,
+                before = {
+                    personalRating    = ratedInfo.personalRating,
+                    bestSeasonRating  = ratedInfo.bestSeasonRating,
+                    seasonPlayed      = ratedInfo.seasonPlayed,
+                    seasonWon         = ratedInfo.seasonWon,
+                    weeklyPlayed      = ratedInfo.weeklyPlayed,
+                    weeklyWon         = ratedInfo.weeklyWon,
+                },
+            }
+        else
+            preMatchSnapshot = { isRated = true, missingReason = "api_unavailable" }
+        end
+    else
+        preMatchSnapshot = { isRated = false, missingReason = "not_rated" }
+    end
+
+    if matchRecord then
+        matchRecord.metadata = matchRecord.metadata or {}
+        matchRecord.metadata.preMatchRatingSnapshot = preMatchSnapshot
+    end
+
+    -- T015: When the combat session already exists at PVP_MATCH_ACTIVE time,
+    -- populate it directly from the snapshot (no regression from prior behavior).
     local session = self:GetCurrentSession()
-    if session then
-        session.isRated = ApiCompat.DoesMatchOutcomeAffectRating()
-        if session.isRated then
-            local ratedInfo = ApiCompat.GetPVPActiveMatchPersonalRatedInfo()
+    if session and preMatchSnapshot then
+        session.isRated = preMatchSnapshot.isRated
+        if preMatchSnapshot.isRated then
             session.ratingSnapshot = session.ratingSnapshot or {}
-            session.ratingSnapshot.before = ratedInfo and {
-                personalRating    = ratedInfo.personalRating,
-                bestSeasonRating  = ratedInfo.bestSeasonRating,
-                seasonPlayed      = ratedInfo.seasonPlayed,
-                seasonWon         = ratedInfo.seasonWon,
-                weeklyPlayed      = ratedInfo.weeklyPlayed,
-                weeklyWon         = ratedInfo.weeklyWon,
-            } or nil
+            if preMatchSnapshot.before then
+                session.ratingSnapshot.before = preMatchSnapshot.before
+            elseif preMatchSnapshot.missingReason then
+                session.ratingSnapshot.missingReason = preMatchSnapshot.missingReason
+            end
+        else
+            session.ratingSnapshot = { missingReason = preMatchSnapshot.missingReason or "not_rated" }
         end
     end
 end
 
 function CombatTracker:HandlePvpMatchComplete(winner, duration)
-    -- NOTE: The event args (winner, duration) are not used for result derivation.
-    -- Blizzard's own PVP UI ignores them and queries C_PvP directly after the
-    -- event fires. GetActiveMatchWinner() returns an integer faction index
-    -- (0 = Horde, 1 = Alliance); GetBattlefieldArenaFaction() returns the
-    -- local player's team index. Compare to determine win/loss/draw.
+    -- Arena result from PvP match state APIs (no CLEU dependency).
+    -- GetActiveMatchWinner() and GetBattlefieldArenaFaction() are the sole
+    -- sources for win/loss/draw resolution.  The event args (winner, duration)
+    -- are NOT used — Blizzard's own PVP UI likewise queries C_PvP directly.
+    -- GetActiveMatchWinner() returns an integer faction index (0 = Horde,
+    -- 1 = Alliance); GetBattlefieldArenaFaction() returns the local player's
+    -- team index.  Compare to determine win/loss/draw.
     local winnerTeam   = ApiCompat.GetActiveMatchWinner()
     local playerTeam   = ApiCompat.GetBattlefieldArenaFaction()
 
@@ -2305,14 +2198,18 @@ function CombatTracker:HandlePvpMatchComplete(winner, duration)
     if session and session.isRated then
         local ratedInfo = ApiCompat.GetPVPActiveMatchPersonalRatedInfo()
         session.ratingSnapshot = session.ratingSnapshot or {}
-        session.ratingSnapshot.after = ratedInfo and {
-            personalRating    = ratedInfo.personalRating,
-            bestSeasonRating  = ratedInfo.bestSeasonRating,
-            seasonPlayed      = ratedInfo.seasonPlayed,
-            seasonWon         = ratedInfo.seasonWon,
-            weeklyPlayed      = ratedInfo.weeklyPlayed,
-            weeklyWon         = ratedInfo.weeklyWon,
-        } or nil
+        if ratedInfo then
+            session.ratingSnapshot.after = {
+                personalRating    = ratedInfo.personalRating,
+                bestSeasonRating  = ratedInfo.bestSeasonRating,
+                seasonPlayed      = ratedInfo.seasonPlayed,
+                seasonWon         = ratedInfo.seasonWon,
+                weeklyPlayed      = ratedInfo.weeklyPlayed,
+                weeklyWon         = ratedInfo.weeklyWon,
+            }
+        elseif not session.ratingSnapshot.missingReason then
+            session.ratingSnapshot.missingReason = "api_unavailable"
+        end
     end
 
     -- Defer score and rewards harvest to HandlePvpMatchInactive.
@@ -2367,7 +2264,7 @@ function CombatTracker:HarvestPostMatchData(session)
         session.postMatchScores = scores
 
         -- Backfill actor and opponent names from scoreboard.
-        -- In restricted CLEU sessions, srcName/dstName are secret and never
+        -- In restricted PvP sessions, srcName/dstName are secret and never
         -- stored.  The scoreboard is the authoritative non-secret name source.
         for _, entry in ipairs(scores) do
             if entry.guid and entry.name and session.actors then
@@ -2599,6 +2496,23 @@ function CombatTracker:HandleArenaPrepOpponentSpecializations()
             end
         end
     end
+
+    -- T088: Build scout card and show overlay
+    local scoutService = ns.Addon:GetModule("ArenaScoutService")
+    local scoutView = ns.Addon:GetModule("ArenaScoutView")
+    if scoutService and scoutView and art then
+        local store = ns.Addon:GetModule("CombatStore")
+        local aggregates = store and store:GetAggregates() or {}
+        local slots = art:GetSlots()
+        local prepOpponents = {}
+        for slotIndex, slot in pairs(slots) do
+            prepOpponents[slotIndex] = slot
+        end
+        local ok, scoutCard = pcall(scoutService.BuildScoutCard, scoutService, matchRecord, prepOpponents, aggregates)
+        if ok and scoutCard then
+            scoutView:Show(scoutCard)
+        end
+    end
 end
 
 function CombatTracker:HandleArenaOpponentUpdate(unitToken, updateReason)
@@ -2636,15 +2550,14 @@ function CombatTracker:HandleArenaOpponentUpdate(unitToken, updateReason)
     if art then art:HandleArenaOpponentUpdate(unitToken, updateReason) end
 end
 
+-- T034: DUEL_REQUESTED only sets pending flag — does NOT create a session.
+-- Session creation waits for DUEL_INBOUNDS (confirms duel accepted).
 function CombatTracker:HandleDuelRequested(playerName)
     local classifier = ns.Addon:GetModule("SessionClassifier")
     if classifier then
         classifier:SetPendingDuel(playerName, false)
     end
-    local session = self:GetCurrentSession()
-    if session then
-        self:RefreshSessionIdentity(session, nil, "duel_requested")
-    end
+    ns.Addon:Trace("duel.requested", { opponent = playerName })
 end
 
 function CombatTracker:HandleDuelToTheDeathRequested(playerName)
@@ -2652,16 +2565,101 @@ function CombatTracker:HandleDuelToTheDeathRequested(playerName)
     if classifier then
         classifier:SetPendingDuel(playerName, true)
     end
-    local session = self:GetCurrentSession()
-    if session then
-        self:RefreshSessionIdentity(session, nil, "duel_requested")
-    end
+    ns.Addon:Trace("duel.to_the_death_requested", { opponent = playerName })
 end
 
+-- T034: DUEL_INBOUNDS is the trigger for duel session creation. This fires
+-- only after both players accept. Canceled duel requests (no DUEL_INBOUNDS)
+-- produce zero stored sessions.
 function CombatTracker:HandleDuelInbounds()
+    local classifier = ns.Addon:GetModule("SessionClassifier")
+    local pending = classifier and classifier:GetPendingDuel() or nil
+
+    -- Mark pending duel as active so ResolveContextFromState returns DUEL context
+    if classifier and pending then
+        pending.state = "active"
+    end
+
     local session = self:GetCurrentSession()
+    if not session or session.state ~= "active" then
+        local subcontext = pending and pending.isToTheDeath and Constants.SUBCONTEXT.TO_THE_DEATH or nil
+
+        local damageMeterService = ns.Addon:GetModule("DamageMeterService")
+        if damageMeterService then
+            damageMeterService:MarkSessionStart()
+        end
+
+        session = self:CreateSession(Constants.CONTEXT.DUEL, subcontext, "duel_inbounds")
+
+        local snapshotService = ns.Addon:GetModule("SnapshotService")
+        if snapshotService then
+            if ApiCompat.UnitExists("target") then
+                local actor = snapshotService:UpdateSessionActor(session, "target", "duel_start")
+                if actor then
+                    session.primaryOpponent = actor
+                end
+            end
+            if ApiCompat.UnitExists("focus") then
+                snapshotService:UpdateSessionActor(session, "focus", "duel_start")
+            end
+        end
+
+        -- Persist the duel opponent name from the DUEL_REQUESTED event so
+        -- ResolveOpponentName can use it as a last-resort fallback when no
+        -- snapshot or DamageMeter data is available.
+        if pending and pending.opponentName then
+            session.duelOpponentName = pending.opponentName
+            -- Also seed primaryOpponent if the snapshot path missed it
+            if not session.primaryOpponent then
+                session.primaryOpponent = {
+                    name = pending.opponentName,
+                    guid = pending.opponentGuid,
+                    isPlayer = true,
+                    isHostile = true,
+                }
+            elseif not session.primaryOpponent.name then
+                session.primaryOpponent.name = pending.opponentName
+            end
+        end
+
+        self:RefreshSessionIdentity(session, "target", "duel_inbounds")
+        ns.Addon:Trace("duel.session_created", {
+            sessionId = session.id,
+            opponent = pending and pending.opponentName or "unknown",
+        })
+    else
+        -- Session already exists (e.g. from PLAYER_REGEN_DISABLED) — promote to duel.
+        if classifier then
+            local subcontext = pending and pending.isToTheDeath and Constants.SUBCONTEXT.TO_THE_DEATH or nil
+            classifier:PromoteSessionIdentity(
+                session,
+                Constants.CONTEXT.DUEL,
+                subcontext,
+                95,
+                "duel_inbounds",
+                "duel_confirmed_inbounds",
+                nil
+            )
+        end
+        -- Backfill opponent name from pending duel data for promoted sessions.
+        if pending and pending.opponentName then
+            session.duelOpponentName = session.duelOpponentName or pending.opponentName
+            if not session.primaryOpponent then
+                session.primaryOpponent = {
+                    name = pending.opponentName,
+                    guid = pending.opponentGuid,
+                    isPlayer = true,
+                    isHostile = true,
+                }
+            elseif not session.primaryOpponent.name then
+                session.primaryOpponent.name = pending.opponentName
+            end
+        end
+    end
+
     if session then
         self:AddTimelineMarker(session, "duel_inbounds", {})
+        self:InvalidatePendingFinalize(session)
     end
 end
 

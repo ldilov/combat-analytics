@@ -624,23 +624,36 @@ function Widgets.CreatePill(parent, width, height, backgroundColor, borderColor)
 end
 
 -- Confidence badge: 10x10 colored circle indicator based on dataConfidence level.
--- Colors: green (full_raw/enriched), yellow (restricted_raw), orange (partial_roster),
--- red (degraded), grey (unknown).
+-- Supports both legacy ANALYSIS_CONFIDENCE and new SESSION_CONFIDENCE labels (T120).
 local CONFIDENCE_BADGE_COLORS = {
+    -- Legacy ANALYSIS_CONFIDENCE labels (pre-v6)
     full_raw       = { 0.44, 0.82, 0.60, 1.0 },  -- green
     enriched       = { 0.44, 0.82, 0.60, 1.0 },  -- green
     restricted_raw = { 0.96, 0.86, 0.38, 1.0 },  -- yellow
     partial_roster = { 0.96, 0.62, 0.30, 1.0 },  -- orange
     degraded       = { 0.90, 0.30, 0.25, 1.0 },  -- red
     unknown        = { 0.50, 0.54, 0.58, 1.0 },  -- grey
+    -- New SESSION_CONFIDENCE labels (v6+)
+    state_plus_damage_meter = { 0.44, 0.82, 0.60, 1.0 },  -- green
+    damage_meter_only       = { 0.35, 0.78, 0.90, 1.0 },  -- blue-green
+    visible_cc_only         = { 0.96, 0.86, 0.38, 1.0 },  -- yellow
+    estimated               = { 0.96, 0.62, 0.30, 1.0 },  -- orange
+    legacy_cleu_import      = { 0.60, 0.69, 0.78, 1.0 },  -- muted blue
 }
 local CONFIDENCE_BADGE_TOOLTIPS = {
+    -- Legacy ANALYSIS_CONFIDENCE labels (pre-v6)
     full_raw       = "Full Raw — unrestricted CLEU data with high fidelity.",
     enriched       = "Enriched — CLEU + DamageMeter data merged.",
     restricted_raw = "Restricted Raw — DamageMeter primary, limited event detail.",
     partial_roster = "Partial Roster — incomplete arena slot coverage.",
     degraded       = "Degraded — significant data gaps detected.",
     unknown        = "Unknown — confidence level could not be determined.",
+    -- New SESSION_CONFIDENCE labels (v6+)
+    state_plus_damage_meter = "State + Damage Meter — full state events and DM import.",
+    damage_meter_only       = "Damage Meter Only — DM data captured, limited state events.",
+    visible_cc_only         = "Visible CC Only — only crowd control and loss-of-control data.",
+    estimated               = "Estimated — insufficient direct observation.",
+    legacy_cleu_import      = "Legacy Import — migrated from pre-Midnight CLEU session.",
 }
 
 function Widgets.CreateConfidenceBadge(parent, size)
@@ -832,6 +845,471 @@ function Widgets.CreateSlotRow(parent, width, height)
     end
 
     return row
+end
+
+-- ---------------------------------------------------------------------------
+-- T061: Sparkline — compact line trend with dots at each data point
+-- ---------------------------------------------------------------------------
+function Widgets.CreateSparkline(parent, data, color, width, height)
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetSize(width or 120, height or 24)
+
+    data = data or {}
+    if #data < 2 then
+        return frame
+    end
+
+    local r, g, b, a = color[1], color[2], color[3], color[4] or 1
+    local count = #data
+
+    local dataMin, dataMax = data[1], data[1]
+    for i = 2, count do
+        if data[i] < dataMin then dataMin = data[i] end
+        if data[i] > dataMax then dataMax = data[i] end
+    end
+    local range = dataMax - dataMin
+    if range == 0 then range = 1 end
+
+    local dotSize = 3
+    local w = width or 120
+    local h = height or 24
+    local xStep = (w - dotSize) / math.max(count - 1, 1)
+
+    local dots = {}
+    for i = 1, count do
+        local xPos = (i - 1) * xStep
+        local yPos = ((data[i] - dataMin) / range) * (h - dotSize)
+
+        local dot = frame:CreateTexture(nil, "ARTWORK")
+        dot:SetTexture("Interface\\Buttons\\WHITE8x8")
+        dot:SetSize(dotSize, dotSize)
+        dot:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", xPos, yPos)
+        dot:SetVertexColor(r, g, b, a)
+        dots[i] = { x = xPos + dotSize / 2, y = yPos + dotSize / 2 }
+    end
+
+    -- Connect adjacent dots with thin line textures
+    for i = 1, count - 1 do
+        local dx = dots[i + 1].x - dots[i].x
+        local dy = dots[i + 1].y - dots[i].y
+        local dist = math.sqrt(dx * dx + dy * dy)
+        local angle = math.atan2(dy, dx)
+
+        local line = frame:CreateTexture(nil, "BACKGROUND")
+        line:SetTexture("Interface\\Buttons\\WHITE8x8")
+        line:SetSize(dist, 1)
+        line:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", dots[i].x, dots[i].y)
+        line:SetVertexColor(r, g, b, a * 0.7)
+        line:SetRotation(-angle)
+    end
+
+    return frame
+end
+
+-- ---------------------------------------------------------------------------
+-- T062: SegmentedBar — multi-segment colored horizontal bar
+-- ---------------------------------------------------------------------------
+function Widgets.CreateSegmentedBar(parent, segments, width, height)
+    local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    local w = width or 200
+    local h = height or 16
+    frame:SetSize(w, h)
+    Widgets.ApplyBackdrop(frame, Widgets.THEME.barShell, Widgets.THEME.border)
+
+    segments = segments or {}
+    if #segments == 0 then
+        return frame
+    end
+
+    local total = 0
+    for i = 1, #segments do
+        total = total + (segments[i].value or 0)
+    end
+    if total == 0 then total = 1 end
+
+    local xOffset = 1
+    local barWidth = w - 2
+    for i = 1, #segments do
+        local seg = segments[i]
+        local segWidth = math.max(1, (seg.value / total) * barWidth)
+        local tex = frame:CreateTexture(nil, "ARTWORK")
+        tex:SetTexture("Interface\\Buttons\\WHITE8x8")
+        tex:SetSize(segWidth, h - 2)
+        tex:SetPoint("TOPLEFT", frame, "TOPLEFT", xOffset, -1)
+        local c = seg.color or Widgets.THEME.accent
+        tex:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+
+        -- Optional centered label if the segment is wide enough
+        if seg.label and segWidth > 40 then
+            local lbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            lbl:SetPoint("CENTER", tex, "CENTER", 0, 0)
+            lbl:SetText(seg.label)
+            lbl:SetTextColor(unpack(Widgets.THEME.text))
+        end
+
+        xOffset = xOffset + segWidth
+    end
+
+    return frame
+end
+
+-- ---------------------------------------------------------------------------
+-- T063: MirroredDeltaBar — two-sided bar growing from center
+-- ---------------------------------------------------------------------------
+function Widgets.CreateMirroredDeltaBar(parent, leftValue, rightValue, leftColor, rightColor, label, width, height)
+    local w = width or 200
+    local h = height or 16
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetSize(w, h)
+
+    local halfWidth = w / 2
+    local maxVal = math.max(leftValue or 0, rightValue or 0)
+    if maxVal == 0 then maxVal = 1 end
+
+    -- Left bar (grows leftward from center)
+    local leftBarWidth = math.max(1, ((leftValue or 0) / maxVal) * halfWidth)
+    local leftTex = frame:CreateTexture(nil, "ARTWORK")
+    leftTex:SetTexture("Interface\\Buttons\\WHITE8x8")
+    leftTex:SetSize(leftBarWidth, h)
+    leftTex:SetPoint("RIGHT", frame, "CENTER", 0, 0)
+    local lc = leftColor or Widgets.THEME.accent
+    leftTex:SetVertexColor(lc[1], lc[2], lc[3], lc[4] or 1)
+
+    -- Right bar (grows rightward from center)
+    local rightBarWidth = math.max(1, ((rightValue or 0) / maxVal) * halfWidth)
+    local rightTex = frame:CreateTexture(nil, "ARTWORK")
+    rightTex:SetTexture("Interface\\Buttons\\WHITE8x8")
+    rightTex:SetSize(rightBarWidth, h)
+    rightTex:SetPoint("LEFT", frame, "CENTER", 0, 0)
+    local rc = rightColor or Widgets.THEME.warning
+    rightTex:SetVertexColor(rc[1], rc[2], rc[3], rc[4] or 1)
+
+    -- Center label
+    local labelFs = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    labelFs:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    labelFs:SetText(label or "")
+    labelFs:SetTextColor(unpack(Widgets.THEME.text))
+
+    frame.leftTex = leftTex
+    frame.rightTex = rightTex
+    frame.label = labelFs
+
+    return frame
+end
+
+-- ---------------------------------------------------------------------------
+-- T064: HeatGrid — N x M grid of colored cells
+-- ---------------------------------------------------------------------------
+function Widgets.CreateHeatGrid(parent, rows, cols, data, colorRampFn, labels, cellSize)
+    cellSize = cellSize or 16
+    labels = labels or {}
+
+    local labelOffset = labels.rowLabels and 60 or 0
+    local colLabelOffset = labels.colLabels and 14 or 0
+
+    local totalWidth = labelOffset + cols * cellSize
+    local totalHeight = colLabelOffset + rows * cellSize
+
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetSize(totalWidth, totalHeight)
+
+    -- Column labels
+    if labels.colLabels then
+        for c = 1, cols do
+            local colLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            colLabel:SetPoint("BOTTOM", frame, "TOPLEFT",
+                labelOffset + (c - 1) * cellSize + cellSize / 2, -colLabelOffset)
+            colLabel:SetText(labels.colLabels[c] or "")
+            colLabel:SetTextColor(unpack(Widgets.THEME.textMuted))
+        end
+    end
+
+    -- Row labels and cells
+    for r = 1, rows do
+        if labels.rowLabels then
+            local rowLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            rowLabel:SetPoint("RIGHT", frame, "TOPLEFT",
+                labelOffset - 4, -colLabelOffset - (r - 1) * cellSize - cellSize / 2)
+            rowLabel:SetText(labels.rowLabels[r] or "")
+            rowLabel:SetTextColor(unpack(Widgets.THEME.textMuted))
+            rowLabel:SetJustifyH("RIGHT")
+        end
+
+        for c = 1, cols do
+            local val = data[r] and data[r][c] or 0
+            local cr, cg, cb = 0.2, 0.2, 0.2
+            if colorRampFn then
+                cr, cg, cb = colorRampFn(val)
+            end
+
+            local cell = frame:CreateTexture(nil, "ARTWORK")
+            cell:SetTexture("Interface\\Buttons\\WHITE8x8")
+            cell:SetSize(cellSize - 1, cellSize - 1)
+            cell:SetPoint("TOPLEFT", frame, "TOPLEFT",
+                labelOffset + (c - 1) * cellSize,
+                -colLabelOffset - (r - 1) * cellSize)
+            cell:SetVertexColor(cr, cg, cb, 1)
+        end
+    end
+
+    return frame
+end
+
+-- ---------------------------------------------------------------------------
+-- T065: TimelineLane — single horizontal lane with positioned event markers/bars
+-- ---------------------------------------------------------------------------
+function Widgets.CreateTimelineLane(parent, events, totalDuration, width, height)
+    local w = width or 750
+    local h = height or 20
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetSize(w, h)
+
+    -- Background track
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    bg:SetAllPoints()
+    bg:SetVertexColor(unpack(Widgets.THEME.barShell))
+
+    events = events or {}
+    totalDuration = totalDuration or 1
+    if totalDuration <= 0 then totalDuration = 1 end
+
+    for i = 1, #events do
+        local ev = events[i]
+        local xPos = ((ev.t or 0) / totalDuration) * w
+        local c = ev.color or Widgets.THEME.accent
+
+        if ev.duration and ev.duration > 0 then
+            -- Draw as a bar spanning the duration
+            local barWidth = math.max(1, (ev.duration / totalDuration) * w)
+            local bar = frame:CreateTexture(nil, "ARTWORK")
+            bar:SetTexture("Interface\\Buttons\\WHITE8x8")
+            bar:SetSize(barWidth, h)
+            bar:SetPoint("LEFT", frame, "LEFT", xPos, 0)
+            bar:SetVertexColor(c[1], c[2], c[3], (c[4] or 1) * 0.8)
+        else
+            -- Draw as a 3px vertical marker
+            local marker = frame:CreateTexture(nil, "ARTWORK")
+            marker:SetTexture("Interface\\Buttons\\WHITE8x8")
+            marker:SetSize(3, h)
+            marker:SetPoint("LEFT", frame, "LEFT", xPos, 0)
+            marker:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+        end
+
+        -- Tooltip hit area
+        if ev.tooltip then
+            local hitFrame = CreateFrame("Frame", nil, frame)
+            local hitWidth = (ev.duration and ev.duration > 0)
+                and math.max(6, (ev.duration / totalDuration) * w) or 6
+            hitFrame:SetSize(hitWidth, h)
+            hitFrame:SetPoint("LEFT", frame, "LEFT", xPos, 0)
+            hitFrame:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(ev.tooltip, 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            hitFrame:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+        end
+    end
+
+    return frame
+end
+
+-- ---------------------------------------------------------------------------
+-- T066: Gauge — linear horizontal gauge with optional threshold markers
+-- ---------------------------------------------------------------------------
+function Widgets.CreateGauge(parent, value, min, max, thresholds, color, width, height)
+    local w = width or 200
+    local h = height or 16
+    local minVal = min or 0
+    local maxVal = max or 1
+
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetSize(w, h)
+
+    -- Background track
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    bg:SetAllPoints()
+    bg:SetVertexColor(unpack(Widgets.THEME.barShell))
+
+    -- Fill bar
+    local range = maxVal - minVal
+    if range <= 0 then range = 1 end
+    local clamped = math.max(minVal, math.min(value or 0, maxVal))
+    local fillWidth = math.max(1, ((clamped - minVal) / range) * w)
+
+    local fill = frame:CreateTexture(nil, "ARTWORK")
+    fill:SetTexture("Interface\\Buttons\\WHITE8x8")
+    fill:SetSize(fillWidth, h)
+    fill:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    local c = color or Widgets.THEME.accent
+    fill:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+
+    -- Threshold markers
+    if thresholds then
+        for i = 1, #thresholds do
+            local th = thresholds[i]
+            local thPos = ((th.value - minVal) / range) * w
+            local thMarker = frame:CreateTexture(nil, "OVERLAY")
+            thMarker:SetTexture("Interface\\Buttons\\WHITE8x8")
+            thMarker:SetSize(2, h)
+            thMarker:SetPoint("LEFT", frame, "LEFT", thPos, 0)
+            local tc = th.color or Widgets.THEME.warning
+            thMarker:SetVertexColor(tc[1], tc[2], tc[3], tc[4] or 1)
+        end
+    end
+
+    frame.fill = fill
+    return frame
+end
+
+-- ---------------------------------------------------------------------------
+-- T067: ConfidencePill — maps SESSION_CONFIDENCE enum to colored pill
+-- ---------------------------------------------------------------------------
+local CONFIDENCE_PILL_MAP = {
+    state_plus_damage_meter = {
+        color   = { 0.18, 0.38, 0.24, 1.0 },
+        border  = { 0.44, 0.82, 0.60, 1.0 },
+        label   = "Full Data",
+        tooltip = "Full state + DamageMeter data available.",
+    },
+    damage_meter_only = {
+        color   = { 0.14, 0.28, 0.44, 1.0 },
+        border  = { 0.35, 0.60, 0.90, 1.0 },
+        label   = "Post-Combat Data",
+        tooltip = "DamageMeter data only; limited live event detail.",
+    },
+    visible_cc_only = {
+        color   = { 0.40, 0.38, 0.14, 1.0 },
+        border  = { 0.96, 0.86, 0.38, 1.0 },
+        label   = "Limited Data",
+        tooltip = "Only CC/visibility data; no DamageMeter integration.",
+    },
+    partial_roster = {
+        color   = { 0.40, 0.28, 0.12, 1.0 },
+        border  = { 0.96, 0.62, 0.30, 1.0 },
+        label   = "Incomplete Roster",
+        tooltip = "Arena session with incomplete slot coverage.",
+    },
+    estimated = {
+        color   = { 0.22, 0.24, 0.26, 1.0 },
+        border  = { 0.50, 0.54, 0.58, 1.0 },
+        label   = "Estimated",
+        tooltip = "Insufficient direct observation; values are estimated.",
+    },
+    legacy_cleu_import = {
+        color   = { 0.22, 0.24, 0.26, 1.0 },
+        border  = { 0.50, 0.54, 0.58, 1.0 },
+        label   = "Legacy Session",
+        tooltip = "Imported from a pre-v6 session schema.",
+    },
+}
+
+function Widgets.CreateConfidencePill(parent, confidence)
+    local mapping = CONFIDENCE_PILL_MAP[confidence] or CONFIDENCE_PILL_MAP.estimated
+    local pill = Widgets.CreatePill(parent, nil, nil, mapping.color, mapping.border)
+    pill:SetData(mapping.label)
+
+    if mapping.tooltip then
+        pill:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Session Confidence", 1, 1, 1)
+            GameTooltip:AddLine(mapping.tooltip, 0.8, 0.8, 0.8, true)
+            GameTooltip:Show()
+        end)
+        pill:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+    end
+
+    return pill
+end
+
+-- ---------------------------------------------------------------------------
+-- T068: MiniLegend — compact horizontal color legend strip
+-- ---------------------------------------------------------------------------
+function Widgets.CreateMiniLegend(parent, entries, spacing)
+    spacing = spacing or 8
+    local swatchSize = 8
+    local frame = CreateFrame("Frame", nil, parent)
+
+    entries = entries or {}
+    if #entries == 0 then
+        frame:SetSize(1, 12)
+        return frame
+    end
+
+    local xOffset = 0
+    for i = 1, #entries do
+        local entry = entries[i]
+
+        -- Color swatch
+        local swatch = frame:CreateTexture(nil, "ARTWORK")
+        swatch:SetTexture("Interface\\Buttons\\WHITE8x8")
+        swatch:SetSize(swatchSize, swatchSize)
+        swatch:SetPoint("LEFT", frame, "LEFT", xOffset, 0)
+        local c = entry.color or Widgets.THEME.accent
+        swatch:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+        xOffset = xOffset + swatchSize + 4
+
+        -- Label text
+        local labelFs = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        labelFs:SetPoint("LEFT", frame, "LEFT", xOffset, 0)
+        labelFs:SetText(entry.label or "")
+        labelFs:SetTextColor(unpack(Widgets.THEME.textMuted))
+        xOffset = xOffset + (labelFs:GetStringWidth() or 40) + spacing
+    end
+
+    frame:SetSize(xOffset, math.max(swatchSize, 12))
+    return frame
+end
+
+-- ---------------------------------------------------------------------------
+-- T069: DeltaBadge — +/- delta indicator with green/red coloring
+-- ---------------------------------------------------------------------------
+function Widgets.CreateDeltaBadge(parent, delta, formatStr)
+    local fmt = formatStr or "%.1f"
+    local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+
+    local isPositive = (delta or 0) >= 0
+    local prefix = isPositive and "+" or ""
+    local displayText = prefix .. string.format(fmt, delta or 0)
+
+    local bgColor, borderColor, textColor
+    if isPositive then
+        bgColor = {
+            Widgets.THEME.success[1] * 0.3,
+            Widgets.THEME.success[2] * 0.3,
+            Widgets.THEME.success[3] * 0.3,
+            0.9,
+        }
+        borderColor = Widgets.THEME.success
+        textColor = Widgets.THEME.success
+    else
+        bgColor = {
+            Widgets.THEME.severityHigh[1] * 0.5,
+            Widgets.THEME.severityHigh[2] * 0.5,
+            Widgets.THEME.severityHigh[3] * 0.5,
+            0.9,
+        }
+        borderColor = Widgets.THEME.severityHigh
+        textColor = { 0.90, 0.30, 0.25, 1.0 }
+    end
+
+    local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    label:SetText(displayText)
+    label:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
+
+    local textWidth = label:GetStringWidth() or 24
+    frame:SetSize(textWidth + 12, 18)
+    Widgets.ApplyBackdrop(frame, bgColor, borderColor)
+
+    frame.label = label
+    return frame
 end
 
 ns.Widgets = Widgets

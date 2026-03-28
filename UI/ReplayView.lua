@@ -1,6 +1,9 @@
 local _, ns = ...
 
 local Theme = ns.Widgets.THEME
+local Constants = ns.Constants
+local SPELL_CATEGORIES = Constants.SPELL_CATEGORIES or {}
+local TIMELINE_LANE = Constants.TIMELINE_LANE or {}
 
 local ReplayView = {}
 
@@ -23,6 +26,14 @@ local LANE_DEFS = {
     { label = "Kill Win",   r = 0.96, g = 0.74, b = 0.38, a = 0.85 },
 }
 
+-- Source pill colors (muted, small)
+local SOURCE_PILL_COLORS = {
+    state     = { bg = { 0.14, 0.28, 0.44, 0.90 }, border = { 0.35, 0.60, 0.90, 0.80 } },
+    timeline  = { bg = { 0.18, 0.38, 0.24, 0.90 }, border = { 0.44, 0.82, 0.60, 0.80 } },
+    loc       = { bg = { 0.40, 0.28, 0.12, 0.90 }, border = { 0.96, 0.62, 0.30, 0.80 } },
+    estimated = { bg = { 0.22, 0.24, 0.26, 0.90 }, border = { 0.50, 0.54, 0.58, 0.80 } },
+}
+
 -- ─── private helpers ─────────────────────────────────────────────────────────
 
 local function laneY(index)
@@ -33,6 +44,28 @@ local function buildToPx(plotW, displayDuration)
     return function(offset)
         return LABEL_W + (math.min(offset, displayDuration) / displayDuration) * plotW
     end
+end
+
+--- Determine whether session has usable timelineEvents.
+local function hasTimelineEvents(session)
+    local te = session and session.timelineEvents
+    return te and type(te) == "table" and #te > 0
+end
+
+--- Filter timelineEvents by lane type.
+local function filterTimeline(timelineEvents, laneType)
+    local result = {}
+    for _, ev in ipairs(timelineEvents) do
+        if ev.lane == laneType then
+            result[#result + 1] = ev
+        end
+    end
+    return result
+end
+
+--- Check if a spellId is categorized as defensive.
+local function isDefensiveSpell(spellId)
+    return spellId and SPELL_CATEGORIES[spellId] == "defensive"
 end
 
 -- ─── element pool ────────────────────────────────────────────────────────────
@@ -111,17 +144,11 @@ function ReplayView:Initialize()
     self.closeBtn:SetPoint("TOPRIGHT", self.frame, "TOPRIGHT", -10, -12)
     self.closeBtn:SetScript("OnClick", function() self.frame:Hide() end)
 
-    -- Legend strip
-    self.legendText = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    self.legendText:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 16, -42)
-    self.legendText:SetTextColor(unpack(Theme.textMuted))
-    self.legendText:SetText(
-        "|cff66c8ffOffense|r  "
-        .. "|cff70d099Defense|r  "
-        .. "|cfff56651CC In|r  "
-        .. "|cfff5bd61Kill Window|r  "
-        .. "|cffff3333\226\151\134 Death|r"
-    )
+    -- Legend strip — will be populated in Render via CreateMiniLegend
+    -- Placeholder frame to anchor the legend row
+    self.legendRow = CreateFrame("Frame", nil, self.frame)
+    self.legendRow:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 16, -42)
+    self.legendRow:SetSize(CANVAS_W, 14)
 
     -- Canvas (timeline drawing area)
     local canvasH = laneY(5) + 28  -- 4 lanes + time axis
@@ -141,6 +168,14 @@ end
 
 function ReplayView:Render(session)
     self:_clear()
+
+    -- Also clear legend row children
+    if self._legendWidgets then
+        for _, w in ipairs(self._legendWidgets) do
+            if w and w.Hide then w:Hide() end
+        end
+    end
+    self._legendWidgets = {}
 
     if not session then
         self:_label(8, 0, "No session data.", "GameFontHighlight")
@@ -162,7 +197,17 @@ function ReplayView:Render(session)
         ns.Helpers.FormatDuration(duration)
     ))
 
-    -- Lane backgrounds + labels
+    -- ─── Legend strip (color swatches + confidence pill) ────────────────────
+    self:_renderLegend(session)
+
+    -- Determine data source
+    local useTimeline = hasTimelineEvents(session)
+    local rawEvents   = session.rawEvents or {}
+
+    -- Per-lane source labels
+    local laneSourceLabels = self:_buildLaneSourceLabels(session, useTimeline)
+
+    -- Lane backgrounds + labels + source pills
     for i, lane in ipairs(LANE_DEFS) do
         local y = laneY(i)
         -- Lane background
@@ -173,67 +218,28 @@ function ReplayView:Render(session)
         self:_add(bg)
         -- Lane label
         self:_label(0, y + 4, lane.label, "GameFontHighlightSmall")
-    end
-
-    local rawEvents = session.rawEvents or {}
-
-    -- === Lane 1: Offensive cast dots ===
-    for _, ev in ipairs(rawEvents) do
-        if ev.eventType == "cast" and ev.sourceMine then
-            local off = ev.timestampOffset or 0
-            if off <= displayDuration then
-                local d = LANE_DEFS[1]
-                self:_dot(toPx(off), laneY(1), d.r, d.g, d.b, d.a)
-            end
+        -- Per-lane source pill at the right end of the lane label area
+        local srcInfo = laneSourceLabels[i]
+        if srcInfo then
+            local colors = SOURCE_PILL_COLORS[srcInfo.key] or SOURCE_PILL_COLORS.estimated
+            local pill = ns.Widgets.CreatePill(self.canvas, 46, 14, colors.bg, colors.border)
+            pill:SetPoint("TOPLEFT", self.canvas, "TOPLEFT",
+                LABEL_W + plotW + 2,
+                -(y + math.floor((LANE_H - 14) / 2)))
+            pill:SetData(srcInfo.text, Theme.textMuted)
+            self:_add(pill)
         end
     end
 
-    -- === Lane 2: Defensive cast dots ===
-    for _, ev in ipairs(rawEvents) do
-        if ev.eventType == "cast" and ev.sourceMine and ev.isCooldownCast then
-            local off = ev.timestampOffset or 0
-            if off <= displayDuration then
-                local d = LANE_DEFS[2]
-                self:_dot(toPx(off), laneY(2), d.r, d.g, d.b, d.a)
-            end
-        end
-    end
-
-    -- === Lane 3: CC Received bars ===
-    local d3 = LANE_DEFS[3]
-    for _, cc in ipairs(session.ccReceived or {}) do
-        local start = cc.startOffset or 0
-        local dur   = cc.duration or 2
-        if start <= displayDuration then
-            local x1 = toPx(start)
-            local x2 = toPx(math.min(start + dur, displayDuration))
-            self:_bar(x1, x2, laneY(3), d3.r, d3.g, d3.b, d3.a)
-        end
-    end
-
-    -- === Lane 4: Kill window bars ===
-    local d4 = LANE_DEFS[4]
-    for _, kw in ipairs(session.killWindows or {}) do
-        local start = kw.openedAt or 0
-        local stop  = kw.closedAt or (start + 5)
-        if start <= displayDuration then
-            local x1 = toPx(start)
-            local x2 = toPx(math.min(stop, displayDuration))
-            -- Converted kill windows glow green
-            local r, g, b, a = d4.r, d4.g, d4.b, d4.a
-            if kw.converted then r, g, b = 0.44, 0.82, 0.60 end
-            self:_bar(x1, x2, laneY(4), r, g, b, a)
-        end
+    -- ─── Render lane data ───────────────────────────────────────────────────
+    if useTimeline then
+        self:_renderFromTimeline(session.timelineEvents, toPx, displayDuration)
+    else
+        self:_renderFromRawEvents(rawEvents, session, toPx, displayDuration)
     end
 
     -- === Death marker (vertical red line) ===
-    local deathOffset = nil
-    for _, ev in ipairs(rawEvents) do
-        if ev.eventType == "death" and ev.destMine then
-            deathOffset = ev.timestampOffset
-            break
-        end
-    end
+    local deathOffset = self:_findDeathOffset(session, useTimeline, rawEvents)
     if deathOffset and deathOffset <= displayDuration then
         local dx     = toPx(deathOffset)
         local totalH = laneY(4) + LANE_H - laneY(1)
@@ -260,11 +266,229 @@ function ReplayView:Render(session)
     end
 
     -- === Coaching cards ===
-    self:_renderCards(session, rawEvents, deathOffset)
+    local effectiveRawEvents = useTimeline
+        and self:_syntheticRawEventsFromTimeline(session.timelineEvents)
+        or rawEvents
+    self:_renderCards(session, effectiveRawEvents, deathOffset)
 end
 
+-- ─── Legend rendering ─────────────────────────────────────────────────────────
+
+function ReplayView:_renderLegend(session)
+    local legendEntries = {
+        { color = { LANE_DEFS[1].r, LANE_DEFS[1].g, LANE_DEFS[1].b, LANE_DEFS[1].a }, label = "Offense" },
+        { color = { LANE_DEFS[2].r, LANE_DEFS[2].g, LANE_DEFS[2].b, LANE_DEFS[2].a }, label = "Defense" },
+        { color = { LANE_DEFS[3].r, LANE_DEFS[3].g, LANE_DEFS[3].b, LANE_DEFS[3].a }, label = "CC In" },
+        { color = { LANE_DEFS[4].r, LANE_DEFS[4].g, LANE_DEFS[4].b, LANE_DEFS[4].a }, label = "Kill Window" },
+        { color = { 1.0, 0.20, 0.20, 0.88 }, label = "\226\151\134 Death" },
+    }
+
+    local legend = ns.Widgets.CreateMiniLegend(self.legendRow, legendEntries, 10)
+    legend:SetPoint("LEFT", self.legendRow, "LEFT", 0, 0)
+    self._legendWidgets[#self._legendWidgets + 1] = legend
+
+    -- Confidence pill anchored to the right of the legend
+    local confidence = session
+        and session.captureQuality
+        and session.captureQuality.confidence
+        or nil
+    if confidence then
+        local pill = ns.Widgets.CreateConfidencePill(self.legendRow, confidence)
+        pill:SetPoint("LEFT", legend, "RIGHT", 12, 0)
+        self._legendWidgets[#self._legendWidgets + 1] = pill
+    end
+end
+
+-- ─── Per-lane source labels ──────────────────────────────────────────────────
+
+function ReplayView:_buildLaneSourceLabels(session, useTimeline)
+    -- Returns { [laneIndex] = { key = "state"|"timeline"|..., text = "..." } }
+    local labels = {}
+
+    if useTimeline then
+        labels[1] = { key = "timeline", text = "timeline" }
+        labels[2] = { key = "timeline", text = "timeline" }
+
+        -- CC lane: check if timeline cc_received events trace to LOC source
+        local ccEvents = filterTimeline(session.timelineEvents, TIMELINE_LANE.CC_RECEIVED)
+        local hasLocSource = false
+        for _, ev in ipairs(ccEvents) do
+            if ev.source == "loss_of_control" or ev.provenance == "loss_of_control" then
+                hasLocSource = true
+                break
+            end
+        end
+        labels[3] = hasLocSource
+            and { key = "loc", text = "loc" }
+            or  { key = "timeline", text = "timeline" }
+
+        labels[4] = { key = "estimated", text = "estimated" }
+    else
+        labels[1] = { key = "state", text = "state" }
+        labels[2] = { key = "state", text = "state" }
+
+        -- CC lane from rawEvents uses ccReceived which comes from LOC events
+        local ccList = session.ccReceived or {}
+        labels[3] = #ccList > 0
+            and { key = "loc", text = "loc" }
+            or  { key = "state", text = "state" }
+
+        labels[4] = { key = "estimated", text = "estimated" }
+    end
+
+    return labels
+end
+
+-- ─── Timeline-based rendering (v6+ sessions) ────────────────────────────────
+
+function ReplayView:_renderFromTimeline(timelineEvents, toPx, displayDuration)
+    -- Lane 1: Offense — player_cast events that are NOT defensive
+    local castEvents = filterTimeline(timelineEvents, TIMELINE_LANE.PLAYER_CAST)
+    for _, ev in ipairs(castEvents) do
+        local off = ev.timestampOffset or ev.t or 0
+        if off <= displayDuration and not isDefensiveSpell(ev.spellId) then
+            local d = LANE_DEFS[1]
+            self:_dot(toPx(off), laneY(1), d.r, d.g, d.b, d.a)
+        end
+    end
+
+    -- Lane 2: Defense — player_cast events where spellId is defensive
+    for _, ev in ipairs(castEvents) do
+        local off = ev.timestampOffset or ev.t or 0
+        if off <= displayDuration and isDefensiveSpell(ev.spellId) then
+            local d = LANE_DEFS[2]
+            self:_dot(toPx(off), laneY(2), d.r, d.g, d.b, d.a)
+        end
+    end
+
+    -- Lane 3: CC Received — cc_received lane events (bars)
+    local d3 = LANE_DEFS[3]
+    local ccEvents = filterTimeline(timelineEvents, TIMELINE_LANE.CC_RECEIVED)
+    for _, ev in ipairs(ccEvents) do
+        local start = ev.timestampOffset or ev.t or 0
+        local dur   = ev.duration or 2
+        if start <= displayDuration then
+            local x1 = toPx(start)
+            local x2 = toPx(math.min(start + dur, displayDuration))
+            self:_bar(x1, x2, laneY(3), d3.r, d3.g, d3.b, d3.a)
+        end
+    end
+
+    -- Lane 4: Kill Window — kill_window lane events (bars)
+    local d4 = LANE_DEFS[4]
+    local kwEvents = filterTimeline(timelineEvents, TIMELINE_LANE.KILL_WINDOW)
+    for _, ev in ipairs(kwEvents) do
+        local start = ev.timestampOffset or ev.t or 0
+        local stop  = ev.endOffset or ev.closedAt or (start + (ev.duration or 5))
+        if start <= displayDuration then
+            local x1 = toPx(start)
+            local x2 = toPx(math.min(stop, displayDuration))
+            local r, g, b, a = d4.r, d4.g, d4.b, d4.a
+            if ev.converted then r, g, b = 0.44, 0.82, 0.60 end
+            self:_bar(x1, x2, laneY(4), r, g, b, a)
+        end
+    end
+end
+
+-- ─── Raw events rendering (legacy / fallback) ───────────────────────────────
+
+function ReplayView:_renderFromRawEvents(rawEvents, session, toPx, displayDuration)
+    -- Lane 1: Offensive cast dots
+    for _, ev in ipairs(rawEvents) do
+        if ev.eventType == "cast" and ev.sourceMine then
+            local off = ev.timestampOffset or 0
+            if off <= displayDuration then
+                local d = LANE_DEFS[1]
+                self:_dot(toPx(off), laneY(1), d.r, d.g, d.b, d.a)
+            end
+        end
+    end
+
+    -- Lane 2: Defensive cast dots
+    for _, ev in ipairs(rawEvents) do
+        if ev.eventType == "cast" and ev.sourceMine and ev.isCooldownCast then
+            local off = ev.timestampOffset or 0
+            if off <= displayDuration then
+                local d = LANE_DEFS[2]
+                self:_dot(toPx(off), laneY(2), d.r, d.g, d.b, d.a)
+            end
+        end
+    end
+
+    -- Lane 3: CC Received bars
+    local d3 = LANE_DEFS[3]
+    for _, cc in ipairs(session.ccReceived or {}) do
+        local start = cc.startOffset or 0
+        local dur   = cc.duration or 2
+        if start <= displayDuration then
+            local x1 = toPx(start)
+            local x2 = toPx(math.min(start + dur, displayDuration))
+            self:_bar(x1, x2, laneY(3), d3.r, d3.g, d3.b, d3.a)
+        end
+    end
+
+    -- Lane 4: Kill window bars
+    local d4 = LANE_DEFS[4]
+    for _, kw in ipairs(session.killWindows or {}) do
+        local start = kw.openedAt or 0
+        local stop  = kw.closedAt or (start + 5)
+        if start <= displayDuration then
+            local x1 = toPx(start)
+            local x2 = toPx(math.min(stop, displayDuration))
+            local r, g, b, a = d4.r, d4.g, d4.b, d4.a
+            if kw.converted then r, g, b = 0.44, 0.82, 0.60 end
+            self:_bar(x1, x2, laneY(4), r, g, b, a)
+        end
+    end
+end
+
+-- ─── Death offset resolution ─────────────────────────────────────────────────
+
+function ReplayView:_findDeathOffset(session, useTimeline, rawEvents)
+    if useTimeline then
+        local deathEvents = filterTimeline(session.timelineEvents, TIMELINE_LANE.DEATH)
+        for _, ev in ipairs(deathEvents) do
+            local off = ev.timestampOffset or ev.t
+            if off then return off end
+        end
+    end
+    -- Fallback: search rawEvents
+    for _, ev in ipairs(rawEvents) do
+        if ev.eventType == "death" and ev.destMine then
+            return ev.timestampOffset
+        end
+    end
+    return nil
+end
+
+-- ─── Synthetic raw events for coaching cards (timeline mode) ─────────────────
+
+function ReplayView:_syntheticRawEventsFromTimeline(timelineEvents)
+    local synthetic = {}
+    local castEvents = filterTimeline(timelineEvents, TIMELINE_LANE.PLAYER_CAST)
+    for _, ev in ipairs(castEvents) do
+        synthetic[#synthetic + 1] = {
+            eventType       = "cast",
+            sourceMine      = true,
+            timestampOffset = ev.timestampOffset or ev.t or 0,
+            spellId         = ev.spellId,
+            isCooldownCast  = isDefensiveSpell(ev.spellId),
+        }
+    end
+    local deathEvents = filterTimeline(timelineEvents, TIMELINE_LANE.DEATH)
+    for _, ev in ipairs(deathEvents) do
+        synthetic[#synthetic + 1] = {
+            eventType       = "death",
+            destMine        = true,
+            timestampOffset = ev.timestampOffset or ev.t or 0,
+        }
+    end
+    return synthetic
+end
+
+-- ─── Coaching cards ──────────────────────────────────────────────────────────
+
 function ReplayView:_renderCards(session, rawEvents, deathOffset)
-    -- Clear card area children by tracking them in _elements
     local cardArea = self.cardArea
     local function addCard(x, title, body)
         local W = 218
