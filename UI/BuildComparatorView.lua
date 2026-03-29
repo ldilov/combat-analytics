@@ -358,7 +358,7 @@ function BuildComparatorView:Build(parent)
     end)
 
     -- T056: Swap button anchored to right edge — TOP aligns with vs-buttons, no left overlap
-    self.swapBtn = ns.Widgets.CreateButton(self.frame, "Swap A\226\134\148B", L.CARD_PAD * 2 + 68, btnH)
+    self.swapBtn = ns.Widgets.CreateButton(self.frame, "Swap A <> B", L.CARD_PAD * 2 + 68, btnH)
     self.swapBtn:SetPoint("TOP", self.vsPrevBtn, "TOP", 0, 0)
     self.swapBtn:SetPoint("RIGHT", self.frame, "RIGHT", -L.CARD_PAD, 0)
     self.swapBtn:SetScript("OnClick", function()
@@ -501,13 +501,13 @@ function BuildComparatorView:_buildSidePanel(side, color, anchor, xOffset)
 
     -- Info row: display label + session count + confidence badge
     panel.frame = CreateFrame("Frame", nil, self.frame, "BackdropTemplate")
-    panel.frame:SetSize(310, 60)
+    panel.frame:SetSize(310, 76)
     panel.frame:SetPoint("TOPLEFT", panel.listFrame, "BOTTOMLEFT", 0, -6)
     ns.Widgets.ApplyBackdrop(panel.frame, Theme.panelAlt, Theme.border)
 
     panel.nameLabel = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     panel.nameLabel:SetPoint("TOPLEFT", panel.frame, "TOPLEFT", 8, -8)
-    panel.nameLabel:SetWidth(290)
+    panel.nameLabel:SetWidth(200)
     panel.nameLabel:SetJustifyH("LEFT")
     panel.nameLabel:SetTextColor(color[1], color[2], color[3], 1.0)
     panel.nameLabel:SetText("—")
@@ -521,8 +521,22 @@ function BuildComparatorView:_buildSidePanel(side, color, anchor, xOffset)
     panel.confidenceLabel:SetPoint("LEFT", panel.sampleLabel, "RIGHT", 8, 0)
     panel.confidenceLabel:SetText("")
 
+    -- T048: Freshness badge — right-aligned to panel edge so it stays visible
+    -- regardless of build name length.
+    panel.freshnessBadge = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    panel.freshnessBadge:SetPoint("TOPRIGHT", panel.frame, "TOPRIGHT", -8, -8)
+    panel.freshnessBadge:SetJustifyH("RIGHT")
+    panel.freshnessBadge:SetText("")
+
+    -- T049: Capture timestamp label anchored below sampleLabel.
+    -- Created before metricsLabel/noHistoryLabel so they can anchor below it.
+    panel.captureTimeLabel = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    panel.captureTimeLabel:SetPoint("TOPLEFT", panel.sampleLabel, "BOTTOMLEFT", 0, -2)
+    panel.captureTimeLabel:SetTextColor(0.55, 0.55, 0.55, 1.0)
+    panel.captureTimeLabel:SetText("")
+
     panel.metricsLabel = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.metricsLabel:SetPoint("TOPLEFT", panel.sampleLabel, "BOTTOMLEFT", 0, -2)
+    panel.metricsLabel:SetPoint("TOPLEFT", panel.captureTimeLabel, "BOTTOMLEFT", 0, -2)
     panel.metricsLabel:SetWidth(290)
     panel.metricsLabel:SetJustifyH("LEFT")
     panel.metricsLabel:SetTextColor(unpack(Theme.text))
@@ -530,21 +544,10 @@ function BuildComparatorView:_buildSidePanel(side, color, anchor, xOffset)
 
     -- "No combat history" placeholder
     panel.noHistoryLabel = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.noHistoryLabel:SetPoint("TOPLEFT", panel.sampleLabel, "BOTTOMLEFT", 0, -2)
+    panel.noHistoryLabel:SetPoint("TOPLEFT", panel.captureTimeLabel, "BOTTOMLEFT", 0, -2)
     panel.noHistoryLabel:SetTextColor(unpack(Theme.textMuted))
     panel.noHistoryLabel:SetText("No combat history in this scope")
     panel.noHistoryLabel:Hide()
-
-    -- T048: Freshness badge — displayed to the right of the build name label.
-    panel.freshnessBadge = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.freshnessBadge:SetPoint("LEFT", panel.nameLabel, "RIGHT", 6, 0)
-    panel.freshnessBadge:SetText("")
-
-    -- T049: Capture timestamp label below the freshness badge.
-    panel.captureTimeLabel = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    panel.captureTimeLabel:SetPoint("TOPLEFT", panel.nameLabel, "BOTTOMLEFT", 0, -14)
-    panel.captureTimeLabel:SetTextColor(0.55, 0.55, 0.55, 1.0)
-    panel.captureTimeLabel:SetText("")
 
     -- Store the panel
     if isA then
@@ -1115,7 +1118,8 @@ function BuildComparatorView:_recalcPanelWidths()
         if p.listFrame then p.listFrame:SetWidth(pw) end
         if p.frame     then p.frame:SetWidth(pw) end
         local innerW = pw - 20
-        if p.nameLabel    then p.nameLabel:SetWidth(innerW) end
+        -- Reserve ~70px on the right for the freshness badge.
+        if p.nameLabel    then p.nameLabel:SetWidth(math.max(80, innerW - 70)) end
         if p.metricsLabel then p.metricsLabel:SetWidth(innerW) end
     end
 

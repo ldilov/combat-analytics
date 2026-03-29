@@ -160,6 +160,13 @@ local function getExpectedDamageTotal(session, snapshot)
         return enemyDamage
     end
 
+    -- Last resort: use session.totals.damageDone (may have been set by a
+    -- partial DM import or prior retry) when the snapshot itself had no total.
+    local sessionTotal = session and session.totals and tonumber(session.totals.damageDone) or 0
+    if sessionTotal > 0 then
+        return sessionTotal
+    end
+
     return 0
 end
 
@@ -600,6 +607,19 @@ function DamageMeterService:FindSessionsForImport()
 
     for _, sessionInfo in ipairs(sessions) do
         addCandidate(sessionInfo)
+    end
+
+    -- Fallback: if no candidates found above baseline, include the session AT
+    -- the baseline. Training dummy and short PvE encounters may update an
+    -- existing C_DamageMeter session in-place rather than creating a new one.
+    if #candidates == 0 and baseline > 0 then
+        for _, sessionInfo in ipairs(sessions) do
+            local sessionId = sessionInfo and sessionInfo.sessionID or 0
+            if sessionId == baseline and not seen[sessionId] then
+                seen[sessionId] = true
+                candidates[#candidates + 1] = sessionInfo
+            end
+        end
     end
 
     if #candidates == 0 and #sessions > 0 then
@@ -1310,6 +1330,14 @@ function DamageMeterService:ImportSession(session)
             self.warnedUnavailable = true
         end
         return false
+    end
+
+    -- Re-capture the "current" DM snapshot now (import runs after stabilization
+    -- delay, so DM data should be settled). The regen_end capture often fires
+    -- before C_DamageMeter finalizes short-lived sessions (training dummies,
+    -- quick duels).
+    if not self.currentSessionSnapshot or not snapshotHasMeaningfulData(self.currentSessionSnapshot) then
+        self:CaptureCurrentSessionSnapshot(session)
     end
 
     local candidateSessions = self:FindSessionsForImport()
