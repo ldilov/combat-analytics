@@ -1671,6 +1671,61 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         end
     end
 
+    -- Post-import spell normalization: when session has total damage but
+    -- individual spells have casts with 0 damage, distribute the unaccounted
+    -- damage proportionally by cast weight.  Handles edge cases where the DM
+    -- import set totals but returned no per-spell breakdown.
+    do
+        local totalDamage = (session.totals and session.totals.damageDone) or 0
+        if totalDamage > 0 then
+            local existingSpellDamage = 0
+            local backfillCandidates = {}
+            local totalWeight = 0
+            for spellId, agg in pairs(session.spells or {}) do
+                local dmg = tonumber(agg.totalDamage) or 0
+                existingSpellDamage = existingSpellDamage + dmg
+                if dmg <= 0 and (agg.castCount or 0) > 0 then
+                    local cat = Constants.SPELL_CATEGORIES and Constants.SPELL_CATEGORIES[spellId]
+                    local eligible = cat == nil or cat == Constants.SPELL_CATEGORY.OFFENSIVE
+                    if eligible then
+                        local w = math.max(agg.castCount or 0, 1)
+                        backfillCandidates[#backfillCandidates + 1] = { aggregate = agg, weight = w }
+                        totalWeight = totalWeight + w
+                    end
+                end
+            end
+
+            local remaining = math.max(0, totalDamage - existingSpellDamage)
+            if remaining > 0 and totalWeight > 0 and #backfillCandidates > 0 then
+                local allocated = 0
+                for i, entry in ipairs(backfillCandidates) do
+                    local estimate
+                    if i == #backfillCandidates then
+                        estimate = remaining - allocated
+                    else
+                        estimate = math.floor((remaining * entry.weight / totalWeight) + 0.5)
+                    end
+                    if estimate > 0 then
+                        entry.aggregate.totalDamage = (entry.aggregate.totalDamage or 0) + estimate
+                        entry.aggregate.hitCount = math.max(entry.aggregate.hitCount or 0, entry.aggregate.castCount or 0, 1)
+                        entry.aggregate.executeCount = math.max(entry.aggregate.executeCount or 0, entry.aggregate.hitCount or 0, 1)
+                        allocated = allocated + estimate
+                    end
+                end
+                if allocated > 0 then
+                    session.captureQuality = session.captureQuality or {}
+                    session.captureQuality.spellBreakdown = Constants.CAPTURE_QUALITY.DEGRADED
+                    ns.Addon:Trace("finalize.spell_backfill", {
+                        total = totalDamage,
+                        existing = existingSpellDamage,
+                        distributed = allocated,
+                        spells = #backfillCandidates,
+                    })
+                end
+            end
+        end
+    end
+
     -- T011: Export arena round state BEFORE classifier sync, metrics, and
     -- suggestions so all downstream analytics consume the hardened opponent
     -- identity rather than the first-hit placeholder.
