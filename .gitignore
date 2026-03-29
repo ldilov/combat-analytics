@@ -41,3 +41,4 @@ luac.out
 *.hex
 
 .worktrees/
+.claude/worktrees/
