@@ -602,6 +602,19 @@ function DamageMeterService:FindSessionsForImport()
         addCandidate(sessionInfo)
     end
 
+    -- Fallback: if no candidates found above baseline, include the session AT
+    -- the baseline. Training dummy and short PvE encounters may update an
+    -- existing C_DamageMeter session in-place rather than creating a new one.
+    if #candidates == 0 and baseline > 0 then
+        for _, sessionInfo in ipairs(sessions) do
+            local sessionId = sessionInfo and sessionInfo.sessionID or 0
+            if sessionId == baseline and not seen[sessionId] then
+                seen[sessionId] = true
+                candidates[#candidates + 1] = sessionInfo
+            end
+        end
+    end
+
     if #candidates == 0 and #sessions > 0 then
         local latest = sessions[#sessions]
         if (latest.sessionID or 0) > (self.lastSeenSessionId or 0) then
