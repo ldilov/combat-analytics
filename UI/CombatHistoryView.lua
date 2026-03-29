@@ -2,6 +2,18 @@ local _, ns = ...
 
 local Constants = ns.Constants
 
+-- T060: LAYOUT-derived row constants — history row spans 3 single-line rows
+-- Evaluated lazily on first use because ns.Widgets may not be available at parse time.
+local HIST_ROW_H, HIST_ROW_GAP
+local function getHistRowDims()
+    if not HIST_ROW_H then
+        local L    = ns.Widgets.LAYOUT
+        HIST_ROW_H   = L.ROW_HEIGHT * 3 - 2   -- 58
+        HIST_ROW_GAP = L.ROW_GAP + 2           -- 6
+    end
+    return HIST_ROW_H, HIST_ROW_GAP
+end
+
 local CombatHistoryView = {
     viewId = "history",
     page = 1,
@@ -100,13 +112,15 @@ function CombatHistoryView:Build(parent)
     self.shell:SetPoint("TOPLEFT", self.sparklineLabel, "BOTTOMLEFT", 0, -8)
     self.shell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 48)
 
+    local histH, histGap = getHistRowDims()
+
     self.rows = {}
     for index = 1, self.rowCount do
-        local row = ns.Widgets.CreateHistoryRow(self.canvas, 750, 58)
+        local row = ns.Widgets.CreateHistoryRow(self.canvas, 750, histH)
         if index == 1 then
             row:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
         else
-            row:SetPoint("TOPLEFT", self.rows[index - 1], "BOTTOMLEFT", 0, -6)
+            row:SetPoint("TOPLEFT", self.rows[index - 1], "BOTTOMLEFT", 0, -histGap)
         end
         row:SetScript("OnClick", function(button)
             if button.sessionId then
@@ -206,7 +220,8 @@ function CombatHistoryView:Build(parent)
         self.duelLabCards[i] = card
     end
 
-    ns.Widgets.SetCanvasHeight(self.canvas, (self.rowCount * 64) + 8)
+    local hH, hGap = getHistRowDims()
+    ns.Widgets.SetCanvasHeight(self.canvas, (self.rowCount * (hH + hGap)) + ns.Widgets.LAYOUT.ROW_GAP * 2)
 
     return self.frame
 end
@@ -306,6 +321,19 @@ function CombatHistoryView:Refresh()
             local richLabel = session.dataConfidence
                 and formatDisplayLabel(session.dataConfidence)
                 or readQuality
+
+            -- T025: Determine damage display for history row based on totalAuthority.
+            local importedTotals = session.importedTotals or {}
+            local totalAuthority = importedTotals.totalAuthority
+            local damageDisplay
+            if totalAuthority == "failed" then
+                damageDisplay = "|cffff8800\226\156\151 —|r"
+            elseif totalAuthority == "estimated" then
+                damageDisplay = "|cffa0a0a0~" .. ns.Helpers.FormatNumber(session.totals.damageDone or 0) .. "|r"
+            else
+                damageDisplay = ns.Helpers.FormatNumber(session.totals.damageDone or 0)
+            end
+
             row:SetData({
                 title = opponent,
                 timestamp = date("%Y-%m-%d %H:%M", session.timestamp),
@@ -318,7 +346,7 @@ function CombatHistoryView:Refresh()
                 stats = string.format(
                     "Duration %s  |  Damage %s  |  Taken %s  |  Pressure %.1f  |  Burst %.1f",
                     ns.Helpers.FormatDuration(session.duration or 0),
-                    ns.Helpers.FormatNumber(session.totals.damageDone or 0),
+                    damageDisplay,
                     ns.Helpers.FormatNumber(session.totals.damageTaken or 0),
                     session.metrics.pressureScore or 0,
                     session.metrics.burstScore or 0
@@ -424,7 +452,8 @@ function CombatHistoryView:Refresh()
     if visibleCards > 0 then
         extraHeight = 16 + 20 + GAP + (visibleCards * (CARD_HEIGHT + GAP))
     end
-    ns.Widgets.SetCanvasHeight(self.canvas, (self.rowCount * 64) + 8 + extraHeight)
+    local rH, rGap = getHistRowDims()
+    ns.Widgets.SetCanvasHeight(self.canvas, (self.rowCount * (rH + rGap)) + ns.Widgets.LAYOUT.ROW_GAP * 2 + extraHeight)
 end
 
 ns.Addon:RegisterModule("CombatHistoryView", CombatHistoryView)

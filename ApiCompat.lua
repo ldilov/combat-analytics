@@ -115,6 +115,14 @@ end
 
 ApiCompat.IsSecretValue = isSecretValue
 
+-- T072: IsSafeValue — convenience inverse; returns true when the value can be
+-- used normally (not secret, not nil). Callers may use either guard idiom:
+--   if ApiCompat.IsSecretValue(v) then ... end
+--   if not ApiCompat.IsSafeValue(v) then ... end
+function ApiCompat.IsSafeValue(val)
+    return val ~= nil and not isSecretValue(val)
+end
+
 -- Safely extract a number from a potentially secret value.
 -- Returns 0 if the value is secret, nil, or non-numeric.
 function ApiCompat.SanitizeNumber(val)
@@ -456,20 +464,57 @@ function ApiCompat.GetVersatilityBonuses()
     local damageDoneBonus = 0
     local damageTakenReduction = 0
 
-    if GetCombatRatingBonus and CR_VERSATILITY_DAMAGE_DONE then
-        damageDoneBonus = damageDoneBonus + (GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) or 0)
-    end
-    if GetCombatRatingBonus and CR_VERSATILITY_DAMAGE_TAKEN then
-        damageTakenReduction = damageTakenReduction + (GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_TAKEN) or 0)
-    end
+    -- Use GetVersatilityBonus (total including buffs) when available;
+    -- fall back to GetCombatRatingBonus (rating-only). Never sum both.
     if GetVersatilityBonus and CR_VERSATILITY_DAMAGE_DONE then
-        damageDoneBonus = damageDoneBonus + (GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE) or 0)
+        damageDoneBonus = GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE) or 0
+    elseif GetCombatRatingBonus and CR_VERSATILITY_DAMAGE_DONE then
+        damageDoneBonus = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) or 0
     end
+
     if GetVersatilityBonus and CR_VERSATILITY_DAMAGE_TAKEN then
-        damageTakenReduction = damageTakenReduction + (GetVersatilityBonus(CR_VERSATILITY_DAMAGE_TAKEN) or 0)
+        damageTakenReduction = GetVersatilityBonus(CR_VERSATILITY_DAMAGE_TAKEN) or 0
+    elseif GetCombatRatingBonus and CR_VERSATILITY_DAMAGE_TAKEN then
+        damageTakenReduction = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_TAKEN) or 0
     end
 
     return damageDoneBonus, damageTakenReduction
+end
+
+-- Returns melee/ranged crit chance %, nil if API unavailable.
+-- Safe on Midnight — does not return secret values.
+function ApiCompat.GetCritChance()
+    if GetCritChance then return GetCritChance() end
+    return nil
+end
+
+-- Returns spell crit chance %, nil if API unavailable.
+-- Useful for pure-caster specs.
+function ApiCompat.GetSpellCritChance()
+    if GetSpellCritChance then return GetSpellCritChance() end
+    return nil
+end
+
+-- Returns haste percentage bonus %, nil if API unavailable.
+-- Safe on Midnight.
+function ApiCompat.GetHaste()
+    if GetHaste then return GetHaste() end
+    return nil
+end
+
+-- Convenience wrapper that returns all secondary stats in a single call.
+-- Each field is the result of its individual wrapper (nil if unavailable).
+-- This is the single call site for SnapshotService:CaptureStatProfile().
+function ApiCompat.GetAllSecondaryStats()
+    local damageDonePct, damageTakenPct = ApiCompat.GetVersatilityBonuses()
+    return {
+        critPct            = ApiCompat.GetCritChance(),
+        spellCritPct       = ApiCompat.GetSpellCritChance(),
+        hastePct           = ApiCompat.GetHaste(),
+        masteryPct         = ApiCompat.GetMasteryEffect(),
+        versDamageDonePct  = damageDonePct ~= 0 and damageDonePct or nil,
+        versDamageTakenPct = damageTakenPct ~= 0 and damageTakenPct or nil,
+    }
 end
 
 function ApiCompat.GetActiveConfigID()

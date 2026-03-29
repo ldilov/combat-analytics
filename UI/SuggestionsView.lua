@@ -508,6 +508,11 @@ function SuggestionsView:Build(parent)
     self.storySeverityBar = ns.Widgets.CreateMetricBar(self.canvas, 750, 32)
     self.storySeverityBar:SetPoint("TOPLEFT", self.storyCard, "BOTTOMLEFT", 0, -4)
 
+    -- T065: Degraded import banner — shown when session.metrics.degradedImport is set
+    self.degradedImportBanner = ns.Widgets.CreateInsightCard(self.canvas, 750, 68)
+    self.degradedImportBanner:SetPoint("TOPLEFT", self.storySeverityBar, "BOTTOMLEFT", 0, -4)
+    self.degradedImportBanner:Hide()
+
     -- Compact fight-story pill strip (populated in Refresh)
     self.storyPillFrame = CreateFrame("Frame", nil, self.canvas)
     self.storyPillFrame:SetSize(750, 22)
@@ -766,6 +771,7 @@ function SuggestionsView:Refresh()
         self.trustConfidencePill:Hide()
         self.storyCard:Hide()
         self.storySeverityBar:Hide()
+        self.degradedImportBanner:Hide()
         self.storyPillFrame:Hide()
         self.matchupCard:Hide()
         self.matchupSeverityBar:Hide()
@@ -799,25 +805,44 @@ function SuggestionsView:Refresh()
         setSeverityBar(self.trustSeverityBar, trustSeverity, "Trust Level")
         self.trustSeverityBar:Show()
 
-        -- Confidence pill — session-level confidence from the session itself
+        -- Confidence pill — session-level confidence from the session itself.
+        -- Reuse the existing pill frame via SetConfidence to avoid frame leaks.
         local sessionConfidence = latestSession.sessionConfidence or latestSession.dataConfidence or "estimated"
-        -- Recreate the confidence pill if the confidence level changed, since
-        -- CreateConfidencePill bakes the mapping into the pill at creation time.
-        if self.trustConfidencePill then
-            self.trustConfidencePill:Hide()
-        end
-        self.trustConfidencePill = ns.Widgets.CreateConfidencePill(self.canvas, sessionConfidence)
-        self.trustConfidencePill:SetPoint("TOPLEFT", self.trustSeverityBar, "BOTTOMLEFT", 0, -4)
+        self.trustConfidencePill:SetConfidence(sessionConfidence)
         self.trustConfidencePill:Show()
+
+        -- T065: Show degraded import banner when damage data is incomplete.
+        -- Metric scores preceded by "~" in evidence text when banner is visible.
+        local metrics = latestSession.metrics or {}
+        local degradedImport = metrics.degradedImport
+        if degradedImport then
+            local bannerBody = degradedImport == "partial"
+                and "Damage import used an estimated fallback — pressure and burst scores may under-report by 5–20%."
+                or  "Damage import failed for this session — pressure, burst, and survivability scores are based on cast estimates only."
+            self.degradedImportBanner:SetData(
+                "medium",
+                degradedImport == "partial" and "~Scores approximate" or "~Scores unreliable",
+                bannerBody,
+                "Score is approximate — damage import was incomplete."
+            )
+            self.degradedImportBanner:SetPoint("TOPLEFT", self.storySeverityBar, "BOTTOMLEFT", 0, -4)
+            self.degradedImportBanner:Show()
+        else
+            self.degradedImportBanner:Hide()
+        end
+        local storyAnchor = degradedImport and self.degradedImportBanner or self.storySeverityBar
 
         -- Story card + severity bar + pill strip
         local storySeverity, storyTitle, storyBody, storyEvidence = buildFightStory(store, latestSession, characterKey)
         self.storyCard:SetData(storySeverity, storyTitle, storyBody, storyEvidence)
-        -- Re-anchor story card below the confidence pill
+        -- Re-anchor story card below the confidence pill (or degraded banner)
         self.storyCard:ClearAllPoints()
         self.storyCard:SetPoint("TOPLEFT", self.trustConfidencePill, "BOTTOMLEFT", 0, -10)
         setSeverityBar(self.storySeverityBar, storySeverity, "Story Severity")
         self.storySeverityBar:Show()
+        -- Re-anchor pill strip and degraded banner relative to story severity bar
+        self.storyPillFrame:ClearAllPoints()
+        self.storyPillFrame:SetPoint("TOPLEFT", storyAnchor, "BOTTOMLEFT", 0, -4)
         refreshStoryPills(self, storyEvidence)
         self.storyPillFrame:Show()
 
@@ -837,6 +862,7 @@ function SuggestionsView:Refresh()
         self.trustConfidencePill:Hide()
         self.storyCard:Hide()
         self.storySeverityBar:Hide()
+        self.degradedImportBanner:Hide()
         self.storyPillFrame:Hide()
         self.matchupCard:Hide()
         self.matchupSeverityBar:Hide()
@@ -1053,6 +1079,9 @@ function SuggestionsView:RecalculateCanvasHeight()
     end
     if self.storyCard:IsShown() then
         height = height + 104 + 32 + 4 + 10  -- storyCard + bar + spacing
+        if self.degradedImportBanner:IsShown() then
+            height = height + 68 + 4  -- banner height + gap
+        end
         if self.storyPillFrame:IsShown() then
             height = height + 22 + 4
         end
@@ -1086,6 +1115,11 @@ function SuggestionsView:RecalculateCanvasHeight()
         elseif self.strategyEmpty:IsShown() then
             height = height + 72
         end
+    end
+
+    -- Opener Lab section
+    if self.openerLabSection and self.openerLabSection:IsShown() then
+        height = height + 200 + 22 + 20 + 4 + 12  -- section + gap + title + caption + card gap
     end
 
     -- Practice Plan section

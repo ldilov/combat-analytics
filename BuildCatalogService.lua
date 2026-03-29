@@ -381,4 +381,82 @@ function BuildCatalogService:OnSnapshotRefreshed(snapshot)
     end
 end
 
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Stat profile persistence (T036–T039)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+-- T036: Append a StatProfile to the build's profile history (FIFO, max 10).
+-- Returns true on success, false if the build entry does not exist.
+function BuildCatalogService:PersistStatProfile(buildId, statProfile)
+    if not buildId or not statProfile then return false end
+    local store = getStore()
+    if not store then return false end
+    local p = store:GetBuildProfile(buildId)
+    if not p then return false end
+
+    p.statProfiles = p.statProfiles or {}
+    p.statProfiles[#p.statProfiles + 1] = statProfile
+    if #p.statProfiles > 10 then
+        table.remove(p.statProfiles, 1)
+    end
+
+    store:UpsertBuildProfile(buildId, {
+        latestStatProfile = statProfile,
+        statProfiles      = p.statProfiles,
+        lastCapturedAt    = statProfile.capturedAt,
+    })
+    return true
+end
+
+-- T037: Capture the current secondary stats and persist them to the catalog.
+-- Returns { ok=true, buildId=..., statProfile=... } or { ok=false, reason=... }.
+function BuildCatalogService:CaptureAndPersistCurrentBuild()
+    local svc = getSnapshotService()
+    if not svc then
+        return { ok = false, reason = "snapshot_service_unavailable" }
+    end
+
+    local snapshot = svc:GetLatestPlayerSnapshot()
+    if not snapshot then
+        return { ok = false, reason = "no_snapshot" }
+    end
+
+    local buildId = snapshot.buildId or BuildHash.ComputeBuildId(snapshot)
+    if not buildId then
+        return { ok = false, reason = "cannot_compute_build_id" }
+    end
+
+    -- Fetch the existing latest profile so the overwrite guard can apply.
+    local store = getStore()
+    local existingProfile = nil
+    if store then
+        local entry = store:GetBuildProfile(buildId)
+        existingProfile = entry and entry.latestStatProfile or nil
+    end
+
+    local statProfile = svc:CaptureStatProfile(existingProfile)
+    self:PersistStatProfile(buildId, statProfile)
+
+    return { ok = true, buildId = buildId, statProfile = statProfile }
+end
+
+-- T038: Capture live secondary stats without persisting. Used by the Build
+-- Comparator "Current Build" selector to show live stats for the current gear.
+function BuildCatalogService:GetCurrentLiveStatProfile()
+    local svc = getSnapshotService()
+    if not svc then return nil end
+    return svc:CaptureStatProfile()
+end
+
+-- T039: Return the full StatProfile history array for a build.
+-- Returns {} if the build entry does not exist or has no profiles.
+function BuildCatalogService:GetStatProfilesForBuild(buildId)
+    if not buildId then return {} end
+    local store = getStore()
+    if not store then return {} end
+    local p = store:GetBuildProfile(buildId)
+    if not p then return {} end
+    return p.statProfiles or {}
+end
+
 ns.Addon:RegisterModule("BuildCatalogService", BuildCatalogService)

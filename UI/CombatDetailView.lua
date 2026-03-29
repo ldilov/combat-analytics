@@ -109,6 +109,46 @@ local function downsampleEvents(events, maxCount)
     return sampled
 end
 
+-- T022: Returns display state for the damage total of a session.
+-- Returns { value = string, style = "normal"|"estimated"|"failed", reason = string|nil }
+local function GetDamageDisplayState(session)
+    local importedTotals = session and session.importedTotals or {}
+    local totalAuthority = importedTotals.totalAuthority
+    local damageDone     = session and session.totals and session.totals.damageDone or 0
+    local formattedDamage = ns.Helpers.FormatNumber(damageDone)
+
+    if totalAuthority == "authoritative" then
+        return { value = formattedDamage, style = "normal", reason = nil }
+    end
+
+    if totalAuthority == "estimated" then
+        return { value = "~" .. formattedDamage, style = "estimated", reason = nil }
+    end
+
+    if totalAuthority == "failed" then
+        local diag = importedTotals.importDiagnostics or {}
+        return { value = "—", style = "failed", reason = diag.failureReason or "Damage import failed" }
+    end
+
+    -- nil authority with zero damage and real combat signals → failed display
+    if (totalAuthority == nil or totalAuthority == false) and damageDone == 0 then
+        local ctx = session and session.context
+        local hasRealSignals = session and (
+            (session.primaryOpponent ~= nil)
+            or (session.duration or 0) >= 5
+            or ctx == "arena"
+            or ctx == "battleground"
+            or ctx == "duel"
+        )
+        if hasRealSignals then
+            local diag = importedTotals.importDiagnostics or {}
+            return { value = "—", style = "failed", reason = diag.failureReason or "Damage import failed" }
+        end
+    end
+
+    return { value = formattedDamage, style = "normal", reason = nil }
+end
+
 local function findWindowByType(session, windowType)
     for _, windowRecord in ipairs(session.windows or {}) do
         if windowRecord.windowType == windowType then
@@ -336,6 +376,22 @@ function CombatDetailView:Build(parent)
         self:Refresh({ sessionId = self.sessionId })
     end)
 
+    -- T067: Export Diagnostics button — conditionally visible based on import authority
+    self.exportDiagButton = ns.Widgets.CreateButton(self.filterBar, "Export Diag", 100, 22)
+    self.exportDiagButton:SetPoint("LEFT", self.nextButton, "RIGHT", 8, 0)
+    self.exportDiagButton:Hide()
+    self.exportDiagButton:SetScript("OnClick", function()
+        if not self.exportDiagModal then return end
+        local serializer = ns.Addon:GetModule("ExportSerializer")
+        local session = self.exportDiagModal.currentSession
+        if serializer and session then
+            local text = serializer.ExportDiagnosticSession(session)
+            self.exportDiagModal.editBox:SetText(text or "")
+            self.exportDiagModal.editBox:SetCursorPosition(0)
+            self.exportDiagModal:Show()
+        end
+    end)
+
     self.shell, self.scrollFrame, self.canvas = ns.Widgets.CreateScrollCanvas(self.frame, 808, 368)
     self.shell:SetPoint("TOPLEFT", self.filterBar, "BOTTOMLEFT", 0, -10)
     self.shell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 16)
@@ -344,6 +400,21 @@ function CombatDetailView:Build(parent)
     self.emptyState:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
     self.emptyState:SetTextColor(unpack(Theme.textMuted))
     self.emptyState:SetText("No combat session selected.")
+
+    -- T024: Degraded-session banner — shown when totalAuthority == "failed".
+    self.degradedBanner = CreateFrame("Frame", nil, self.canvas)
+    self.degradedBanner:SetHeight(22)
+    self.degradedBanner:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
+    self.degradedBanner:SetPoint("TOPRIGHT", self.canvas, "TOPRIGHT", 0, 0)
+    self.degradedBannerBg = self.degradedBanner:CreateTexture(nil, "BACKGROUND")
+    self.degradedBannerBg:SetAllPoints()
+    self.degradedBannerBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    self.degradedBannerBg:SetVertexColor(0.8, 0.5, 0.0, 0.25)
+    self.degradedBannerText = self.degradedBanner:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    self.degradedBannerText:SetPoint("CENTER", self.degradedBanner, "CENTER", 0, 0)
+    self.degradedBannerText:SetTextColor(1.0, 0.75, 0.0, 1.0)
+    self.degradedBannerText:SetText("\226\154\160 Damage import failed \226\128\148 some analytics may be inaccurate.")
+    self.degradedBanner:Hide()
 
     self.metricCards = {}
     for index = 1, 4 do
@@ -538,6 +609,63 @@ function CombatDetailView:Build(parent)
     self.rawShell:SetPoint("TOPLEFT", self.rawMeta, "BOTTOMLEFT", 0, -8)
 
     ns.Widgets.SetCanvasHeight(self.canvas, 2240)
+
+    -- T068: Export Diagnostics modal — read-only EditBox with Select All / Close
+    local diagModal = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    diagModal:SetSize(640, 480)
+    diagModal:SetPoint("CENTER", UIParent, "CENTER")
+    diagModal:SetFrameStrata("DIALOG")
+    diagModal:SetBackdrop({
+        bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile     = true,
+        tileSize = 32,
+        edgeSize = 32,
+        insets   = { left = 11, right = 12, top = 12, bottom = 11 },
+    })
+    diagModal:SetBackdropColor(0, 0, 0, 0.9)
+    diagModal:Hide()
+    diagModal:EnableMouse(true)
+    diagModal:SetMovable(true)
+    diagModal:RegisterForDrag("LeftButton")
+    diagModal:SetScript("OnDragStart", function(f) f:StartMoving() end)
+    diagModal:SetScript("OnDragStop",  function(f) f:StopMovingOrSizing() end)
+    diagModal.currentSession = nil
+
+    local diagTitleFs = diagModal:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    diagTitleFs:SetPoint("TOPLEFT", diagModal, "TOPLEFT", 16, -16)
+    diagTitleFs:SetText("Export Diagnostics")
+    diagTitleFs:SetTextColor(1, 0.82, 0)
+
+    local diagScrollFrame = CreateFrame("ScrollFrame", nil, diagModal, "UIPanelScrollFrameTemplate")
+    diagScrollFrame:SetPoint("TOPLEFT",     diagModal, "TOPLEFT",     16,  -44)
+    diagScrollFrame:SetPoint("BOTTOMRIGHT", diagModal, "BOTTOMRIGHT", -36,  48)
+
+    local diagEditBox = CreateFrame("EditBox", nil, diagScrollFrame)
+    diagEditBox:SetMultiLine(true)
+    diagEditBox:SetFontObject("GameFontHighlightSmall")
+    diagEditBox:SetWidth(576)
+    diagEditBox:SetAutoFocus(false)
+    diagEditBox:SetMaxLetters(0)
+    diagEditBox:EnableMouse(true)
+    diagEditBox:SetScript("OnEscapePressed", function() diagModal:Hide() end)
+    diagScrollFrame:SetScrollChild(diagEditBox)
+
+    diagModal.editBox = diagEditBox
+
+    local diagSelectAllBtn = ns.Widgets.CreateButton(diagModal, "Select All", 100, 22)
+    diagSelectAllBtn:SetPoint("BOTTOMLEFT", diagModal, "BOTTOMLEFT", 16, 16)
+    diagSelectAllBtn:SetScript("OnClick", function()
+        diagEditBox:SetFocus()
+        diagEditBox:HighlightText()
+    end)
+
+    local diagCloseBtn = ns.Widgets.CreateButton(diagModal, "Close", 80, 22)
+    diagCloseBtn:SetPoint("BOTTOMRIGHT", diagModal, "BOTTOMRIGHT", -16, 16)
+    diagCloseBtn:SetScript("OnClick", function() diagModal:Hide() end)
+
+    self.exportDiagModal = diagModal
+
     return self.frame
 end
 
@@ -892,6 +1020,7 @@ function CombatDetailView:Refresh(payload)
         self.rawCaption:Hide()
         self.rawMeta:Hide()
         self.rawShell:Hide()
+        if self.exportDiagButton then self.exportDiagButton:Hide() end
         return
     end
 
@@ -902,6 +1031,18 @@ function CombatDetailView:Refresh(payload)
     self.emptyState:Hide()
     self.sessionId = session.id
     self.lastRenderedSessionId = session.id
+
+    -- T067: Export Diagnostics button visibility — show when import was non-authoritative or debug flag set
+    if self.exportDiagModal then
+        self.exportDiagModal.currentSession = session
+    end
+    local diagAuthority = session.importedTotals and session.importedTotals.totalAuthority
+    if (diagAuthority and diagAuthority ~= "authoritative") or CA_DEBUG_EXPORT then
+        self.exportDiagButton:Show()
+    else
+        self.exportDiagButton:Hide()
+    end
+
     self.title:SetText(string.format("Combat Detail • %s", ns.Helpers.ResolveOpponentName(session, "Selected Fight")))
     self.caption:SetText(string.format(
         "%s fight review with visual sections for scores, spells, and opener timing. Character: %s.",
@@ -933,11 +1074,40 @@ function CombatDetailView:Refresh(payload)
         and formatDisplayLabel(session.dataConfidence)
         or readQuality
 
+    -- T024: Show/hide degraded-session banner based on import authority.
+    -- When shown, shift metricCards[1] below the banner so it is not occluded.
+    -- Cards 2-4 chain-anchor from card 1 and follow automatically.
+    if self.degradedBanner then
+        local importedTotals = session.importedTotals or {}
+        if importedTotals.totalAuthority == "failed" then
+            self.degradedBanner:Show()
+            self.metricCards[1]:ClearAllPoints()
+            self.metricCards[1]:SetPoint("TOPLEFT", self.degradedBanner, "BOTTOMLEFT", 0, -4)
+        else
+            self.degradedBanner:Hide()
+            self.metricCards[1]:ClearAllPoints()
+            self.metricCards[1]:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
+        end
+    end
+
+    -- T022/T023: Use GetDamageDisplayState to render the damage value correctly.
+    local dmgState     = GetDamageDisplayState(session)
+    local dmgDisplayValue = dmgState.value
+    local dmgSubtext
+    if dmgState.style == "failed" then
+        dmgDisplayValue = "—"
+        dmgSubtext = string.format("Damage unavailable — %s", dmgState.reason or "import failed")
+    elseif dmgState.style == "estimated" then
+        dmgSubtext = string.format("%s DPS (est.) over %s against %s.", ns.Helpers.FormatNumber(session.metrics.sustainedDps or 0), ns.Helpers.FormatDuration(session.duration or 0), opponent)
+    else
+        dmgSubtext = string.format("%s DPS over %s against %s.", ns.Helpers.FormatNumber(session.metrics.sustainedDps or 0), ns.Helpers.FormatDuration(session.duration or 0), opponent)
+    end
+
     self.metricCards[1]:SetData(
-        ns.Helpers.FormatNumber(session.totals.damageDone or 0),
+        dmgDisplayValue,
         "Damage Done",
-        string.format("%s DPS over %s against %s.", ns.Helpers.FormatNumber(session.metrics.sustainedDps or 0), ns.Helpers.FormatDuration(session.duration or 0), opponent),
-        Theme.accent
+        dmgSubtext,
+        dmgState.style == "failed" and Theme.warning or Theme.accent
     )
     self.metricCards[2]:SetData(
         string.format("%.1f", session.metrics.pressureScore or 0),
@@ -1266,7 +1436,9 @@ function CombatDetailView:Refresh(payload)
     if self.tradeLedgerView and self.tradeLedgerView.frame and self.tradeLedgerView.frame:IsShown() then
         tradeLedgerHeight = self.tradeLedgerView.frame:GetHeight() + 20
     end
-    ns.Widgets.SetCanvasHeight(self.canvas, 2240 + multiLaneHeight + tradeLedgerHeight)
+    -- T059: explicit bottom padding via LAYOUT token so last row is never clipped
+    local L = ns.Widgets.LAYOUT
+    ns.Widgets.SetCanvasHeight(self.canvas, 2240 + multiLaneHeight + tradeLedgerHeight + L.ROW_GAP * 2)
 end
 
 ns.Addon:RegisterModule("CombatDetailView", CombatDetailView)

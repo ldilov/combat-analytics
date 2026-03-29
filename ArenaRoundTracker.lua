@@ -841,6 +841,55 @@ function ArenaRoundTracker:GetPrimaryEnemy(preferredGuid)
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────
+-- Lightweight identity seed — copies slot GUIDs, names, and specs into the
+-- session WITHOUT the pressure scoring (which depends on attribution data that
+-- is populated later by the DamageMeter import).  Called BEFORE the import so
+-- collectExpectedOpponentGuids has populated slot data for candidate scoring.
+-- ──────────────────────────────────────────────────────────────────────────────
+
+function ArenaRoundTracker:SeedSessionIdentity(session)
+    if not session then return end
+    local matchRecord = self.currentMatch
+    if not matchRecord then return end
+    local round = matchRecord.currentRound or (matchRecord.rounds[#matchRecord.rounds])
+    if not round then return end
+
+    session.arena = session.arena or {}
+    session.arena.matchKey    = session.arena.matchKey or matchRecord.matchKey
+    session.arena.slots       = session.arena.slots or {}
+    session.arena.guidToSlot  = session.arena.guidToSlot or {}
+
+    for slot, s in pairs(round.slots) do
+        session.arena.slots[slot] = session.arena.slots[slot] or {}
+        local dst = session.arena.slots[slot]
+        dst.guid          = dst.guid          or s.guid
+        dst.name          = dst.name          or s.name
+        dst.classFile     = dst.classFile     or s.classFile
+        dst.className     = dst.className     or s.className
+        dst.classId       = dst.classId       or s.classId
+        dst.prepSpecId    = dst.prepSpecId    or s.prepSpecId
+        dst.prepSpecName  = dst.prepSpecName  or s.prepSpecName
+        dst.prepClassFile = dst.prepClassFile or s.prepClassFile
+        if s.guid then
+            session.arena.guidToSlot[s.guid] = slot
+        end
+    end
+
+    -- Seed primaryOpponent from best available slot if not already set.
+    if not session.primaryOpponent or not session.primaryOpponent.guid then
+        local primary = self:GetPrimaryEnemy(nil)
+        if primary and primary.guid then
+            session.primaryOpponent = session.primaryOpponent or {}
+            session.primaryOpponent.guid      = primary.guid
+            session.primaryOpponent.name      = primary.name
+            session.primaryOpponent.classFile = primary.classFile or primary.prepClassFile
+            session.primaryOpponent.specId    = primary.prepSpecId
+            session.primaryOpponent.specName  = primary.prepSpecName
+        end
+    end
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
 -- Session export
 -- Called from CombatTracker:FinalizeSession() to persist round state
 -- ──────────────────────────────────────────────────────────────────────────────
