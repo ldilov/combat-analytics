@@ -99,16 +99,7 @@ local SEVERITY_BAR_COLORS = {
 }
 
 local function formatDisplayLabel(value)
-    local map = {
-        high = "High",
-        medium = "Medium",
-        limited = "Limited",
-        ["local"] = "Local",
-        damage_meter = "Damage Meter",
-        enemy_damage_taken_fallback = "Enemy Fallback",
-        estimated = "Estimated",
-    }
-    return map[value] or tostring(value or "unknown")
+    return ns.Widgets.FormatDisplayLabel(value)
 end
 
 local function getInsightRule(key, fallback)
