@@ -160,6 +160,13 @@ local function getExpectedDamageTotal(session, snapshot)
         return enemyDamage
     end
 
+    -- Last resort: use session.totals.damageDone (may have been set by a
+    -- partial DM import or prior retry) when the snapshot itself had no total.
+    local sessionTotal = session and session.totals and tonumber(session.totals.damageDone) or 0
+    if sessionTotal > 0 then
+        return sessionTotal
+    end
+
     return 0
 end
 
