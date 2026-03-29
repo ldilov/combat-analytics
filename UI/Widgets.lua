@@ -1431,4 +1431,81 @@ function Widgets.SetRowIcon(row, fileID)
     row.iconRegion:SetSize(L.ICON_SIZE, L.ICON_SIZE)
 end
 
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Centralized enum-to-friendly-label mapping (T120).
+-- Covers CONTEXT, SESSION_CONFIDENCE, MATCH_RESULT, PROVENANCE_SOURCE,
+-- CAPTURE_QUALITY, IMPORT_STATUS, and common internal tokens.
+-- Falls back to prettified token (underscores → spaces, title case).
+-- ──────────────────────────────────────────────────────────────────────────────
+
+local DISPLAY_LABEL_MAP = {
+    -- CONTEXT values
+    duel             = "Duel",
+    arena            = "Arena",
+    battleground     = "Battleground",
+    world_pvp        = "World PvP",
+    training_dummy   = "Training Dummy",
+    general          = "General",
+    -- SUBCONTEXT values
+    solo_shuffle        = "Solo Shuffle",
+    rated_arena         = "Rated Arena",
+    skirmish            = "Skirmish",
+    brawl               = "Brawl",
+    rated_battleground  = "Rated BG",
+    solo_rbg            = "Solo RBG",
+    random_battleground = "Random BG",
+    world               = "World",
+    to_the_death        = "To the Death",
+    unknown_arena       = "Arena",
+    wargame             = "Wargame",
+    training_grounds    = "Training Grounds",
+    -- SESSION_CONFIDENCE values
+    state_plus_damage_meter = "State + DM",
+    damage_meter_only       = "DM Only",
+    visible_cc_only         = "CC Only",
+    partial_roster          = "Partial Roster",
+    estimated               = "Estimated",
+    legacy_cleu_import      = "Legacy Import",
+    -- Legacy ANALYSIS_CONFIDENCE values
+    full_raw        = "Full Raw",
+    enriched        = "Enriched",
+    restricted_raw  = "Restricted",
+    degraded        = "Degraded",
+    -- MATCH_RESULT values
+    won     = "Won",
+    lost    = "Lost",
+    draw    = "Draw",
+    win     = "Won",
+    loss    = "Lost",
+    -- PROVENANCE_SOURCE values
+    state            = "State",
+    damage_meter     = "Damage Meter",
+    visible_unit     = "Visible Unit",
+    inspect          = "Inspect",
+    loss_of_control  = "Loss of Control",
+    spell_diminish   = "Spell Diminish",
+    legacy_import    = "Legacy Import",
+    -- Common data-quality / source labels
+    high    = "High",
+    medium  = "Medium",
+    limited = "Limited",
+    ["local"]                     = "Local",
+    enemy_damage_taken_fallback   = "Enemy Fallback",
+    authoritative                 = "Authoritative",
+    failed                        = "Failed",
+    unknown                       = "Unknown",
+}
+
+function Widgets.FormatDisplayLabel(value)
+    if not value then return "Unknown" end
+    local label = DISPLAY_LABEL_MAP[value]
+    if label then return label end
+    -- Fallback: prettify token (replace underscores, title-case first word)
+    local pretty = tostring(value):gsub("_", " ")
+    return pretty:sub(1, 1):upper() .. pretty:sub(2)
+end
+
+-- Expose badge colors for use by SummaryView and other consumers.
+Widgets.CONFIDENCE_BADGE_COLORS = CONFIDENCE_BADGE_COLORS
+
 ns.Widgets = Widgets

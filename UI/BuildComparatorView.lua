@@ -269,7 +269,7 @@ function BuildComparatorView:Build(parent)
     self.freshnessBanner = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.freshnessBanner:SetPoint("TOPLEFT", self.caption, "BOTTOMLEFT", 0, -6)
     self.freshnessBanner:SetTextColor(0.96, 0.74, 0.38, 1.0)
-    self.freshnessBanner:SetText("\226\138\160 Build data loading — talent information may be incomplete")
+    self.freshnessBanner:SetText("(!) Build data loading -- talent information may be incomplete")
     self.freshnessBanner:Hide()
 
     -- Controls row: search box + sort dropdown
@@ -480,6 +480,9 @@ function BuildComparatorView:_buildSidePanel(side, color, anchor, xOffset)
     panel.label = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     panel.label:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", xOffset, -12)
     panel.label:SetTextColor(color[1], color[2], color[3], color[4])
+    panel.label:SetWidth(310)
+    panel.label:SetWordWrap(false)
+    panel.label:SetNonSpaceWrap(false)
     panel.label:SetText("Build " .. side .. ":")
 
     -- Scrollable list frame (120px fits ~5 entries comfortably)
@@ -585,7 +588,9 @@ function BuildComparatorView:Refresh()
         self.emptyOneBuild:Show()
         -- Show captured build name in the Build A header so user sees confirmation
         if #allProfiles == 1 and catalog then
-            local label = catalog:GetDisplayLabel(allProfiles[1].buildId) or "—"
+            local label = catalog:GetDisplayLabel(allProfiles[1].buildId) or "---"
+            -- Truncate long labels to prevent overflow
+            if #label > 36 then label = label:sub(1, 36) .. "..." end
             self.panelA.label:SetText("Build A: " .. label)
         else
             self.panelA.label:SetText("Build A:")
@@ -596,6 +601,7 @@ function BuildComparatorView:Refresh()
         self.panelB.listFrame:Hide()
         self.panelB.scrollFrame:Hide()
         self.panelB.frame:Hide()
+        if self.panelB.label then self.panelB.label:Hide() end
         self.diffShell:Hide()
         self:_clear()
         return
@@ -605,6 +611,7 @@ function BuildComparatorView:Refresh()
     self.panelA.listFrame:Show()
     self.panelA.scrollFrame:Show()
     self.panelA.frame:Show()
+    if self.panelB.label then self.panelB.label:Show() end
     self.panelB.listFrame:Show()
     self.panelB.scrollFrame:Show()
     self.panelB.frame:Show()
@@ -683,7 +690,7 @@ function BuildComparatorView:_populateList(panel, profiles, side)
         local isOther    = (side == "A" and bid == self._selectedB) or (side == "B" and bid == self._selectedA)
         local label    = catalog and catalog:GetDisplayLabel(bid) or (bid or "?")
         if p.isCurrentBuild then
-            label = "\226\138\134 " .. label  -- star prefix for current live build
+            label = "* " .. label  -- star prefix for current live build
         end
 
         local btn = CreateFrame("Button", nil, canvas)
@@ -1104,6 +1111,7 @@ function BuildComparatorView:_recalcPanelWidths()
 
     local function resizePanel(p)
         if not p then return end
+        if p.label     then p.label:SetWidth(pw) end
         if p.listFrame then p.listFrame:SetWidth(pw) end
         if p.frame     then p.frame:SetWidth(pw) end
         local innerW = pw - 20

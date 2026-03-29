@@ -178,16 +178,7 @@ local function setComparisonRow(row, title, description, current, expected, form
 end
 
 local function formatDisplayLabel(value)
-    local map = {
-        high = "High",
-        medium = "Medium",
-        limited = "Limited",
-        ["local"] = "Local",
-        damage_meter = "Damage Meter",
-        enemy_damage_taken_fallback = "Enemy Fallback",
-        estimated = "Estimated",
-    }
-    return map[value] or tostring(value or "unknown")
+    return ns.Widgets.FormatDisplayLabel(value)
 end
 
 function SummaryView:Build(parent)
@@ -484,7 +475,15 @@ function SummaryView:Refresh(payload)
     if self.heroFrame then
         self.heroFrame:Show()
 
-        local resultText = string.upper(tostring(session.result or "LOG"))
+        local resultText = formatDisplayLabel(session.result or "log")
+        -- For non-PvP contexts with unknown result, show "Log" instead of "Unknown"
+        if session.result == "unknown" or not session.result then
+            local ctx = session.context
+            if ctx ~= Constants.CONTEXT.ARENA and ctx ~= Constants.CONTEXT.BATTLEGROUND
+                and ctx ~= Constants.CONTEXT.DUEL and ctx ~= Constants.CONTEXT.WORLD_PVP then
+                resultText = "Log"
+            end
+        end
         local resultBg = Theme.panelAlt
         if session.result == "won" then
             resultBg = { 0.18, 0.40, 0.24, 1.0 }
@@ -493,21 +492,27 @@ function SummaryView:Refresh(payload)
         end
         self.heroResultPill:SetData(resultText, Theme.text, resultBg, Theme.borderStrong)
 
-        local ctxLabel = session.context and string.upper(tostring(session.context)) or "GENERAL"
+        local ctxLabel = formatDisplayLabel(session.context or "general")
         self.heroContextChip:SetData(ctxLabel, Theme.text, Theme.panelAlt, Theme.border)
 
         self.heroDuration:SetText(Helpers.FormatDuration(session.duration or 0))
 
         local conf = (session.captureQuality and session.captureQuality.confidence) or session.analysisConfidence or "limited"
-        local confBg = Theme.accentSoft
-        if conf == "high" then
+        local badgeColors = ns.Widgets.CONFIDENCE_BADGE_COLORS or {}
+        local confColor = badgeColors[conf]
+        local confBg
+        if confColor then
+            confBg = { confColor[1] * 0.3, confColor[2] * 0.3, confColor[3] * 0.3, 0.9 }
+        elseif conf == "high" or conf == "full_raw" or conf == "enriched" or conf == "state_plus_damage_meter" then
             confBg = Theme.severityLow
-        elseif conf == "medium" then
+        elseif conf == "medium" or conf == "damage_meter_only" or conf == "restricted_raw" then
             confBg = Theme.severityMedium
-        elseif conf == "limited" then
+        elseif conf == "limited" or conf == "degraded" or conf == "visible_cc_only" or conf == "estimated" then
             confBg = Theme.severityHigh
+        else
+            confBg = Theme.accentSoft
         end
-        self.heroConfidencePill:SetData(string.upper(tostring(conf)), Theme.text, confBg, Theme.borderStrong)
+        self.heroConfidencePill:SetData(formatDisplayLabel(conf), Theme.text, confBg, Theme.borderStrong)
     end
 
     -- Output split bar: damage done (red), healing done (green), damage taken (blue).
