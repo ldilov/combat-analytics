@@ -671,6 +671,10 @@ function Metrics.ComputeDerivedMetrics(session)
         firstMajorDefensiveRelative = firstMajorDefensiveRelative,
     }
 
+    -- T062/T063: Inherit degraded import status into metrics so UI layers can
+    -- surface a warning badge without needing to touch the numeric score values.
+    Metrics.InheritDegradedStatus(session, session.metrics)
+
     return session.metrics
 end
 
@@ -759,6 +763,29 @@ function Metrics:ComputeOpenerVarianceBand(sessions)
         median = median,
         buildComparison = buildComparison,
     }
+end
+
+-- ---------------------------------------------------------------------------
+-- T062: InheritDegradedStatus — marks derived metrics when damage import failed.
+-- Sets metricsResult.degradedImport = true  when totalAuthority == "failed",
+--                                   = "partial" when totalAuthority == "estimated",
+--                                   = false otherwise.
+-- Numeric score fields are intentionally left unchanged so all existing callers
+-- (CombatStore aggregates, PartySyncService, etc.) continue to work without
+-- modification.  UI layers check metricsResult.degradedImport for badge display.
+-- ---------------------------------------------------------------------------
+function Metrics.InheritDegradedStatus(session, metricsResult)
+    if not metricsResult then return metricsResult end
+    local totals    = session and session.importedTotals
+    local authority = totals and totals.totalAuthority
+    if authority == "failed" then
+        metricsResult.degradedImport = true
+    elseif authority == "estimated" then
+        metricsResult.degradedImport = "partial"
+    else
+        metricsResult.degradedImport = false
+    end
+    return metricsResult
 end
 
 ns.Metrics = Metrics

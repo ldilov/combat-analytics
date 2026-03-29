@@ -47,6 +47,22 @@ local preset = ns.StaticPvpData
 
 Widgets.THEME = preset and deepCopy(preset) or deepCopy(DEFAULT_THEME)
 
+-- ---------------------------------------------------------------------------
+-- T052: Shared layout tokens — reference these instead of hard-coding pixels
+-- ---------------------------------------------------------------------------
+Widgets.LAYOUT = {
+    ROW_HEIGHT          = 20,
+    ICON_SIZE           = 18,
+    ICON_RESERVED_WIDTH = 22,
+    SECTION_TOP_PAD     = 8,
+    ROW_GAP             = 4,
+    CARD_PAD            = 10,
+    LABEL_FONT          = "GameFontNormalSmall",
+    VALUE_FONT          = "GameFontHighlightSmall",
+    CAPTION_FONT        = "GameFontDisableSmall",
+    BADGE_HEIGHT        = 14,
+}
+
 function Widgets.ApplyBackdrop(frame, backgroundColor, borderColor, insets)
     frame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -225,10 +241,13 @@ function Widgets.CreateScrollCanvas(parent, width, height)
     scrollBar:SetThumbTexture(thumb)
 
     local function updateScrollRange()
+        local viewHeight = scrollFrame:GetHeight() or 0
+        -- Skip update when frame geometry is not yet resolved (avoids spurious
+        -- scrollbar flash on first layout pass).
+        if viewHeight <= 0 then return end
         local contentWidth = math.max(1, (scrollFrame:GetWidth() or (width - 52)) - 10)
         content:SetWidth(contentWidth)
         local contentHeight = math.max(content:GetHeight() or 0, 1)
-        local viewHeight = scrollFrame:GetHeight() or 0
         local maxScroll = math.max(0, contentHeight - viewHeight)
 
         scrollBar:SetMinMaxValues(0, maxScroll)
@@ -1212,17 +1231,27 @@ function Widgets.CreateConfidencePill(parent, confidence)
     local mapping = CONFIDENCE_PILL_MAP[confidence] or CONFIDENCE_PILL_MAP.estimated
     local pill = Widgets.CreatePill(parent, nil, nil, mapping.color, mapping.border)
     pill:SetData(mapping.label)
+    pill._confidence = confidence
 
-    if mapping.tooltip then
-        pill:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine("Session Confidence", 1, 1, 1)
-            GameTooltip:AddLine(mapping.tooltip, 0.8, 0.8, 0.8, true)
-            GameTooltip:Show()
-        end)
-        pill:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
+    local function applyTooltip(p, m)
+        if m.tooltip then
+            p:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine("Session Confidence", 1, 1, 1)
+                GameTooltip:AddLine(m.tooltip, 0.8, 0.8, 0.8, true)
+                GameTooltip:Show()
+            end)
+            p:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        end
+    end
+    applyTooltip(pill, mapping)
+
+    function pill:SetConfidence(newConfidence)
+        if newConfidence == self._confidence then return end
+        self._confidence = newConfidence
+        local m = CONFIDENCE_PILL_MAP[newConfidence] or CONFIDENCE_PILL_MAP.estimated
+        self:SetData(m.label)
+        applyTooltip(self, m)
     end
 
     return pill
@@ -1310,6 +1339,96 @@ function Widgets.CreateDeltaBadge(parent, delta, formatStr)
 
     frame.label = label
     return frame
+end
+
+-- ---------------------------------------------------------------------------
+-- T053: CreateIconRow — fixed-height row with icon placeholder, label, value, badge
+-- ---------------------------------------------------------------------------
+function Widgets.CreateIconRow(parent, options)
+    options = options or {}
+    local L = Widgets.LAYOUT
+    local iconSize           = options.iconSize           or L.ICON_SIZE
+    local maxLabelWidth      = options.maxLabelWidth      or 120
+    local maxValueWidth      = options.maxValueWidth      or 80
+    local showPlaceholder    = options.showPlaceholder
+    if showPlaceholder == nil then showPlaceholder = true end
+
+    local row = CreateFrame("Frame", nil, parent)
+    row:SetHeight(L.ROW_HEIGHT)
+
+    -- Icon region — always L.ICON_RESERVED_WIDTH wide so text anchors never shift
+    local iconRegion = row:CreateTexture(nil, "ARTWORK")
+    iconRegion:SetSize(iconSize, iconSize)
+    iconRegion:SetPoint("LEFT", row, "LEFT", 0, 0)
+    if showPlaceholder then
+        iconRegion:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+        iconRegion:SetVertexColor(0.35, 0.38, 0.42, 1)
+    end
+    row.iconRegion = iconRegion
+
+    -- Invisible spacer keeps the label anchored to ICON_RESERVED_WIDTH, not iconSize
+    local iconSpacer = row:CreateTexture(nil, "BACKGROUND")
+    iconSpacer:SetSize(L.ICON_RESERVED_WIDTH, 1)
+    iconSpacer:SetPoint("LEFT", row, "LEFT", 0, 0)
+    iconSpacer:SetAlpha(0)
+
+    -- Label — truncates with ellipsis, never wraps
+    local labelFs = row:CreateFontString(nil, "OVERLAY", L.LABEL_FONT)
+    labelFs:SetPoint("LEFT", iconSpacer, "RIGHT", 2, 0)
+    labelFs:SetWidth(maxLabelWidth)
+    labelFs:SetJustifyH("LEFT")
+    labelFs:SetJustifyV("MIDDLE")
+    labelFs:SetWordWrap(false)
+    labelFs:SetTextColor(unpack(Widgets.THEME.text))
+    labelFs:SetText(options.labelText or "")
+    row.labelFs = labelFs
+
+    -- Value — right-aligned within its reserved column
+    local valueFs = row:CreateFontString(nil, "OVERLAY", L.VALUE_FONT)
+    valueFs:SetWidth(maxValueWidth)
+    valueFs:SetJustifyH("RIGHT")
+    valueFs:SetJustifyV("MIDDLE")
+    valueFs:SetTextColor(unpack(Widgets.THEME.textMuted))
+    valueFs:SetText(options.valueText or "")
+    row.valueFs = valueFs
+
+    -- Badge — right edge of row
+    local badgeFs = row:CreateFontString(nil, "OVERLAY", L.CAPTION_FONT)
+    badgeFs:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    badgeFs:SetJustifyH("RIGHT")
+    badgeFs:SetJustifyV("MIDDLE")
+    badgeFs:SetTextColor(unpack(Widgets.THEME.textMuted))
+    badgeFs:SetText(options.badgeText or "")
+    row.badgeFs = badgeFs
+
+    -- Anchor value to the left of badge (or row right if badge is empty)
+    valueFs:SetPoint("RIGHT", badgeFs, "LEFT", -4, 0)
+
+    function row:SetData(iconFileID, labelText, valueText, badgeText)
+        Widgets.SetRowIcon(self, iconFileID)
+        if labelText ~= nil then self.labelFs:SetText(labelText) end
+        if valueText ~= nil then self.valueFs:SetText(valueText) end
+        if badgeText ~= nil then self.badgeFs:SetText(badgeText) end
+    end
+
+    return row
+end
+
+-- ---------------------------------------------------------------------------
+-- T054: SetRowIcon — safe icon update that always preserves icon region width
+-- ---------------------------------------------------------------------------
+function Widgets.SetRowIcon(row, fileID)
+    if not row or not row.iconRegion then return end
+    local L = Widgets.LAYOUT
+    if fileID then
+        row.iconRegion:SetTexture(fileID)
+        row.iconRegion:SetVertexColor(1, 1, 1, 1)
+    else
+        -- Placeholder: question-mark icon dimmed — never hides, always ICON_RESERVED_WIDTH wide
+        row.iconRegion:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+        row.iconRegion:SetVertexColor(0.35, 0.38, 0.42, 1)
+    end
+    row.iconRegion:SetSize(L.ICON_SIZE, L.ICON_SIZE)
 end
 
 ns.Widgets = Widgets
