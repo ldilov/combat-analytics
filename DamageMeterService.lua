@@ -1312,6 +1312,14 @@ function DamageMeterService:ImportSession(session)
         return false
     end
 
+    -- Re-capture the "current" DM snapshot now (import runs after stabilization
+    -- delay, so DM data should be settled). The regen_end capture often fires
+    -- before C_DamageMeter finalizes short-lived sessions (training dummies,
+    -- quick duels).
+    if not self.currentSessionSnapshot or not snapshotHasMeaningfulData(self.currentSessionSnapshot) then
+        self:CaptureCurrentSessionSnapshot(session)
+    end
+
     local candidateSessions = self:FindSessionsForImport()
 
     -- T017: Handle FAILED_DAMAGE_METER_UNAVAILABLE — no sessions available.
