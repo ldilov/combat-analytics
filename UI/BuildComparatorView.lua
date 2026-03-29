@@ -358,7 +358,7 @@ function BuildComparatorView:Build(parent)
     end)
 
     -- T056: Swap button anchored to right edge — TOP aligns with vs-buttons, no left overlap
-    self.swapBtn = ns.Widgets.CreateButton(self.frame, "Swap A\226\134\148B", L.CARD_PAD * 2 + 68, btnH)
+    self.swapBtn = ns.Widgets.CreateButton(self.frame, "Swap A <> B", L.CARD_PAD * 2 + 68, btnH)
     self.swapBtn:SetPoint("TOP", self.vsPrevBtn, "TOP", 0, 0)
     self.swapBtn:SetPoint("RIGHT", self.frame, "RIGHT", -L.CARD_PAD, 0)
     self.swapBtn:SetScript("OnClick", function()
