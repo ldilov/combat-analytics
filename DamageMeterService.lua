@@ -1203,10 +1203,17 @@ function DamageMeterService:MergeSpellTotals(session, damageMeterType, combatSpe
                     aggregate.overkill = aggregate.overkill + (combatSpell.overkillAmount or 0)
                     aggregate.hitCount = math.max(aggregate.hitCount or 0, 1)
                     aggregate.executeCount = math.max(aggregate.executeCount or 0, aggregate.hitCount or 0)
+                    -- Floor castCount from hitCount when CLEU tracking didn't provide cast data.
+                    if (aggregate.castCount or 0) == 0 and (aggregate.hitCount or 0) > 0 then
+                        aggregate.castCount = aggregate.hitCount
+                    end
                 elseif damageMeterType == Enum.DamageMeterType.HealingDone then
                     aggregate.totalHealing = aggregate.totalHealing + (combatSpell.totalAmount or 0)
                     aggregate.hitCount = math.max(aggregate.hitCount or 0, 1)
                     aggregate.executeCount = math.max(aggregate.executeCount or 0, aggregate.hitCount or 0)
+                    if (aggregate.castCount or 0) == 0 and (aggregate.hitCount or 0) > 0 then
+                        aggregate.castCount = aggregate.hitCount
+                    end
                 elseif damageMeterType == Enum.DamageMeterType.Absorbs then
                     aggregate.absorbed = aggregate.absorbed + (combatSpell.totalAmount or 0)
                 end
