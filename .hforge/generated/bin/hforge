@@ -1,2 +1,0 @@
-#!/usr/bin/env sh
-npx @harness-forge/cli "$@"
