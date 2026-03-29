@@ -103,4 +103,108 @@ function ExportSerializer.Serialize(session)
     return table.concat(parts, " | ")
 end
 
+-- ---------------------------------------------------------------------------
+-- T066: ExportDiagnosticSession — human-readable multi-line diagnostic dump.
+-- ---------------------------------------------------------------------------
+function ExportSerializer.ExportDiagnosticSession(session)
+    if not session then return "[CA] No session data." end
+
+    local lines = {}
+    local function add(text) lines[#lines + 1] = text end
+    local function sep()     lines[#lines + 1] = "---" end
+
+    -- Session header
+    add(string.format("[CombatAnalytics Diagnostic — Schema v%d]", Constants.SCHEMA_VERSION or 8))
+    add(string.format("Session ID : %s", session.id or "unknown"))
+    add(string.format("Context    : %s%s",
+        session.context or "unknown",
+        session.subcontext and (":" .. session.subcontext) or ""))
+    add(string.format("Result     : %s", session.result or "unknown"))
+    add(string.format("Duration   : %.1fs", session.duration or 0))
+    local opp = session.primaryOpponent
+    if opp then
+        add(string.format("Opponent   : %s (%s %s)",
+            opp.name or opp.guid or "unknown",
+            opp.className or "",
+            opp.specName  or ""))
+    end
+    sep()
+
+    -- Import block
+    local imp = session.importedTotals
+    if imp then
+        add("DAMAGE IMPORT")
+        add(string.format("  importStatus   : %s", tostring(imp.importStatus   or "nil")))
+        add(string.format("  totalAuthority : %s", tostring(imp.totalAuthority or "nil")))
+        add(string.format("  damageDone     : %s", tostring(imp.damageDone     or 0)))
+        local diag = imp.importDiagnostics
+        if diag then
+            add("  -- diagnostics --")
+            add(string.format("  baselineSessionId  : %s", tostring(diag.baselineSessionId  or "nil")))
+            add(string.format("  selectedCandidateId: %s", tostring(diag.selectedCandidateId or "nil")))
+            add(string.format("  selectedDmType     : %s", tostring(diag.selectedDmType     or "nil")))
+            add(string.format("  sourceResolutionPath:%s", tostring(diag.sourceResolutionPath or "nil")))
+            add(string.format("  durationDelta      : %s", tostring(diag.durationDelta       or "nil")))
+            add(string.format("  opponentFitScore   : %s", tostring(diag.opponentFitScore    or "nil")))
+            add(string.format("  signalScore        : %s", tostring(diag.signalScore         or "nil")))
+            add(string.format("  fallbackUsed       : %s", tostring(diag.fallbackUsed        or "nil")))
+            add(string.format("  failureReason      : %s", tostring(diag.failureReason       or "nil")))
+            if diag.candidateIds and #diag.candidateIds > 0 then
+                local _ids = {}
+                for _, _id in ipairs(diag.candidateIds) do _ids[#_ids + 1] = tostring(_id) end
+                add(string.format("  candidateIds       : [%s]", table.concat(_ids, ", ")))
+            end
+        end
+    else
+        add("DAMAGE IMPORT : (no importedTotals)")
+    end
+    sep()
+
+    -- Capture quality block
+    local cq = session.captureQuality
+    if cq then
+        add("CAPTURE QUALITY")
+        for k, v in pairs(cq) do
+            add(string.format("  %-24s: %s", k, tostring(v)))
+        end
+    end
+    sep()
+
+    -- Snapshot block
+    local snap = session.playerSnapshot
+    if snap then
+        add("PLAYER SNAPSHOT")
+        add(string.format("  specId        : %s", tostring(snap.specId        or "nil")))
+        add(string.format("  buildHash     : %s", tostring(snap.buildHash     or "nil")))
+        add(string.format("  itemLevel     : %s", tostring(snap.itemLevel     or "nil")))
+        local sp = snap.statProfile
+        if sp then
+            add(string.format("  statFreshness : %s", tostring(sp.snapshotFreshness or "nil")))
+            add(string.format("  critPct       : %s", tostring(sp.critPct           or "nil")))
+            add(string.format("  hastePct      : %s", tostring(sp.hastePct          or "nil")))
+            add(string.format("  masteryPct    : %s", tostring(sp.masteryPct        or "nil")))
+        else
+            add("  statProfile   : (no stat profile captured)")
+        end
+    end
+    sep()
+
+    -- Arena block
+    local ar = session.arena
+    if ar and (ar.matchKey or ar.roundKey) then
+        add("ARENA")
+        add(string.format("  matchKey  : %s", tostring(ar.matchKey  or "nil")))
+        add(string.format("  roundKey  : %s", tostring(ar.roundKey  or "nil")))
+        local rosterCount = ar.roster and #ar.roster or 0
+        add(string.format("  rosterSlots : %d", rosterCount))
+    end
+    sep()
+
+    -- Summary line
+    local rawCount = session.rawEvents and #session.rawEvents or 0
+    add(string.format("Raw events: %d", rawCount))
+
+    return table.concat(lines, "\n")
+end
+
 ns.Addon:RegisterModule("ExportSerializer", ExportSerializer)

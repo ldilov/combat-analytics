@@ -804,6 +804,51 @@ function CombatStore:MigrateSchema(db)
         })
     end
 
+    -- v7 → v8: add stat-profile fields to build catalog entries and
+    -- damage-import-status fields to existing sessions. All additive.
+    if version < 8 then
+        -- Extend each build catalog entry with stat-profile fields.
+        for _, bid in ipairs(db.buildCatalog.order or {}) do
+            local p = db.buildCatalog.byId[bid]
+            if p then
+                if p.latestStatProfile == nil then
+                    p.latestStatProfile = false
+                end
+                if p.statProfiles == nil then
+                    p.statProfiles = {}
+                end
+                if p.lastCapturedAt == nil then
+                    p.lastCapturedAt = false
+                end
+            end
+        end
+
+        -- Extend each session with import-status fields.
+        local sessionCount = 0
+        for _, sessionId in ipairs(db.combats.order or {}) do
+            local s = db.combats.byId[sessionId]
+            if s then
+                s.importedTotals = s.importedTotals or {}
+                if s.importedTotals.importStatus == nil then
+                    s.importedTotals.importStatus = false
+                end
+                if s.importedTotals.importDiagnostics == nil then
+                    s.importedTotals.importDiagnostics = false
+                end
+                if s.importedTotals.totalAuthority == nil then
+                    s.importedTotals.totalAuthority = false
+                end
+                sessionCount = sessionCount + 1
+            end
+        end
+
+        db.schemaVersion = 8
+        ns.Addon:Trace("migration.v8.complete", {
+            buildProfiles = #(db.buildCatalog.order or {}),
+            sessions = sessionCount,
+        })
+    end
+
     -- Future migrations go here as additional `if version < N then` blocks.
 
     -- T121: Post-migration validation for mixed-version datasets.
@@ -2081,6 +2126,10 @@ function CombatStore:UpsertBuildProfile(buildId, fields)
             isLowConfidence       = fields.isLowConfidence or false,
             isMigrated            = fields.isMigrated or false,
             isMigratedWithWarnings = fields.isMigratedWithWarnings or false,
+            -- v8: build stat-profile fields
+            latestStatProfile     = fields.latestStatProfile or false,
+            statProfiles          = fields.statProfiles or {},
+            lastCapturedAt        = fields.lastCapturedAt or false,
         }
         db.buildCatalog.order[#db.buildCatalog.order + 1] = buildId
     else

@@ -2,7 +2,7 @@ local ADDON_NAME, ns = ...
 
 ns.Constants = {
     ADDON_NAME = ADDON_NAME,
-    SCHEMA_VERSION = 7,
+    SCHEMA_VERSION = 8,
     RAW_EVENT_VERSION = 2,
     MAX_RAW_EVENTS_PER_SESSION = 25000,
     RAW_EVENT_WARNING_THRESHOLD = 500000,
@@ -305,5 +305,59 @@ ns.Constants = {
         LOW_MIN    = 1,
         MEDIUM_MIN = 5,
         HIGH_MIN   = 15,
+    },
+    -- ──────────────────────────────────────────────────────────────────────────
+    -- Damage import status (feature midnight-correctness-overhaul)
+    -- Machine-readable outcome of the C_DamageMeter import attempt.
+    -- Set on session.importedTotals.importStatus after each finalization.
+    -- ──────────────────────────────────────────────────────────────────────────
+    IMPORT_STATUS = {
+        -- Authoritative totals imported from the matched historical DM session
+        IMPORTED_AUTHORITATIVE               = "imported_authoritative",
+        -- Totals taken from the live current-session snapshot (less reliable)
+        IMPORTED_CURRENT_SNAPSHOT            = "imported_current_snapshot",
+        -- Totals inferred from enemy damage taken (may miss pet/DoT damage)
+        IMPORTED_ENEMY_DAMAGE_TAKEN_FALLBACK = "imported_enemy_damage_taken_fallback",
+        -- Totals estimated from local cast records (weakest approximation)
+        ESTIMATED_FROM_CASTS                 = "estimated_from_casts",
+        -- C_DamageMeter was unavailable or returned zero sessions
+        FAILED_DAMAGE_METER_UNAVAILABLE      = "failed_damage_meter_unavailable",
+        -- No candidate session could be matched to this encounter
+        FAILED_NO_CANDIDATE                  = "failed_no_candidate",
+        -- A candidate was found but no player source row could be resolved
+        FAILED_NO_PLAYER_SOURCE              = "failed_no_player_source",
+        -- Import returned zero/nil damage with no usable fallback
+        FAILED_NO_MEANINGFUL_DATA            = "failed_no_meaningful_data",
+        -- Session was finalized before damage-meter data settled
+        FAILED_FINALIZED_TOO_EARLY           = "failed_finalized_too_early",
+    },
+    -- Maps each IMPORT_STATUS to one of three authority tiers.
+    -- Avoids long if-chains in CombatTracker and UI layers.
+    IMPORT_AUTHORITY = {
+        authoritative = {
+            imported_authoritative = true,
+        },
+        estimated = {
+            imported_current_snapshot            = true,
+            imported_enemy_damage_taken_fallback  = true,
+            estimated_from_casts                 = true,
+        },
+        failed = {
+            failed_damage_meter_unavailable = true,
+            failed_no_candidate             = true,
+            failed_no_player_source         = true,
+            failed_no_meaningful_data       = true,
+            failed_finalized_too_early      = true,
+        },
+    },
+    -- Context-aware minimum settle delay (seconds) before the first
+    -- finalization attempt. Referenced by CombatTracker:ScheduleFinalize.
+    DAMAGE_SETTLE_DELAY = {
+        arena          = 3.0,
+        battleground   = 2.0,
+        duel           = 1.0,
+        world_pvp      = 1.0,
+        training_dummy = 0.5,
+        general        = 0.5,
     },
 }

@@ -34,6 +34,7 @@ StrategyEngine.lua
 Utils\Metrics.lua
 ArenaRoundTracker.lua
 SpellAttributionPipeline.lua
+TimelineProducer.lua
 CompArchetypeClassifier.lua
 CombatTracker.lua
 ArenaScoutService.lua

@@ -237,10 +237,40 @@ function CombatTracker:InvalidatePendingFinalize(session)
     session.finalizeToken = (session.finalizeToken or 0) + 1
 end
 
+-- SetImportAuthority sets session.importedTotals.importStatus and derives
+-- session.importedTotals.totalAuthority from Constants.IMPORT_AUTHORITY.
+-- Safe to call with a nil importStatus (clears both fields to nil).
+function CombatTracker:SetImportAuthority(session, importStatus)
+    if not session then return end
+    if importStatus == false then return end  -- v8 migration sentinel; preserve existing state
+    session.importedTotals = session.importedTotals or {}
+    session.importedTotals.importStatus = importStatus
+    if importStatus == nil then
+        session.importedTotals.totalAuthority = nil
+        return
+    end
+    local auth = Constants.IMPORT_AUTHORITY
+    if auth.authoritative[importStatus] then
+        session.importedTotals.totalAuthority = "authoritative"
+    elseif auth.estimated[importStatus] then
+        session.importedTotals.totalAuthority = "estimated"
+    elseif auth.failed[importStatus] then
+        session.importedTotals.totalAuthority = "failed"
+    else
+        session.importedTotals.totalAuthority = nil
+    end
+end
+
 function CombatTracker:ScheduleFinalize(session, delay, reason)
     if not session or session.state ~= "active" then
         return
     end
+
+    -- T018: Enforce a context-aware minimum settle delay so C_DamageMeter has
+    -- time to push its final totals before the import pipeline runs.
+    local contextKey = session and session.context or "general"
+    local minDelay = Constants.DAMAGE_SETTLE_DELAY[contextKey] or 0.5
+    delay = math.max(delay, minDelay)
 
     session.finalizeToken = (session.finalizeToken or 0) + 1
     local finalizeToken = session.finalizeToken
@@ -420,6 +450,10 @@ function CombatTracker:CreateSession(context, subcontext, identitySource)
             healingDone = 0,
             damageTaken = 0,
             absorbed = 0,
+            -- v8: damage-import correctness fields
+            importStatus    = nil,  -- Constants.IMPORT_STATUS value
+            importDiagnostics = nil, -- ImportDiagnostics table (degraded/failed only)
+            totalAuthority  = nil,  -- "authoritative" | "estimated" | "failed"
         },
         windows = {},
         metrics = {},
@@ -1540,6 +1574,33 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         session.ratingSnapshot = { missingReason = "not_rated" }
     end
 
+    -- Seed arena slot identity (GUIDs, names, specs) BEFORE DamageMeter import
+    -- so collectExpectedOpponentGuids has populated data for candidate scoring.
+    -- The full CopyStateIntoSession (with pressure scoring) runs after import.
+    if session.context == Constants.CONTEXT.ARENA then
+        local art = ns.Addon:GetModule("ArenaRoundTracker")
+        if art and art.SeedSessionIdentity then
+            art:SeedSessionIdentity(session)
+        end
+    end
+
+    -- Diagnostic trace: state before DamageMeter import (helps debug arena failures).
+    if session.context == Constants.CONTEXT.ARENA or session.context == Constants.CONTEXT.BATTLEGROUND then
+        local slotCount = 0
+        if session.arena and session.arena.slots then
+            for _ in pairs(session.arena.slots) do slotCount = slotCount + 1 end
+        end
+        ns.Addon:Trace("session.pre_import", {
+            context = session.context or "unknown",
+            hasPrimaryOpponent = session.primaryOpponent ~= nil,
+            opponentGuid = session.primaryOpponent and session.primaryOpponent.guid or "nil",
+            opponentName = session.primaryOpponent and session.primaryOpponent.name or "nil",
+            arenaSlotCount = slotCount,
+            castCount = getRecordedCastCount(session),
+            localDamage = session.localTotals and session.localTotals.damageDone or 0,
+        })
+    end
+
     session.damageMeterImportAttempts = session.damageMeterImportAttempts or 0
     local damageMeterService = ns.Addon:GetModule("DamageMeterService")
     if damageMeterService and not (InCombatLockdown and InCombatLockdown()) then
@@ -1547,13 +1608,17 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
             return damageMeterService:ImportSession(session)
         end, debugstack)
         if not okImport then
+            -- T020: Mark import authority as failed (xpcall error path).
             session.captureQuality = session.captureQuality or {}
             session.captureQuality.damageMeter = Constants.CAPTURE_QUALITY.DEGRADED
+            self:SetImportAuthority(session, Constants.IMPORT_STATUS.FAILED_DAMAGE_METER_UNAVAILABLE)
             ns.Addon:Warn("Damage Meter import failed; storing limited session data.")
             ns.Addon:Debug("%s", importedOrError)
         elseif not importedOrError then
+            -- T020: Mark import authority as failed (import returned falsy path).
             session.captureQuality = session.captureQuality or {}
             session.captureQuality.damageMeter = Constants.CAPTURE_QUALITY.DEGRADED
+            self:SetImportAuthority(session, Constants.IMPORT_STATUS.FAILED_NO_CANDIDATE)
         end
     end
 
@@ -1580,6 +1645,30 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         })
         self:ScheduleFinalize(session, 0.75, "damage_meter_retry")
         return nil
+    end
+
+    -- T019: Zero-damage real-combat override — if retries are exhausted and
+    -- damage is still zero on a session with real combat signals, mark failed
+    -- so the UI shows an honest reason rather than a silent zero.
+    do
+        local finalDamage = (session.totals and session.totals.damageDone) or 0
+        local importedTotals = session.importedTotals or {}
+        local currentAuthority = importedTotals.totalAuthority
+        local hasRealCombatSignals = (
+            finalDamage == 0
+            and currentAuthority ~= "failed"
+            and (
+                getRecordedCastCount(session) > 0
+                or session.primaryOpponent ~= nil
+                or (session.duration or 0) >= 5
+                or session.context == Constants.CONTEXT.ARENA
+                or session.context == Constants.CONTEXT.BATTLEGROUND
+                or session.context == Constants.CONTEXT.DUEL
+            )
+        )
+        if hasRealCombatSignals and (importedTotals.importStatus == nil or currentAuthority == nil) then
+            self:SetImportAuthority(session, Constants.IMPORT_STATUS.FAILED_NO_MEANINGFUL_DATA)
+        end
     end
 
     -- T011: Export arena round state BEFORE classifier sync, metrics, and
@@ -1726,6 +1815,30 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         session.totals.damageDone or 0,
         ns.Addon:GetModule("CombatStore"):GetStorageStats().sessions or 0
     )
+
+    -- T021: Post-finalization one-shot re-import listener.
+    -- If the session was finalized without authoritative damage data, watch for
+    -- a DAMAGE_METER_COMBAT_SESSION_UPDATED event within 10 seconds and schedule
+    -- one additional import attempt. Capped at 1 re-attempt.
+    do
+        local importedTotals = session.importedTotals or {}
+        if importedTotals.totalAuthority ~= "authoritative" then
+            local dmService = ns.Addon:GetModule("DamageMeterService")
+            if dmService then
+                dmService._postFinalizeWatchSession = session
+                dmService._postFinalizeWatchAt     = Helpers.Now()
+                dmService._postFinalizeRetried     = false
+                scheduleAfter(10, function()
+                    if dmService._postFinalizeWatchSession == session then
+                        dmService._postFinalizeWatchSession = nil
+                        dmService._postFinalizeWatchAt      = nil
+                        dmService._postFinalizeRetried      = nil
+                    end
+                end)
+            end
+        end
+    end
+
     self:SetCurrentSession(nil)
 
     if ns.Addon:GetSetting("showSummaryAfterCombat") then
@@ -2014,6 +2127,46 @@ function CombatTracker:HandleDamageMeterCombatSessionUpdated(damageMeterType, se
             or damageMeterType == Enum.DamageMeterType.HealingDone
         ) then
             self:ScheduleFinalize(session, 0.2, "damage_meter_event")
+        end
+    end
+
+    -- T021: Post-finalization one-shot re-import — if a session was finalized
+    -- without authoritative data and this DM event arrives within the 10-second
+    -- watch window, schedule one additional import attempt.
+    local damageMeterSvc = ns.Addon:GetModule("DamageMeterService")
+    if damageMeterSvc
+        and damageMeterSvc._postFinalizeWatchSession
+        and not damageMeterSvc._postFinalizeRetried
+    then
+        local watchSession = damageMeterSvc._postFinalizeWatchSession
+        local watchAge = damageMeterSvc._postFinalizeWatchAt
+            and (Helpers.Now() - damageMeterSvc._postFinalizeWatchAt)
+            or math.huge
+        if watchAge <= 10 then
+            -- Clear watch refs immediately so the 10-second cleanup timer never holds a stale
+            -- session reference in the case where a new session overwrites the watch state
+            -- before the timer fires.
+            damageMeterSvc._postFinalizeRetried     = true
+            damageMeterSvc._postFinalizeWatchSession = nil
+            damageMeterSvc._postFinalizeWatchAt      = nil
+            scheduleAfter(0.5, function()
+                -- Guard: don't re-import if the session already has authoritative data
+                -- (another path may have succeeded between clearing watch refs and this callback).
+                local existingAuth = watchSession.importedTotals and watchSession.importedTotals.totalAuthority
+                if existingAuth == "authoritative" then return end
+
+                local store = ns.Addon:GetModule("CombatStore")
+                if store and damageMeterSvc.ImportSession then
+                    local ok = xpcall(function()
+                        damageMeterSvc:ImportSession(watchSession)
+                        self:SetImportAuthority(watchSession, watchSession.importedTotals and watchSession.importedTotals.importStatus)
+                        store:PersistSession(watchSession)
+                    end, debugstack)
+                    if not ok then
+                        ns.Addon:Trace("damage_meter.post_finalize_retry.error", {})
+                    end
+                end
+            end)
         end
     end
 end

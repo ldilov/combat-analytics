@@ -40,6 +40,9 @@ local function buildFallbackSnapshot(reason)
         masteryEffect = nil,
         versatilityDamageDone = nil,
         versatilityDamageTaken = nil,
+        critPct = nil,
+        spellCritPct = nil,
+        hastePct = nil,
         gear = {},
         weapons = {},
         trinkets = {},
@@ -181,6 +184,9 @@ function SnapshotService:CapturePlayerSnapshot(reason)
     local averageItemLevel, equippedItemLevel, pvpItemLevel = ApiCompat.GetAverageItemLevel()
     local masteryEffect = ApiCompat.GetMasteryEffect()
     local versatilityDamageDone, versatilityDamageTaken = ApiCompat.GetVersatilityBonuses()
+    local critPct = ApiCompat.GetCritChance()
+    local spellCritPct = ApiCompat.GetSpellCritChance()
+    local hastePct = ApiCompat.GetHaste()
     local activeConfigId = ApiCompat.GetActiveConfigID()
     local heroTalentSpecId = ApiCompat.GetActiveHeroTalentSpec()
     ns.Addon:Trace("snapshot.capture.state", {
@@ -237,6 +243,9 @@ function SnapshotService:CapturePlayerSnapshot(reason)
         masteryEffect = masteryEffect,
         versatilityDamageDone = versatilityDamageDone,
         versatilityDamageTaken = versatilityDamageTaken,
+        critPct = critPct,
+        spellCritPct = spellCritPct,
+        hastePct = hastePct,
         gear = gear,
         weapons = weapons,
         trinkets = trinkets,
@@ -247,7 +256,73 @@ function SnapshotService:CapturePlayerSnapshot(reason)
     snapshot.buildId           = BuildHash.ComputeBuildId(snapshot)
     snapshot.loadoutId         = BuildHash.ComputeLoadoutId(snapshot)
     snapshot.snapshotFreshness = Constants.SNAPSHOT_FRESHNESS.FRESH
+
+    -- T035: embed a stat profile in the session-start snapshot.
+    snapshot.statProfile = self:CaptureStatProfile(snapshot.statProfile)
+
     return snapshot
+end
+
+-- T033/T034: Capture secondary stats into a StatProfile table.
+-- Accepts an optional existingProfile — if it is already FRESH and the new
+-- capture is not, the existing profile is returned unchanged (T034 guard).
+function SnapshotService:CaptureStatProfile(existingProfile)
+    local stats = ApiCompat.GetAllSecondaryStats()
+
+    -- Determine freshness.
+    local freshness
+    local hasCrit    = stats.critPct ~= nil
+    local hasHaste   = stats.hastePct ~= nil
+    local hasMastery = stats.masteryPct ~= nil
+    local hasVers    = stats.versDamageDonePct ~= nil
+
+    if hasCrit and hasHaste and hasMastery and hasVers then
+        freshness = Constants.SNAPSHOT_FRESHNESS.FRESH
+    elseif not hasCrit and not hasHaste and not hasMastery and not hasVers then
+        freshness = Constants.SNAPSHOT_FRESHNESS.UNAVAILABLE
+    else
+        freshness = Constants.SNAPSHOT_FRESHNESS.DEGRADED
+    end
+
+    -- T034: never overwrite a FRESH profile with a degraded one.
+    if existingProfile ~= nil
+    and existingProfile.snapshotFreshness == Constants.SNAPSHOT_FRESHNESS.FRESH
+    and freshness ~= Constants.SNAPSHOT_FRESHNESS.FRESH then
+        ns.Addon:Trace("snapshot.stat_profile.skipped_degraded_overwrite", {})
+        return existingProfile
+    end
+
+    -- Capture item levels safely.
+    local equippedIL, pvpIL = nil, nil
+    if GetAverageItemLevel then
+        -- GetAverageItemLevel() returns (average, equipped, pvp).
+        -- pcall captures: ok, average, equipped.
+        local ok, _avgIL, eqIL = pcall(GetAverageItemLevel)
+        if ok then equippedIL = eqIL end
+    end
+    if C_PvP and C_PvP.GetScoreInfo then
+        -- pvpItemLevel may be available on the score table; kept nil here
+        -- as GetScoreInfo is only valid post-match (SecretInActivePvPMatch=true).
+        pvpIL = nil
+    end
+
+    local captureQuality = (freshness == Constants.SNAPSHOT_FRESHNESS.FRESH)
+        and Constants.CAPTURE_QUALITY.OK
+        or  Constants.CAPTURE_QUALITY.DEGRADED
+
+    return {
+        capturedAt          = ApiCompat.GetServerTime(),
+        snapshotFreshness   = freshness,
+        captureQuality      = captureQuality,
+        critPct             = stats.critPct,
+        spellCritPct        = stats.spellCritPct,
+        hastePct            = stats.hastePct,
+        masteryPct          = stats.masteryPct,
+        versDamageDonePct   = stats.versDamageDonePct,
+        versDamageTakenPct  = stats.versDamageTakenPct,
+        itemLevelEquipped   = equippedIL,
+        itemLevelPvP        = pvpIL,
+    }
 end
 
 function SnapshotService:RefreshPlayerSnapshot(reason)

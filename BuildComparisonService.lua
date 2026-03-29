@@ -395,7 +395,10 @@ end
 
 -- Compare two builds within a scope. Returns a ComparisonResult, or nil when
 -- either buildId is absent.
-function BuildComparisonService:Compare(buildIdA, buildIdB, scope)
+-- options.buildAMode / options.buildBMode control stat profile resolution:
+--   "latest"       → use the build entry's latestStatProfile (default)
+--   "current_live" → call BuildCatalogService:GetCurrentLiveStatProfile()
+function BuildComparisonService:Compare(buildIdA, buildIdB, scope, options)
     if not buildIdA or not buildIdB then
         ns.Addon:Trace("comparison.compare.nil_build_id", {
             hasA = buildIdA and true or false,
@@ -403,6 +406,7 @@ function BuildComparisonService:Compare(buildIdA, buildIdB, scope)
         })
         return nil
     end
+    options = options or {}
     local catalog = getCatalog()
     local store   = getStore()
 
@@ -416,6 +420,50 @@ function BuildComparisonService:Compare(buildIdA, buildIdB, scope)
         local charKey = snap and snap.name and snap.realm and (snap.name .. "-" .. snap.realm) or nil
         local specId  = snap and snap.specId or nil
         scope = self:GetLastScope(charKey, specId)
+    end
+
+    -- T040: Resolve stat profiles based on mode option.
+    local modeA = options.buildAMode or "latest"
+    local modeB = options.buildBMode or "latest"
+
+    local statProfileA, statProfileB
+    if modeA == "current_live" and catalog then
+        statProfileA = catalog:GetCurrentLiveStatProfile()
+    else
+        statProfileA = profileA.latestStatProfile
+    end
+    if modeB == "current_live" and catalog then
+        statProfileB = catalog:GetCurrentLiveStatProfile()
+    else
+        statProfileB = profileB.latestStatProfile
+    end
+
+    -- T041/T042: Compute stat delta; nil out when either side is untrustworthy.
+    local UNAVAILABLE = Constants.SNAPSHOT_FRESHNESS.UNAVAILABLE
+    local aFreshness = statProfileA and statProfileA.snapshotFreshness or UNAVAILABLE
+    local bFreshness = statProfileB and statProfileB.snapshotFreshness or UNAVAILABLE
+
+    local function deltaOrNil(a, b)
+        return (a ~= nil and b ~= nil) and (b - a) or nil
+    end
+
+    local statDelta
+    if statProfileA == nil or statProfileB == nil
+    or aFreshness == UNAVAILABLE or bFreshness == UNAVAILABLE then
+        -- T042: Do not show a delta when either side is not trustworthy.
+        statDelta = {
+            critPct           = nil,
+            hastePct          = nil,
+            masteryPct        = nil,
+            versDamageDonePct = nil,
+        }
+    else
+        statDelta = {
+            critPct           = deltaOrNil(statProfileA.critPct,           statProfileB.critPct),
+            hastePct          = deltaOrNil(statProfileA.hastePct,          statProfileB.hastePct),
+            masteryPct        = deltaOrNil(statProfileA.masteryPct,        statProfileB.masteryPct),
+            versDamageDonePct = deltaOrNil(statProfileA.versDamageDonePct, statProfileB.versDamageDonePct),
+        }
     end
 
     -- Fetch session samples.
@@ -437,17 +485,22 @@ function BuildComparisonService:Compare(buildIdA, buildIdB, scope)
     local diff = self:ComputeDiff(profileA, profileB)
 
     return {
-        buildA      = profileA,
-        buildB      = profileB,
-        scope       = scope,
-        samplesA    = samplesA,
-        samplesB    = samplesB,
-        metricsA    = metricsA,
-        metricsB    = metricsB,
-        confidenceA = confidenceA,
-        confidenceB = confidenceB,
-        diff        = diff,
-        computedAt  = GetTime(),
+        buildA               = profileA,
+        buildB               = profileB,
+        scope                = scope,
+        samplesA             = samplesA,
+        samplesB             = samplesB,
+        metricsA             = metricsA,
+        metricsB             = metricsB,
+        confidenceA          = confidenceA,
+        confidenceB          = confidenceB,
+        diff                 = diff,
+        computedAt           = GetTime(),
+        statDelta            = statDelta,
+        buildAStatFreshness  = aFreshness,
+        buildBStatFreshness  = bFreshness,
+        buildAStatCapturedAt = statProfileA and statProfileA.capturedAt,
+        buildBStatCapturedAt = statProfileB and statProfileB.capturedAt,
     }
 end
 

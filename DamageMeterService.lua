@@ -144,6 +144,12 @@ local function getExpectedDamageTotal(session, snapshot)
         return enemyDamage
     end
 
+    -- Arena/BG: enemyDamageTaken is a valid proxy for the player's damage output
+    -- when the DamageDone source returned zero (restricted CLEU environment).
+    if session.context == Constants.CONTEXT.ARENA or session.context == Constants.CONTEXT.BATTLEGROUND then
+        return enemyDamage
+    end
+
     local identity = session.identity or {}
     local evidence = identity.evidence or {}
     local opponent = session.primaryOpponent or {}
@@ -409,6 +415,26 @@ function DamageMeterService:GetContextFitScore(session, snapshot)
         return score
     end
 
+    if context == Constants.CONTEXT.ARENA or context == Constants.CONTEXT.BATTLEGROUND then
+        local score = 0
+        if (snapshot.damageDone or 0) > 0 then
+            score = score + 10
+        end
+        if (snapshot.damageTaken or 0) > 0 then
+            score = score + 8
+        end
+        if (snapshot.enemyDamageTaken or 0) > 0 then
+            score = score + 6
+        end
+        if countCombatSpells(snapshot.damageSpells) > 0 then
+            score = score + 4
+        end
+        if (snapshot.healingDone or 0) > 0 then
+            score = score + 3
+        end
+        return score
+    end
+
     return 0
 end
 
@@ -432,6 +458,21 @@ function DamageMeterService:GetOpponentFitScore(session, enemySources)
 
     local expectedGuids = collectExpectedOpponentGuids(session)
     local primaryGuid   = session.primaryOpponent and session.primaryOpponent.guid
+
+    -- Count how many expected GUIDs we actually have.
+    local expectedCount = 0
+    for _ in pairs(expectedGuids) do expectedCount = expectedCount + 1 end
+
+    -- When no expected GUIDs are available (e.g. arena secret values that were
+    -- sanitized to nil), skip the overlap penalty — the candidate can still be
+    -- ranked by duration, signal score, and source count.
+    if expectedCount == 0 and not primaryGuid then
+        if session.context == Constants.CONTEXT.ARENA or session.context == Constants.CONTEXT.BATTLEGROUND then
+            -- Give a small positive score for having enemy sources at all.
+            return #sources > 0 and 8 or 0
+        end
+        return 0
+    end
 
     local score = 0
     local overlapCount = 0
@@ -488,6 +529,14 @@ function DamageMeterService:GetOpponentFitScore(session, enemySources)
             score = score - 8
         end
     end
+
+    ns.Addon:Trace("damage_meter.opponent_fit", {
+        expectedGuidCount = expectedCount,
+        candidateSourceCount = #sources,
+        overlapCount = (primaryFound and 1 or 0) + overlapCount,
+        score = score,
+        context = session.context or "unknown",
+    })
 
     return score
 end
@@ -850,8 +899,18 @@ function DamageMeterService:ResolveDamageSpellBreakdown(session, snapshot)
         if enemyCoverage > localCoverage + 0.15 and enemyTotal > localTotal then
             return Enum.DamageMeterType.EnemyDamageTaken, enemySpells, "enemy_damage_taken"
         end
-    elseif enemyTotal > localTotal * 1.15 then
-        return Enum.DamageMeterType.EnemyDamageTaken, enemySpells, "enemy_damage_taken"
+    else
+        -- No expected total — compare raw totals and spell detail richness.
+        local localCount = countCombatSpells(localSpells)
+        local enemyCount = countCombatSpells(enemySpells)
+        if enemyTotal > localTotal * 1.15 then
+            return Enum.DamageMeterType.EnemyDamageTaken, enemySpells, "enemy_damage_taken"
+        end
+        -- Prefer the source with significantly more spell entries when totals
+        -- are close — a richer breakdown produces better per-spell analytics.
+        if enemyCount > localCount * 2 and enemyCount >= 3 and enemyTotal >= localTotal * 0.85 then
+            return Enum.DamageMeterType.EnemyDamageTaken, enemySpells, "enemy_damage_taken"
+        end
     end
 
     return Enum.DamageMeterType.DamageDone, localSpells, "damage_done"
@@ -987,6 +1046,13 @@ function DamageMeterService:ApplySnapshotToSession(session, snapshot)
         return false
     end
 
+    -- T015: Never overwrite an authoritative import with a lesser one.
+    if session.importedTotals
+        and session.importedTotals.importStatus == Constants.IMPORT_STATUS.IMPORTED_AUTHORITATIVE
+    then
+        return false
+    end
+
     session.duration = tonumber(snapshot.duration) or session.duration or 0
     session.captureQuality = session.captureQuality or {}
     session.captureQuality.damageMeter = Constants.CAPTURE_QUALITY.OK
@@ -1044,6 +1110,23 @@ function DamageMeterService:ApplySnapshotToSession(session, snapshot)
     if session.import then
         session.import.damageBreakdown = session.damageBreakdownSource or "none"
     end
+
+    -- T014: Set importStatus based on the resolved import path.
+    session.importedTotals = session.importedTotals or {}
+    if not session.importedTotals.importStatus then
+        local hint   = session.import and session.import.finalDamageSourceHint
+        local source = session.import and session.import.source
+        if hint == "enemy_damage_taken_fallback" then
+            session.importedTotals.importStatus = Constants.IMPORT_STATUS.IMPORTED_ENEMY_DAMAGE_TAKEN_FALLBACK
+        elseif session.damageBreakdownSource == "estimated_from_casts" then
+            session.importedTotals.importStatus = Constants.IMPORT_STATUS.ESTIMATED_FROM_CASTS
+        elseif source == "historical" then
+            session.importedTotals.importStatus = Constants.IMPORT_STATUS.IMPORTED_AUTHORITATIVE
+        elseif source == "current" or source == "cached" then
+            session.importedTotals.importStatus = Constants.IMPORT_STATUS.IMPORTED_CURRENT_SNAPSHOT
+        end
+    end
+
     return true
 end
 
@@ -1080,6 +1163,10 @@ function DamageMeterService:GetPlayerSource(sessionId, damageMeterType)
     end
 
     if not sessionSource then
+        -- Synthetic fallback: API returned no spell-level data but we have a combat total.
+        -- FAILED_NO_PLAYER_SOURCE is not applicable here — combatSource is always non-nil at
+        -- this point (the nil case returns early above). Emit a synthetic so callers always
+        -- receive a usable source with at least total-level damage data.
         sessionSource = {
             combatSpells = {},
             maxAmount = combatSource.totalAmount or 0,
@@ -1128,6 +1215,23 @@ function DamageMeterService:MergeSpellTotals(session, damageMeterType, combatSpe
     end
 end
 
+-- T010: buildImportDiagnostics creates a new diagnostics record for tracking
+-- the import decision path. Fields are populated by ImportSession and callers.
+local function buildImportDiagnostics()
+    return {
+        baselineSessionId    = nil,
+        candidateIds         = {},
+        selectedCandidateId  = nil,
+        selectedDmType       = nil,
+        sourceResolutionPath = nil,
+        durationDelta        = nil,
+        opponentFitScore     = nil,
+        signalScore          = nil,
+        fallbackUsed         = nil,
+        failureReason        = nil,
+    }
+end
+
 function DamageMeterService:ApplyPrimaryOpponent(session, sessionId)
     local enemySession = ApiCompat.GetCombatSessionFromID(sessionId, Enum.DamageMeterType.EnemyDamageTaken)
     local topSource = nil
@@ -1140,18 +1244,43 @@ function DamageMeterService:ApplyPrimaryOpponent(session, sessionId)
 
     if topSource then
         session.primaryOpponent = session.primaryOpponent or {}
-        session.primaryOpponent.guid = topSource.sourceGUID or session.primaryOpponent.guid
-        session.primaryOpponent.name = topSource.name or session.primaryOpponent.name
-        session.primaryOpponent.classFile = topSource.classFilename or session.primaryOpponent.classFile
-        session.primaryOpponent.className = topSource.classFilename or session.primaryOpponent.className
-        session.primaryOpponent.specIconId = topSource.specIconID or session.primaryOpponent.specIconId
-        session.primaryOpponent.classification = topSource.classification or session.primaryOpponent.classification
-        return
+        local opp = session.primaryOpponent
+        opp.guid           = topSource.sourceGUID    or opp.guid
+        opp.name           = topSource.name          or opp.name
+        opp.classFile      = topSource.classFilename or opp.classFile
+        opp.className      = topSource.classFilename or opp.className
+        opp.specIconId     = topSource.specIconID    or opp.specIconId
+        opp.classification = topSource.classification or opp.classification
+    else
+        local trackedUnit = getLatestTrackedUnit(session)
+        if trackedUnit then
+            session.primaryOpponent = session.primaryOpponent or trackedUnit
+        end
     end
 
-    local trackedUnit = getLatestTrackedUnit(session)
-    if trackedUnit then
-        session.primaryOpponent = session.primaryOpponent or trackedUnit
+    -- Cross-reference arena slot data for spec resolution.
+    -- DamageMeter sources provide GUID/name/class but not specId/specName.
+    -- Prefer session.arena.slots (populated by SeedSessionIdentity) over
+    -- art:GetSlots() which returns empty after EndMatch clears the match.
+    if session.primaryOpponent then
+        local opp = session.primaryOpponent
+        if not opp.specId or not opp.specName then
+            local slots = (session.arena and session.arena.slots) or {}
+            -- Fallback to live ArenaRoundTracker if session slots are empty.
+            if not next(slots) then
+                local art = ns and ns.Addon and ns.Addon.GetModule and ns.Addon:GetModule("ArenaRoundTracker")
+                if art then slots = art:GetSlots() end
+            end
+            for _, slot in pairs(slots) do
+                if (slot.guid and slot.guid == opp.guid) or (slot.name and slot.name == opp.name) then
+                    opp.specId     = opp.specId     or slot.prepSpecId
+                    opp.specName   = opp.specName   or slot.prepSpecName
+                    opp.specIconId = opp.specIconId or slot.prepSpecIconId
+                    opp.classFile  = opp.classFile  or slot.prepClassFile or slot.classFile
+                    break
+                end
+            end
+        end
     end
 end
 
@@ -1159,6 +1288,10 @@ function DamageMeterService:ImportSession(session)
     if not session or not self:IsSupported() then
         return false
     end
+
+    -- T011: Create diagnostics record and thread it through the function.
+    local diag = buildImportDiagnostics()
+    diag.baselineSessionId = self.activeSessionBaselineId or self.lastSeenSessionId or 0
 
     local isAvailable, failureReason = self:IsAvailable()
     if not isAvailable then
@@ -1173,10 +1306,16 @@ function DamageMeterService:ImportSession(session)
     end
 
     local candidateSessions = self:FindSessionsForImport()
+
+    -- T017: Handle FAILED_DAMAGE_METER_UNAVAILABLE — no sessions available.
     if #candidateSessions == 0 then
         ns.Addon:Trace("damage_meter.import.none", {
             baseline = self.activeSessionBaselineId or 0,
         })
+        session.importedTotals = session.importedTotals or {}
+        session.importedTotals.importStatus = Constants.IMPORT_STATUS.FAILED_DAMAGE_METER_UNAVAILABLE
+        diag.failureReason = "C_DamageMeter returned no sessions"
+        session.importedTotals.importDiagnostics = diag
         return false
     end
 
@@ -1185,6 +1324,8 @@ function DamageMeterService:ImportSession(session)
     for _, candidate in ipairs(candidateSessions) do
         local candidateId = candidate and candidate.sessionID
         if candidateId then
+            -- T011: Track every candidate evaluated.
+            diag.candidateIds[#diag.candidateIds + 1] = candidateId
             local builtCandidate = self:BuildHistoricalSnapshot(session, candidate, candidateId)
             local hasMeaningfulData = snapshotHasMeaningfulData(builtCandidate.snapshot)
             ns.Addon:Trace("damage_meter.import.candidate", {
@@ -1212,6 +1353,16 @@ function DamageMeterService:ImportSession(session)
         end
     end
 
+    -- T012: Populate diagnostics after selecting the winning candidate.
+    if selectedCandidate then
+        diag.selectedCandidateId = selectedCandidate.sessionId
+        diag.durationDelta       = selectedCandidate.durationDelta
+        diag.opponentFitScore    = selectedCandidate.opponentFitScore
+        diag.signalScore         = selectedCandidate.signalScore
+    else
+        diag.failureReason = "no_candidate_matched"
+    end
+
     if (not selectedCandidate or not selectedCandidate.hasMeaningfulData) and self.currentSessionSnapshot and snapshotHasMeaningfulData(self.currentSessionSnapshot) then
         self:ApplyImportMetadata(session, {
             source = "cached",
@@ -1226,7 +1377,20 @@ function DamageMeterService:ImportSession(session)
             damage = self.currentSessionSnapshot.damageDone or 0,
             enemyDamage = self.currentSessionSnapshot.enemyDamageTaken or 0,
         })
-        return self:ApplySnapshotToSession(session, self.currentSessionSnapshot)
+        local ok = self:ApplySnapshotToSession(session, self.currentSessionSnapshot)
+        -- Apply opponent identity from DM enemy sources (all paths, not just historical).
+        if ok then
+            local oppSessionId = self.lastSeenSessionId or self:GetLatestSessionId()
+            if oppSessionId then
+                self:ApplyPrimaryOpponent(session, oppSessionId)
+            end
+        end
+        -- IMPORTANT fix: persist partial diagnostics on early fallback returns
+        if diag.failureReason ~= nil or #(diag.candidateIds or {}) > 0 then
+            session.importedTotals = session.importedTotals or {}
+            session.importedTotals.importDiagnostics = diag
+        end
+        return ok
     end
 
     if not selectedCandidate or not selectedCandidate.sessionId then
@@ -1261,7 +1425,19 @@ function DamageMeterService:ImportSession(session)
                 damage = self.currentSessionSnapshot and self.currentSessionSnapshot.damageDone or 0,
                 sessionId = 0,
             })
-            return self:ApplySnapshotToSession(session, self.currentSessionSnapshot)
+            local ok = self:ApplySnapshotToSession(session, self.currentSessionSnapshot)
+            -- Apply opponent identity from current DM session.
+            if ok then
+                local latestId = self:GetLatestSessionId()
+                if latestId then
+                    self:ApplyPrimaryOpponent(session, latestId)
+                end
+            end
+            if diag.failureReason ~= nil or #(diag.candidateIds or {}) > 0 then
+                session.importedTotals = session.importedTotals or {}
+                session.importedTotals.importDiagnostics = diag
+            end
+            return ok
         elseif self.currentSessionSnapshot then
             self:ApplyImportMetadata(session, {
                 source = "cached",
@@ -1272,7 +1448,19 @@ function DamageMeterService:ImportSession(session)
                 opponentFitScore = 0,   -- T017: diagnostics on fallback path
                 enemySourceCount = 0,
             })
-            return self:ApplySnapshotToSession(session, self.currentSessionSnapshot)
+            local ok = self:ApplySnapshotToSession(session, self.currentSessionSnapshot)
+            -- Apply opponent identity from DM enemy sources.
+            if ok then
+                local oppSessionId = self.lastSeenSessionId or self:GetLatestSessionId()
+                if oppSessionId then
+                    self:ApplyPrimaryOpponent(session, oppSessionId)
+                end
+            end
+            if diag.failureReason ~= nil or #(diag.candidateIds or {}) > 0 then
+                session.importedTotals = session.importedTotals or {}
+                session.importedTotals.importDiagnostics = diag
+            end
+            return ok
         else
             return false
         end
@@ -1307,7 +1495,12 @@ function DamageMeterService:ImportSession(session)
     })
     self:ApplySnapshotToSession(session, selectedCandidate.snapshot)
 
-    if (session.context == Constants.CONTEXT.TRAINING_DUMMY or session.context == Constants.CONTEXT.DUEL) and (session.totals.damageDone or 0) <= 0 then
+    local needsEnemyFallback = (session.totals.damageDone or 0) <= 0
+        and (session.context == Constants.CONTEXT.TRAINING_DUMMY
+            or session.context == Constants.CONTEXT.DUEL
+            or session.context == Constants.CONTEXT.ARENA
+            or session.context == Constants.CONTEXT.BATTLEGROUND)
+    if needsEnemyFallback then
         if (selectedCandidate.snapshot.enemyDamageTaken or 0) > 0 then
             session.totals.damageDone = selectedCandidate.snapshot.enemyDamageTaken or 0
             ns.Addon:Trace("damage_meter.import.enemy_fallback", {
@@ -1422,6 +1615,37 @@ function DamageMeterService:ImportSession(session)
         selectedScore = selectedCandidate.score or 0,
         taken = session.totals.damageTaken or 0,
     })
+
+    -- T016: Finalize import authority and persist diagnostics when not authoritative.
+    local ct = ns.Addon and ns.Addon.GetModule and ns.Addon:GetModule("CombatTracker")
+    local currentImportStatus = session.importedTotals and session.importedTotals.importStatus
+    if ct and ct.SetImportAuthority then
+        ct:SetImportAuthority(session, currentImportStatus)
+    else
+        -- Fallback: derive authority directly without CombatTracker.
+        session.importedTotals = session.importedTotals or {}
+        if currentImportStatus then
+            local authorityTable = Constants.IMPORT_AUTHORITY
+            if authorityTable.authoritative[currentImportStatus] then
+                session.importedTotals.totalAuthority = "authoritative"
+            elseif authorityTable.estimated[currentImportStatus] then
+                session.importedTotals.totalAuthority = "estimated"
+            elseif authorityTable.failed[currentImportStatus] then
+                session.importedTotals.totalAuthority = "failed"
+            end
+        end
+    end
+    local finalAuthority = session.importedTotals and session.importedTotals.totalAuthority
+    if finalAuthority ~= "authoritative" then
+        -- Only persist diagnostics for non-authoritative imports (saves SavedVariables space).
+        local hasDiagData = (diag.failureReason ~= nil)
+            or (diag.selectedCandidateId ~= nil)
+            or (#(diag.candidateIds or {}) > 0)
+        if hasDiagData then
+            session.importedTotals.importDiagnostics = diag
+        end
+    end
+
     return true
 end
 
