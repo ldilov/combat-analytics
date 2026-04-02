@@ -8,6 +8,54 @@ local _elapsed = 0
 -- Modular event router: handlers registered per event name.
 local _handlers = {}
 
+-- T013: UNIT_AURA coalescing — multiple UNIT_AURA events can fire for the same
+-- unit within a single frame (e.g. several auras applied at cast-time). Buffer
+-- per-unit updateInfo and flush once per OnUpdate tick so downstream handlers
+-- (CombatTracker, TimelineProducer) each process one merged call per unit.
+local _pendingAura = {}  -- [unitTarget] = { addedAuras={}, removedAuraInstanceIDs={} }
+
+local function _accumulateUnitAura(unitTarget, updateInfo)
+    if not unitTarget then return end
+    local pending = _pendingAura[unitTarget]
+    if not pending then
+        pending = { addedAuras = {}, removedAuraInstanceIDs = {} }
+        _pendingAura[unitTarget] = pending
+    end
+    if updateInfo then
+        if updateInfo.addedAuras then
+            for _, v in ipairs(updateInfo.addedAuras) do
+                pending.addedAuras[#pending.addedAuras + 1] = v
+            end
+        end
+        if updateInfo.removedAuraInstanceIDs then
+            for _, v in ipairs(updateInfo.removedAuraInstanceIDs) do
+                pending.removedAuraInstanceIDs[#pending.removedAuraInstanceIDs + 1] = v
+            end
+        end
+    end
+end
+
+local function _flushPendingAura()
+    if not next(_pendingAura) then return end
+    local tracker = ns.Addon:GetModule("CombatTracker")
+    local tp      = ns.Addon:GetModule("TimelineProducer")
+    for unit, merged in pairs(_pendingAura) do
+        if tracker and tracker.HandleUnitAura then
+            local ok, err = xpcall(function()
+                tracker:HandleUnitAura(unit, merged)
+            end, debugstack)
+            if not ok then reportError("UNIT_AURA flush (CombatTracker)", err) end
+        end
+        if tp and tp.HandleUnitAura then
+            local ok, err = xpcall(function()
+                tp:HandleUnitAura(unit, merged)
+            end, debugstack)
+            if not ok then reportError("UNIT_AURA flush (TimelineProducer)", err) end
+        end
+    end
+    wipe(_pendingAura)
+end
+
 local function reportError(prefix, message)
     if ns and ns.Addon and ns.Addon.Warn then
         ns.Addon:Warn(string.format("%s: %s", prefix, tostring(message)))
@@ -37,7 +85,9 @@ local TRACKER_EVENT_MAP = {
     DAMAGE_METER_RESET                   = "HandleDamageMeterReset",
     UNIT_SPELLCAST_SUCCEEDED             = "HandleUnitSpellcastSucceeded",
     SPELL_DATA_LOAD_RESULT               = "HandleSpellDataLoadResult",
-    UNIT_AURA                            = "HandleUnitAura",
+    -- UNIT_AURA is NOT dispatched via TRACKER_EVENT_MAP; it is coalesced per
+    -- unit per frame by _flushPendingAura() called from OnUpdate (T013).
+    -- UNIT_AURA                            = "HandleUnitAura",
     PLAYER_SPECIALIZATION_CHANGED        = "HandlePlayerSpecializationChanged",
     PLAYER_JOINED_PVP_MATCH              = "HandlePlayerJoinedPvpMatch",
     PVP_MATCH_ACTIVE                     = "HandlePvpMatchActive",
@@ -59,6 +109,11 @@ local TRACKER_EVENT_MAP = {
     LOSS_OF_CONTROL_UPDATE               = "HandleLossOfControlUpdate",
     PLAYER_CONTROL_LOST                  = "HandlePlayerControlLost",
     PLAYER_CONTROL_GAINED                = "HandlePlayerControlGained",
+    PLAYER_TARGET_CHANGED                = "HandlePlayerTargetChanged",
+    PLAYER_FOCUS_CHANGED                 = "HandlePlayerFocusChanged",
+    UNIT_PET                             = "HandleUnitPet",
+    NAME_PLATE_UNIT_ADDED                = "HandleNamePlateUnitAdded",
+    ADDON_RESTRICTION_STATE_CHANGED      = "HandleRestrictionStateChanged",
     INSPECT_READY                        = nil, -- handled via registered handler below
     CHAT_MSG_ADDON                       = nil, -- handled via registered handler below
 }
@@ -162,6 +217,9 @@ Events:SetScript("OnUpdate", function(_, elapsed)
         end
     end
 
+    -- T013: Flush coalesced UNIT_AURA events once per tick.
+    _flushPendingAura()
+
     -- Process inspect queue for PvP talent capture (Task 1.4).
     local art = ns.Addon:GetModule("ArenaRoundTracker")
     if art and art.ProcessInspectQueue then
@@ -194,20 +252,67 @@ end)
 -- ── Timeline Producer Wiring ─────────────────────────────────────────────────
 -- T027-T030: Route sanctioned events to TimelineProducer for timeline event creation.
 
--- T028: UNIT_SPELLCAST_SUCCEEDED → PlayerCastProducer + spell stats
-Events.RegisterHandler("UNIT_SPELLCAST_SUCCEEDED", function(event, unitTarget, castGUID, spellID)
+-- T028/T016: UNIT_SPELLCAST_SUCCEEDED → VisibleCastProducer (via TimelineProducer shim)
+Events.RegisterHandler("UNIT_SPELLCAST_SUCCEEDED", function(event, unitTarget, castGUID, spellID, castBarID)
     local tp = ns.Addon:GetModule("TimelineProducer")
     if tp and tp.HandleUnitSpellcastSucceeded then
-        tp:HandleUnitSpellcastSucceeded(unitTarget, castGUID, spellID)
+        tp:HandleUnitSpellcastSucceeded(unitTarget, castGUID, spellID, castBarID)
     end
 end)
 
--- T029: UNIT_AURA → VisibleAuraProducer + aura stats
-Events.RegisterHandler("UNIT_AURA", function(event, unitTarget, updateInfo)
-    local tp = ns.Addon:GetModule("TimelineProducer")
-    if tp and tp.HandleUnitAura then
-        tp:HandleUnitAura(unitTarget, updateInfo)
+-- T016: Arena cast lifecycle events → VisibleCastProducer.
+-- NOTE: Some of these events may be forbidden in Midnight restricted sessions;
+-- the ADDON_ACTION_BLOCKED handler will log the violation if so.
+Events.RegisterHandler("UNIT_SPELLCAST_START", function(event, unitTarget, castGUID, spellID, castBarID)
+    local vcp = ns.Addon:GetModule("VisibleCastProducer")
+    if vcp and vcp.HandleUnitSpellcastStart then
+        vcp:HandleUnitSpellcastStart(unitTarget, castGUID, spellID, castBarID)
     end
+end)
+
+Events.RegisterHandler("UNIT_SPELLCAST_STOP", function(event, unitTarget, castGUID, spellID, castBarID)
+    local vcp = ns.Addon:GetModule("VisibleCastProducer")
+    if vcp and vcp.HandleUnitSpellcastStop then
+        vcp:HandleUnitSpellcastStop(unitTarget, castGUID, spellID, castBarID)
+    end
+end)
+
+Events.RegisterHandler("UNIT_SPELLCAST_INTERRUPTED", function(event, unitTarget, castGUID, spellID, castBarID)
+    local vcp = ns.Addon:GetModule("VisibleCastProducer")
+    if vcp and vcp.HandleUnitSpellcastInterrupted then
+        vcp:HandleUnitSpellcastInterrupted(unitTarget, castGUID, spellID, castBarID)
+    end
+end)
+
+Events.RegisterHandler("UNIT_SPELLCAST_CHANNEL_START", function(event, unitTarget, castGUID, spellID, castBarID)
+    local vcp = ns.Addon:GetModule("VisibleCastProducer")
+    if vcp and vcp.HandleUnitSpellcastChannelStart then
+        vcp:HandleUnitSpellcastChannelStart(unitTarget, castGUID, spellID, castBarID)
+    end
+end)
+
+Events.RegisterHandler("UNIT_SPELLCAST_CHANNEL_STOP", function(event, unitTarget, castGUID, spellID, castBarID)
+    local vcp = ns.Addon:GetModule("VisibleCastProducer")
+    if vcp and vcp.HandleUnitSpellcastChannelStop then
+        vcp:HandleUnitSpellcastChannelStop(unitTarget, castGUID, spellID, castBarID)
+    end
+end)
+
+-- T005: UNIT_SPELLCAST_FAILED — cast failed with a reason (e.g. LoS, range, interrupted).
+-- Registered in ROUTER_EVENTS; forwarded to VisibleCastProducer for lifecycle tracking.
+-- NOTE: May be forbidden in Midnight restricted sessions; ADDON_ACTION_BLOCKED will surface violations.
+Events.RegisterHandler("UNIT_SPELLCAST_FAILED", function(event, unitTarget, castGUID, spellID, castBarID)
+    local vcp = ns.Addon:GetModule("VisibleCastProducer")
+    if vcp and vcp.HandleUnitSpellcastFailed then
+        vcp:HandleUnitSpellcastFailed(unitTarget, castGUID, spellID, castBarID)
+    end
+end)
+
+-- T013/T029: UNIT_AURA → coalescing accumulator.
+-- Downstream dispatch (CombatTracker + TimelineProducer) happens in
+-- _flushPendingAura() called from OnUpdate, once per unit per frame.
+Events.RegisterHandler("UNIT_AURA", function(event, unitTarget, updateInfo)
+    _accumulateUnitAura(unitTarget, updateInfo)
 end)
 
 -- T030: LOSS_OF_CONTROL_ADDED → CCReceivedProducer
@@ -319,6 +424,81 @@ Events:RegisterEvent("ADDON_ACTION_BLOCKED")
 Events:RegisterEvent("ADDON_ACTION_FORBIDDEN")
 Events.RegisterHandler("ADDON_ACTION_BLOCKED",   handleAddonActionBlocked)
 Events.RegisterHandler("ADDON_ACTION_FORBIDDEN",  handleAddonActionBlocked)
+
+-- UnitGraphService handlers — identity graph for GUID↔token resolution.
+Events.RegisterHandler("ARENA_OPPONENT_UPDATE", function(event, unitToken)
+    local ugs = ns.Addon:GetModule("UnitGraphService")
+    if ugs and ugs.HandleArenaOpponentUpdate then
+        ugs:HandleArenaOpponentUpdate(unitToken)
+    end
+end)
+
+Events.RegisterHandler("PLAYER_TARGET_CHANGED", function()
+    local ugs = ns.Addon:GetModule("UnitGraphService")
+    if ugs and ugs.HandlePlayerTargetChanged then
+        ugs:HandlePlayerTargetChanged()
+    end
+end)
+
+Events.RegisterHandler("PLAYER_FOCUS_CHANGED", function()
+    local ugs = ns.Addon:GetModule("UnitGraphService")
+    if ugs and ugs.HandlePlayerFocusChanged then
+        ugs:HandlePlayerFocusChanged()
+    end
+end)
+
+Events.RegisterHandler("GROUP_ROSTER_UPDATE", function()
+    local ugs = ns.Addon:GetModule("UnitGraphService")
+    if ugs and ugs.HandleGroupRosterUpdate then
+        ugs:HandleGroupRosterUpdate()
+    end
+end)
+
+Events.RegisterHandler("UNIT_PET", function(event, unitId)
+    local ugs = ns.Addon:GetModule("UnitGraphService")
+    if ugs and ugs.HandleUnitPet then
+        ugs:HandleUnitPet(unitId)
+    end
+end)
+
+Events.RegisterHandler("NAME_PLATE_UNIT_ADDED", function(event, unitToken)
+    local ugs = ns.Addon:GetModule("UnitGraphService")
+    if ugs and ugs.HandleNamePlateAdded then
+        ugs:HandleNamePlateAdded(unitToken)
+    end
+end)
+
+Events.RegisterHandler("NAME_PLATE_UNIT_REMOVED", function(event, unitToken)
+    local ugs = ns.Addon:GetModule("UnitGraphService")
+    if ugs and ugs.HandleNamePlateRemoved then
+        ugs:HandleNamePlateRemoved(unitToken)
+    end
+end)
+
+-- T019: AuraReconciliationService nameplate hooks.
+-- NAME_PLATE_UNIT_ADDED → full aura rescan for newly visible unit.
+-- NAME_PLATE_UNIT_REMOVED → clean up stale aura records for that unit.
+Events.RegisterHandler("NAME_PLATE_UNIT_ADDED", function(event, unitToken)
+    local ars = ns.Addon:GetModule("AuraReconciliationService")
+    if ars and ars.HandleFullRescan then
+        ars:HandleFullRescan(unitToken)
+    end
+end)
+
+Events.RegisterHandler("NAME_PLATE_UNIT_REMOVED", function(event, unitToken)
+    local ars = ns.Addon:GetModule("AuraReconciliationService")
+    if ars and ars.HandleUnitRemoved then
+        ars:HandleUnitRemoved(unitToken)
+    end
+end)
+
+-- ADDON_RESTRICTION_STATE_CHANGED → CombatTracker restriction awareness (12.0.0+)
+Events.RegisterHandler("ADDON_RESTRICTION_STATE_CHANGED", function(event, ...)
+    local tracker = ns.Addon:GetModule("CombatTracker")
+    if tracker and tracker.HandleRestrictionStateChanged then
+        tracker:HandleRestrictionStateChanged(...)
+    end
+end)
 
 -- Expose for external handler registration.
 ns.Events = Events

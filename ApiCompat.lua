@@ -88,6 +88,13 @@ function ApiCompat.GetCombatSessionSourceFromType(sessionType, damageMeterType, 
     return nil
 end
 
+function ApiCompat.GetSessionDurationSeconds(sessionType)
+    if C_DamageMeter and C_DamageMeter.GetSessionDurationSeconds then
+        return C_DamageMeter.GetSessionDurationSeconds(sessionType)
+    end
+    return nil
+end
+
 -- ---------------------------------------------------------------------------
 -- Secret value protection (Midnight taint model)
 -- ---------------------------------------------------------------------------
@@ -862,6 +869,64 @@ function ApiCompat.GetActiveLossOfControlDataCount(unit)
     if not C_LossOfControl or not C_LossOfControl.GetActiveLossOfControlDataCountByUnit then return 0 end
     local ok, result = pcall(C_LossOfControl.GetActiveLossOfControlDataCountByUnit, unit)
     return ok and result or 0
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- C_Spell auto-classification wrappers (12.0.0+)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+function ApiCompat.IsSpellCrowdControl(spellId)
+    if not spellId or not C_Spell or not C_Spell.IsSpellCrowdControl then return nil end
+    local ok, result = pcall(C_Spell.IsSpellCrowdControl, spellId)
+    return ok and result or nil
+end
+
+function ApiCompat.IsExternalDefensive(spellId)
+    if not spellId or not C_Spell or not C_Spell.IsExternalDefensive then return nil end
+    local ok, result = pcall(C_Spell.IsExternalDefensive, spellId)
+    return ok and result or nil
+end
+
+function ApiCompat.IsSpellImportant(spellId)
+    if not spellId or not C_Spell or not C_Spell.IsSpellImportant then return nil end
+    local ok, result = pcall(C_Spell.IsSpellImportant, spellId)
+    return ok and result or nil
+end
+
+function ApiCompat.IsSelfBuff(spellId)
+    if not spellId or not C_Spell or not C_Spell.IsSelfBuff then return nil end
+    local ok, result = pcall(C_Spell.IsSelfBuff, spellId)
+    return ok and result or nil
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- C_RestrictedActions wrappers (12.0.0+)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+function ApiCompat.IsAddonRestricted(restrictionType)
+    if not C_RestrictedActions or not C_RestrictedActions.IsRestrictionActive then return false end
+    local ok, result = pcall(C_RestrictedActions.IsRestrictionActive, restrictionType)
+    return ok and result or false
+end
+
+function ApiCompat.IsPvPMatchRestricted()
+    if not Enum or not Enum.AddOnRestrictionType then return false end
+    return ApiCompat.IsAddonRestricted(Enum.AddOnRestrictionType.PvPMatch)
+end
+
+function ApiCompat.IsCombatRestricted()
+    if not Enum or not Enum.AddOnRestrictionType then return false end
+    return ApiCompat.IsAddonRestricted(Enum.AddOnRestrictionType.Combat)
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- C_Traits inspect wrappers (12.0.0+)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+function ApiCompat.HasValidInspectData()
+    if not C_Traits or not C_Traits.HasValidInspectData then return false end
+    local ok, result = pcall(C_Traits.HasValidInspectData)
+    return ok and result or false
 end
 
 ns.ApiCompat = ApiCompat

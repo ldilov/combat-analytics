@@ -300,6 +300,13 @@ function ArenaRoundTracker:BeginRound(reason)
     matchRecord.rounds[#matchRecord.rounds + 1] = round
     matchRecord.currentRound = round
 
+    -- T027: Initialize UnitGraphService for this new round so prior-round actor
+    -- data is archived and the working set starts clean for this session.
+    local ugs = ns.Addon:GetModule("UnitGraphService")
+    if ugs and ugs.InitializeForSession then
+        pcall(ugs.InitializeForSession, ugs)
+    end
+
     ns.Addon:Trace("arena_round.round.begin", {
         reason     = reason or "unknown",
         roundIndex = roundIndex,
@@ -471,6 +478,14 @@ function ArenaRoundTracker:HandleArenaOpponentUpdate(unitToken, updateReason)
     if updateReason == "unseen" then
         s.visible  = false
         s.hiddenAt = s.lastUpdateAt
+        -- T034: Propagate visibility-lost into UnitGraphService so it emits
+        -- the arena_opponent_hidden VISIBILITY lane event.
+        if s.guid then
+            local ugsUnseen = ns.Addon:GetModule("UnitGraphService")
+            if ugsUnseen and ugsUnseen.MarkUnseen then
+                pcall(ugsUnseen.MarkUnseen, ugsUnseen, s.guid)
+            end
+        end
     else
         -- Negative-space: trace any updateReason that is not in the known-visible
         -- set. The existing logic is still correct (treat as visible), but the
@@ -512,6 +527,18 @@ function ArenaRoundTracker:HandleArenaOpponentUpdate(unitToken, updateReason)
             s.fieldConfidence.nameLearnedAt  = visTs
             s.fieldConfidence.class          = "visible"
             s.fieldConfidence.classLearnedAt = visTs
+
+            -- T027: Push this slot assignment into UnitGraphService so it can
+            -- use arena_slot_mapping priority for identity resolution.
+            local ugs = ns.Addon:GetModule("UnitGraphService")
+            if ugs and ugs.UpdateFromArenaSlot then
+                pcall(ugs.UpdateFromArenaSlot, ugs,
+                    slot,
+                    snapshot.guid,
+                    snapshot.name,
+                    snapshot.classFile,
+                    s.prepSpecId)
+            end
         end
 
         -- Merge prep data (non-destructive; only fill if not already set).
@@ -612,10 +639,11 @@ function ArenaRoundTracker:HandleInspectReady()
         })
     end
 
-    -- Task 2.3: Capture opponent talent build import string via C_Traits.
-    if C_Traits and C_Traits.GenerateInspectImportString then
-        local okImport, importString = pcall(C_Traits.GenerateInspectImportString, unitToken)
-        if okImport and importString and type(importString) == "string" and importString ~= "" then
+    -- Task 2.3: Capture opponent talent build import string via C_Traits (12.0.0+).
+    -- HasValidInspectData() ensures the inspect cache is populated before reading.
+    if ApiCompat.HasValidInspectData() then
+        local importString = ApiCompat.GenerateInspectImportString(unitToken)
+        if importString and type(importString) == "string" and importString ~= "" then
             round.slots[slot].talentImportString = importString
             -- T042/T043: Field confidence for talentImportString.
             round.slots[slot].fieldConfidence.talentImportString          = "inspect"
@@ -650,22 +678,49 @@ function ArenaRoundTracker:HandleDiminishStateUpdated(unitTarget, trackerInfo)
     if not round or not round.slots[slot] then return end
 
     round.slots[slot].drState = round.slots[slot].drState or {}
-    local category = trackerInfo.category
+
+    -- trackerInfo is a raw WoW API payload and may carry secret/restricted fields
+    -- under the Midnight taint model. Access each field through pcall to prevent
+    -- taint propagation from unreadable fields to the addon frame.
+    local category, startTime, duration, isImmune, showCountdown
+
+    local ok, err = pcall(function()
+        category      = trackerInfo.category
+        startTime     = trackerInfo.startTime
+        duration      = trackerInfo.duration
+        isImmune      = trackerInfo.isImmune
+        showCountdown = trackerInfo.showCountdown
+    end)
+    if not ok then
+        ns.Addon:Trace("arena_round.dr_taint_guard", { unit = unitTarget, err = tostring(err) })
+        return
+    end
+
     if category == nil then return end
 
     round.slots[slot].drState[category] = {
-        startTime    = trackerInfo.startTime,
-        duration     = trackerInfo.duration,
-        isImmune     = trackerInfo.isImmune or false,
-        showCountdown = trackerInfo.showCountdown or false,
+        startTime     = startTime,
+        duration      = duration,
+        isImmune      = isImmune or false,
+        showCountdown = showCountdown or false,
     }
 
     ns.Addon:Trace("arena_round.dr_updated", {
         slot     = slot,
         unit     = unitTarget,
         category = category,
-        immune   = trackerInfo.isImmune and "true" or "false",
+        immune   = isImmune and "true" or "false",
     })
+end
+
+--- Returns the current DR state table for a given unit token (e.g. "arena1").
+--- Returns nil when no round or no DR data exists for the given unit.
+function ArenaRoundTracker:GetDiminishState(unitToken)
+    local round = self:GetCurrentRound()
+    if not round then return nil end
+    local slot = parseArenaSlot(unitToken)
+    if not slot or not round.slots[slot] then return nil end
+    return round.slots[slot].drState
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────

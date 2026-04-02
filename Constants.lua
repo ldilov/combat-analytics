@@ -241,6 +241,8 @@ ns.Constants = {
         "UNIT_PET",
         "NAME_PLATE_UNIT_ADDED",
         "NAME_PLATE_UNIT_REMOVED",
+        -- Restriction state awareness (12.0.0+)
+        "ADDON_RESTRICTION_STATE_CHANGED",
     },
     DEFAULT_SETTINGS = {
         showSummaryAfterCombat = false,
