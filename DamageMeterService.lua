@@ -6,6 +6,9 @@ local Helpers = ns.Helpers
 
 local DamageMeterService = {}
 
+local UNATTRIBUTED_DAMAGE_SPELL_ID = -1
+local DEFAULT_SPELL_ICON_ID = 134400
+
 -- T048: Detect whether DeathRecap category exists in Enum.DamageMeterType.
 local HAS_DEATH_RECAP = pcall(function() return Enum.DamageMeterType.DeathRecap end)
 
@@ -35,7 +38,21 @@ local function createSpellAggregate(spellId)
         totalInterval = 0,
         intervalCount = 0,
         averageInterval = 0,
+        source = nil,
+        syntheticKind = nil,
+        estimated = false,
     }
+end
+
+local function ensureSyntheticSpellAggregate(session, spellId, name, iconID, syntheticKind)
+    session.spells = session.spells or {}
+    session.spells[spellId] = session.spells[spellId] or createSpellAggregate(spellId)
+    local aggregate = session.spells[spellId]
+    aggregate.name = name or aggregate.name
+    aggregate.iconID = iconID or aggregate.iconID or DEFAULT_SPELL_ICON_ID
+    aggregate.syntheticKind = syntheticKind or aggregate.syntheticKind
+    aggregate.source = Constants.PROVENANCE_SOURCE.ESTIMATED
+    return aggregate
 end
 
 local function sortSessionsById(sessions)
@@ -89,7 +106,7 @@ end
 
 local function mergeCombatSpell(spellsById, combatSpell)
     local spellId = combatSpell and combatSpell.spellID
-    if not spellId then
+    if spellId == nil then
         return
     end
 
@@ -228,6 +245,34 @@ local function getImportConfidenceFromScore(score)
     return 30
 end
 
+-- Attempts to import a death recap from C_DeathRecap given a DM combatSource.
+-- Returns a deathRecap table on success, nil if no data or API unavailable.
+local function tryImportDeathRecap(deathCombatSource)
+    if not deathCombatSource then return nil end
+    local recapId  = deathCombatSource.deathRecapID or 0
+    local deathTime = deathCombatSource.deathTimeSeconds or 0
+    if not recapId or recapId == 0 then return nil end
+
+    local recap = { timeSeconds = deathTime, recapID = recapId }
+
+    local okHp, maxHp = pcall(function()
+        return C_DeathRecap and C_DeathRecap.GetRecapMaxHealth and C_DeathRecap.GetRecapMaxHealth(recapId)
+    end)
+    recap.maxHealth = okHp and maxHp or nil
+
+    local okHas, hasEvents = pcall(function()
+        return C_DeathRecap and C_DeathRecap.HasRecapEvents and C_DeathRecap.HasRecapEvents(recapId)
+    end)
+    if okHas and hasEvents then
+        local okE, events = pcall(function()
+            return C_DeathRecap.GetRecapEvents(recapId)
+        end)
+        recap.events = okE and events or nil
+    end
+
+    return recap
+end
+
 local function snapshotHasMeaningfulData(snapshot)
     if not snapshot then
         return false
@@ -238,6 +283,53 @@ local function snapshotHasMeaningfulData(snapshot)
         or countCombatSpells(snapshot.damageSpells) > 0
         or countCombatSpells(snapshot.enemyDamageSpells) > 0
         or (snapshot.enemyDamageTaken or 0) > 0
+end
+
+local function setAggregateDamageAmount(aggregate, amount)
+    local numeric = tonumber(amount) or 0
+    aggregate.totalDamage = numeric
+    aggregate.hitCount = numeric > 0 and math.max(aggregate.hitCount or 0, 1) or 0
+    aggregate.executeCount = numeric > 0 and math.max(aggregate.executeCount or 0, aggregate.hitCount or 0, 1) or 0
+end
+
+local function snapshotHasMeaningfulDamage(snapshot)
+    if not snapshot then
+        return false
+    end
+    return (snapshot.damageDone or 0) > 0
+        or (snapshot.enemyDamageTaken or 0) > 0
+        or (tonumber(snapshot.localDamageSpellTotal) or 0) > 0
+        or (tonumber(snapshot.enemyDamageSpellTotal) or 0) > 0
+        or countCombatSpells(snapshot.damageSpells) > 0
+        or countCombatSpells(snapshot.enemyDamageSpells) > 0
+end
+
+local function getDamageEvidenceScore(snapshot)
+    if not snapshot then
+        return 0
+    end
+
+    local localTotal = tonumber(snapshot.localDamageSpellTotal) or sumCombatSpellAmounts(snapshot.damageSpells)
+    local enemyTotal = tonumber(snapshot.enemyDamageSpellTotal) or sumCombatSpellAmounts(snapshot.enemyDamageSpells)
+    local score = 0
+
+    if (snapshot.damageDone or 0) > 0 then
+        score = score + 70
+    end
+    if (snapshot.enemyDamageTaken or 0) > 0 then
+        score = score + 55
+    end
+    if localTotal > 0 then
+        score = score + 40
+    end
+    if enemyTotal > 0 then
+        score = score + 40
+    end
+
+    score = score + math.min(countCombatSpells(snapshot.damageSpells), 6) * 4
+    score = score + math.min(countCombatSpells(snapshot.enemyDamageSpells), 6) * 4
+
+    return score
 end
 
 local function getLatestTrackedUnit(session)
@@ -320,15 +412,50 @@ function DamageMeterService:Initialize()
     self.latestUpdatedSessionIdByType = {}
     self.currentSessionSnapshot = nil
     self.sessionUpdateSignals = {}
+
+    -- Startup diagnostics: log C_DamageMeter availability and CVar state.
+    local isAvailable, failReason = self:IsAvailable()
+    local cvarEnabled = isDamageMeterEnabled()
+    local sessionCount = latestSessionId and 1 or 0
+    ns.Addon:Trace("damage_meter.init", {
+        isSupported = self:IsSupported(),
+        isAvailable = isAvailable,
+        failReason = failReason or "none",
+        cvarEnabled = cvarEnabled,
+        initialSessions = sessionCount,
+        baselineId = self.lastSeenSessionId,
+    })
+
+    -- Warn user if CVar is disabled — this is the #1 cause of zero damage.
+    if self:IsSupported() and not cvarEnabled then
+        C_Timer.After(5, function()
+            ns.Addon:Warn(
+                "Blizzard Damage Meter is DISABLED. CombatAnalytics cannot track damage without it. "
+                .. "Enable it: ESC > Options > Gameplay > Combat > Enable Damage Meter"
+            )
+        end)
+    end
 end
 
 function DamageMeterService:MarkSessionStart()
+    -- Preserve the earliest baseline for the current combat window. Late
+    -- session autodiscovery may call MarkSessionStart again after C_DamageMeter
+    -- has already advanced to the active fight session; resetting the baseline
+    -- then can make import selection skip the fight we are trying to import.
+    if self.activeSessionBaselineId ~= nil then
+        ns.Addon:Trace("damage_meter.session_start.reuse", {
+            baseline = self.activeSessionBaselineId or 0,
+        })
+        return self.activeSessionBaselineId
+    end
+
     self.activeSessionBaselineId = self:GetLatestSessionId() or self.lastSeenSessionId or 0
     self.currentSessionSnapshot = nil
     self.sessionUpdateSignals = {}
     ns.Addon:Trace("damage_meter.session_start", {
         baseline = self.activeSessionBaselineId or 0,
     })
+    return self.activeSessionBaselineId
 end
 
 function DamageMeterService:RecordSessionUpdateSignal(damageMeterType, sessionId)
@@ -790,6 +917,8 @@ function DamageMeterService:BuildSnapshotFromSources(session, payload)
         absorbSpells = payload.absorbSpells or {},
         enemyDamageTaken = enemyDamageTaken,
         enemyDamageSpells = payload.enemyDamageSpells or {},
+        avoidableDamageTaken = tonumber(payload.avoidableDamageTaken) or 0,
+        avoidableSpells = payload.avoidableSpells or {},
     }
 
     snapshot.expectedDamageDone = getExpectedDamageTotal(session, snapshot)
@@ -806,6 +935,7 @@ function DamageMeterService:BuildHistoricalSnapshot(session, sessionInfo, sessio
     local dispelSource, dispelCombatSource = self:GetPlayerSource(sessionId, Enum.DamageMeterType.Dispels)
     local damageTakenSource, damageTakenCombatSource = self:GetPlayerSource(sessionId, Enum.DamageMeterType.DamageTaken)
     local deathSource, deathCombatSource = self:GetPlayerSource(sessionId, Enum.DamageMeterType.Deaths)
+    local avoidDamageTakenSource, avoidDamageTakenCombatSource = self:GetPlayerSource(sessionId, Enum.DamageMeterType.AvoidableDamageTaken)
     -- T008: Capture the 3rd return value (enemySources) for GUID-overlap scoring.
     local enemyDamageTaken, enemyDamageSpells, enemySources = self:CollectEnemyDamageSnapshotForSession(sessionId)
 
@@ -823,7 +953,18 @@ function DamageMeterService:BuildHistoricalSnapshot(session, sessionInfo, sessio
         absorbSpells = absorbSource and absorbSource.combatSpells or {},
         enemyDamageTaken = enemyDamageTaken,
         enemyDamageSpells = enemyDamageSpells,
+        avoidableDamageTaken = getResolvedTotal(avoidDamageTakenSource, avoidDamageTakenCombatSource),
+        avoidableSpells = avoidDamageTakenSource and avoidDamageTakenSource.combatSpells or {},
     })
+
+    snapshot.deathRecap = tryImportDeathRecap(deathCombatSource)
+    if snapshot.deathRecap then
+        ns.Addon:Trace("death_recap.imported", {
+            recapId     = snapshot.deathRecap.recapID,
+            timeSeconds = snapshot.deathRecap.timeSeconds,
+            hasEvents   = snapshot.deathRecap.events ~= nil,
+        })
+    end
 
     local score = 0
     if snapshot.expectedDamageDone > 0 then
@@ -866,6 +1007,7 @@ function DamageMeterService:BuildHistoricalSnapshot(session, sessionInfo, sessio
     return {
         snapshot = snapshot,
         score = score,
+        damageEvidenceScore = getDamageEvidenceScore(snapshot),
         sessionId = sessionId,
         sessionInfo = sessionInfo,
         damageSource = damageSource,
@@ -981,13 +1123,13 @@ function DamageMeterService:BackfillDamageBreakdownFromCasts(session, expectedDa
             aggregate.totalDamage = (aggregate.totalDamage or 0) + estimate
             aggregate.hitCount = math.max(aggregate.hitCount or 0, aggregate.castCount or 0, 1)
             aggregate.executeCount = math.max(aggregate.executeCount or 0, aggregate.hitCount or 0, 1)
+            aggregate.estimated = true
+            aggregate.source = Constants.PROVENANCE_SOURCE.ESTIMATED
             allocatedDamage = allocatedDamage + estimate
         end
     end
 
     if allocatedDamage > 0 then
-        session.captureQuality = session.captureQuality or {}
-        session.captureQuality.spellBreakdown = Constants.CAPTURE_QUALITY.DEGRADED
         session.damageBreakdownSource = "estimated_from_casts"
         ns.Addon:Trace("damage_meter.spells.estimated", {
             damage = allocatedDamage,
@@ -998,6 +1140,43 @@ function DamageMeterService:BackfillDamageBreakdownFromCasts(session, expectedDa
     end
 
     return false
+end
+
+function DamageMeterService:UpdateUnattributedDamageBucket(session, expectedDamageTotal)
+    if not session then
+        return false
+    end
+
+    local accountedDamage = 0
+    for spellId, aggregate in pairs(session.spells or {}) do
+        if spellId ~= UNATTRIBUTED_DAMAGE_SPELL_ID then
+            accountedDamage = accountedDamage + (tonumber(aggregate.totalDamage) or 0)
+        end
+    end
+
+    local missingDamage = math.max(0, (tonumber(expectedDamageTotal) or 0) - accountedDamage)
+    local existing = session.spells and session.spells[UNATTRIBUTED_DAMAGE_SPELL_ID] or nil
+    if missingDamage <= 0 then
+        if existing then
+            session.spells[UNATTRIBUTED_DAMAGE_SPELL_ID] = nil
+        end
+        return false
+    end
+
+    local aggregate = ensureSyntheticSpellAggregate(
+        session,
+        UNATTRIBUTED_DAMAGE_SPELL_ID,
+        "Unattributed Damage",
+        DEFAULT_SPELL_ICON_ID,
+        "unattributed_damage"
+    )
+    setAggregateDamageAmount(aggregate, missingDamage)
+    aggregate.castCount = 0
+    aggregate.overkill = 0
+    aggregate.absorbed = 0
+    aggregate.estimated = true
+    aggregate.source = Constants.PROVENANCE_SOURCE.ESTIMATED
+    return true
 end
 
 function DamageMeterService:NormalizeImportedSpellStats(session, expectedDamageTotal)
@@ -1015,28 +1194,71 @@ function DamageMeterService:NormalizeImportedSpellStats(session, expectedDamageT
         if estimated and not session.damageBreakdownSource then
             session.damageBreakdownSource = "estimated_from_casts"
         end
+        local unattributed = self:UpdateUnattributedDamageBucket(session, expectedDamageTotal)
+        if unattributed and not session.damageBreakdownSource then
+            session.damageBreakdownSource = "unattributed_damage_meter"
+        end
         return true
     end
 
-    return self:BackfillDamageBreakdownFromCasts(session, expectedDamageTotal)
+    local estimated = self:BackfillDamageBreakdownFromCasts(session, expectedDamageTotal)
+    local unattributed = self:UpdateUnattributedDamageBucket(session, expectedDamageTotal)
+    if estimated and not session.damageBreakdownSource then
+        session.damageBreakdownSource = "estimated_from_casts"
+    elseif unattributed and not session.damageBreakdownSource then
+        session.damageBreakdownSource = "unattributed_damage_meter"
+    end
+    return estimated
 end
 
-function DamageMeterService:CaptureCurrentSessionSnapshot(session)
-    local damageSource, damageCombatSource, damageSession = self:GetCurrentPlayerSource(Enum.DamageMeterType.DamageDone)
-    local healingSource, healingCombatSource = self:GetCurrentPlayerSource(Enum.DamageMeterType.HealingDone)
-    local absorbSource, absorbCombatSource = self:GetCurrentPlayerSource(Enum.DamageMeterType.Absorbs)
-    local interruptSource, interruptCombatSource = self:GetCurrentPlayerSource(Enum.DamageMeterType.Interrupts)
-    local dispelSource, dispelCombatSource = self:GetCurrentPlayerSource(Enum.DamageMeterType.Dispels)
-    local damageTakenSource, damageTakenCombatSource = self:GetCurrentPlayerSource(Enum.DamageMeterType.DamageTaken)
-    local deathSource, deathCombatSource = self:GetCurrentPlayerSource(Enum.DamageMeterType.Deaths)
+function DamageMeterService:_buildSnapshotFromSessionType(session, sessionType)
+    local function getSource(dmType)
+        local combatSession = ApiCompat.GetCombatSessionFromType(sessionType, dmType)
+        if not combatSession then return nil, nil, nil end
+        local playerGuid = ApiCompat.GetPlayerGUID()
+        local playerName = ApiCompat.GetPlayerName()
+        local combatSource = nil
+        for _, source in ipairs(combatSession.combatSources or {}) do
+            if source and (source.isLocalPlayer or (playerGuid and source.sourceGUID == playerGuid) or (playerName and source.name == playerName)) then
+                combatSource = source
+                break
+            end
+        end
+        local sessionSource = nil
+        if combatSource then
+            sessionSource = ApiCompat.GetCombatSessionSourceFromType(sessionType, dmType, combatSource.sourceGUID, combatSource.sourceCreatureID)
+        end
+        if not sessionSource and combatSource and combatSource.isLocalPlayer then
+            sessionSource = ApiCompat.GetCombatSessionSourceFromType(sessionType, dmType, nil, nil)
+        end
+        if not sessionSource and combatSource then
+            sessionSource = { combatSpells = {}, maxAmount = combatSource.totalAmount or 0, totalAmount = combatSource.totalAmount or 0 }
+        end
+        return sessionSource, combatSource, combatSession
+    end
+
+    local damageSource, damageCombatSource, damageSession = getSource(Enum.DamageMeterType.DamageDone)
+    local healingSource                                   = getSource(Enum.DamageMeterType.HealingDone)
+    local absorbSource                                    = getSource(Enum.DamageMeterType.Absorbs)
+    local interruptSource, interruptCombatSource          = getSource(Enum.DamageMeterType.Interrupts)
+    local dispelSource, dispelCombatSource                = getSource(Enum.DamageMeterType.Dispels)
+    local damageTakenSource, damageTakenCombatSource      = getSource(Enum.DamageMeterType.DamageTaken)
+    local deathSource, deathCombatSource                  = getSource(Enum.DamageMeterType.Deaths)
+    local avoidDamageTakenSource, avoidDamageTakenCombatSource = getSource(Enum.DamageMeterType.AvoidableDamageTaken)
+
+    local dmDuration = (damageSession and tonumber(damageSession.durationSeconds) or 0)
+    if dmDuration <= 0 then
+        dmDuration = tonumber(ApiCompat.GetSessionDurationSeconds(sessionType)) or 0
+    end
+
     local enemyDamageTaken, enemyDamageSpells = self:CollectEnemyDamageSnapshotForCurrent()
 
     local snapshot = self:BuildSnapshotFromSources(session, {
-        duration = tonumber(damageSession and damageSession.durationSeconds) or (session and session.duration) or 0,
+        duration = dmDuration > 0 and dmDuration or (session and session.duration) or 0,
         damageDone = getResolvedTotal(damageSource, damageCombatSource, damageSession),
-        healingDone = getResolvedTotal(healingSource, healingCombatSource),
+        healingDone = getResolvedTotal(healingSource),
         damageTaken = getResolvedTotal(damageTakenSource, damageTakenCombatSource),
-        absorbed = getResolvedTotal(absorbSource, absorbCombatSource),
+        absorbed = getResolvedTotal(absorbSource),
         interrupts = getResolvedTotal(interruptSource, interruptCombatSource),
         dispels = getResolvedTotal(dispelSource, dispelCombatSource),
         deaths = getResolvedTotal(deathSource, deathCombatSource),
@@ -1045,7 +1267,38 @@ function DamageMeterService:CaptureCurrentSessionSnapshot(session)
         absorbSpells = absorbSource and absorbSource.combatSpells or {},
         enemyDamageTaken = enemyDamageTaken,
         enemyDamageSpells = enemyDamageSpells,
+        avoidableDamageTaken = getResolvedTotal(avoidDamageTakenSource, avoidDamageTakenCombatSource),
+        avoidableSpells = avoidDamageTakenSource and avoidDamageTakenSource.combatSpells or {},
     })
+    snapshot.dmDurationSeconds = dmDuration > 0 and dmDuration or nil
+    snapshot.deathRecap = tryImportDeathRecap(deathCombatSource)
+    if snapshot.deathRecap then
+        ns.Addon:Trace("death_recap.imported", {
+            recapId    = snapshot.deathRecap.recapID,
+            timeSeconds = snapshot.deathRecap.timeSeconds,
+            hasEvents  = snapshot.deathRecap.events ~= nil,
+        })
+    end
+    return snapshot
+end
+
+function DamageMeterService:CaptureCurrentSessionSnapshot(session)
+    -- Fast-path: try the Expired session type first — it represents the just-finalized
+    -- session with a locked duration, available immediately after combat ends.
+    local expiredSnapshot = self:_buildSnapshotFromSessionType(session, Enum.DamageMeterSessionType.Expired)
+    if expiredSnapshot and snapshotHasMeaningfulData(expiredSnapshot) then
+        expiredSnapshot.capturedViaExpired = true
+        self.currentSessionSnapshot = expiredSnapshot
+        ns.Addon:Trace("damage_meter.current_snapshot", {
+            damage = expiredSnapshot.damageDone or 0,
+            enemyDamage = expiredSnapshot.enemyDamageTaken or 0,
+            capturedViaExpired = true,
+        })
+        return true
+    end
+
+    -- Fall through to the Current session type path.
+    local snapshot = self:_buildSnapshotFromSessionType(session, Enum.DamageMeterSessionType.Current)
 
     if snapshotHasMeaningfulData(snapshot) then
         self.currentSessionSnapshot = snapshot
@@ -1074,22 +1327,15 @@ function DamageMeterService:ApplySnapshotToSession(session, snapshot)
     end
 
     session.duration = tonumber(snapshot.duration) or session.duration or 0
-    session.captureQuality = session.captureQuality or {}
-    session.captureQuality.damageMeter = Constants.CAPTURE_QUALITY.OK
-
-    -- Only clear raw events and mark as DM-sourced when CLEU capture was already
-    -- restricted (Midnight-safe mode). Good local data must not be wiped.
-    local captureRestricted = session.captureQuality.rawEvents == Constants.CAPTURE_QUALITY.RESTRICTED
-    if captureRestricted then
-        session.rawEvents = {}
-        session.captureSource = "damage_meter"
-    end
 
     session.importedTotals = session.importedTotals or {}
     session.importedTotals.damageDone = tonumber(snapshot.damageDone) or 0
     session.importedTotals.healingDone = tonumber(snapshot.healingDone) or 0
     session.importedTotals.damageTaken = tonumber(snapshot.damageTaken) or 0
     session.importedTotals.absorbed = tonumber(snapshot.absorbed) or 0
+    session.importedTotals.avoidableDamageTaken = tonumber(snapshot.avoidableDamageTaken) or 0
+    session.importedTotals.avoidableSpells = snapshot.avoidableSpells or {}
+    session.importedTotals.dmDurationSeconds = snapshot.dmDurationSeconds or nil
 
     session.localTotals = session.localTotals or {}
     local localDamageDone = tonumber(session.localTotals.damageDone) or tonumber(session.totals.damageDone) or 0
@@ -1101,12 +1347,16 @@ function DamageMeterService:ApplySnapshotToSession(session, snapshot)
     session.totals.healingDone = localHealingDone > 0 and localHealingDone or session.importedTotals.healingDone
     session.totals.damageTaken = localDamageTaken > 0 and localDamageTaken or session.importedTotals.damageTaken
     session.totals.absorbed = localAbsorbed > 0 and localAbsorbed or session.importedTotals.absorbed
+    session.totals.avoidableDamageTaken = session.importedTotals.avoidableDamageTaken or 0
 
     session.utility.interrupts = tonumber(snapshot.interrupts) or 0
     session.utility.successfulInterrupts = session.utility.interrupts
     session.utility.dispels = tonumber(snapshot.dispels) or 0
     session.survival.deaths = math.max(session.survival.deaths or 0, tonumber(snapshot.deaths) or 0)
     session.survival.totalAbsorbed = math.max(session.survival.totalAbsorbed or 0, localAbsorbed, session.importedTotals.absorbed or 0)
+    if snapshot.deathRecap and not session.deathRecap then
+        session.deathRecap = snapshot.deathRecap
+    end
 
     local expectedDamageTotal = getExpectedDamageTotal(session, snapshot)
     if (session.totals.damageDone or 0) <= 0 and expectedDamageTotal > 0 then
@@ -1202,7 +1452,7 @@ function DamageMeterService:MergeSpellTotals(session, damageMeterType, combatSpe
 
     for _, combatSpell in ipairs(combatSpells or {}) do
         local spellId = combatSpell.spellID
-        if spellId then
+        if spellId ~= nil then
             local category = Constants.SPELL_CATEGORIES[spellId]
             local shouldSkipDamageSpell =
                 (damageMeterType == Enum.DamageMeterType.DamageDone or damageMeterType == Enum.DamageMeterType.EnemyDamageTaken)
@@ -1212,10 +1462,14 @@ function DamageMeterService:MergeSpellTotals(session, damageMeterType, combatSpe
             if not shouldSkipDamageSpell then
                 session.spells[spellId] = session.spells[spellId] or createSpellAggregate(spellId)
                 local aggregate = session.spells[spellId]
-                local spellInfo = ns.ApiCompat.GetSpellInfo(spellId)
+                local spellInfo = spellId > 0 and ns.ApiCompat.GetSpellInfo(spellId) or nil
                 if spellInfo then
                     aggregate.name = aggregate.name or spellInfo.name
                     aggregate.iconID = aggregate.iconID or spellInfo.iconID
+                elseif spellId == 0 then
+                    aggregate.name = aggregate.name or "Environmental"
+                    aggregate.iconID = aggregate.iconID or DEFAULT_SPELL_ICON_ID
+                    aggregate.syntheticKind = aggregate.syntheticKind or "environmental"
                 end
 
                 if damageMeterType == Enum.DamageMeterType.DamageDone or damageMeterType == Enum.DamageMeterType.EnemyDamageTaken then
@@ -1223,6 +1477,8 @@ function DamageMeterService:MergeSpellTotals(session, damageMeterType, combatSpe
                     aggregate.overkill = aggregate.overkill + (combatSpell.overkillAmount or 0)
                     aggregate.hitCount = math.max(aggregate.hitCount or 0, 1)
                     aggregate.executeCount = math.max(aggregate.executeCount or 0, aggregate.hitCount or 0)
+                    aggregate.source = Constants.PROVENANCE_SOURCE.DAMAGE_METER
+                    aggregate.estimated = false
                     -- Floor castCount from hitCount when CLEU tracking didn't provide cast data.
                     if (aggregate.castCount or 0) == 0 and (aggregate.hitCount or 0) > 0 then
                         aggregate.castCount = aggregate.hitCount
@@ -1324,13 +1580,35 @@ function DamageMeterService:ImportSession(session)
     if not isAvailable then
         if not self.warnedUnavailable then
             local reasonText = failureReason == "damage_meter_disabled"
-                and "Blizzard Damage Meter tracking is disabled in the default UI."
+                and "Blizzard Damage Meter tracking is disabled in the default UI. "
+                .. "Enable it: ESC > Options > Gameplay > Combat > Enable Damage Meter"
                 or tostring(failureReason or "unknown")
             ns.Addon:Warn(string.format("Built-in Damage Meter is unavailable: %s", reasonText))
             self.warnedUnavailable = true
         end
+        ns.Addon:Trace("damage_meter.import.unavailable", {
+            reason = failureReason or "unknown",
+            cvarEnabled = isDamageMeterEnabled(),
+            isSupported = self:IsSupported(),
+        })
         return false
     end
+
+    -- Detailed pre-import diagnostics: log all available DM sessions and
+    -- the current snapshot state so failures can be traced post-hoc.
+    local allSessions = self:GetAvailableSessions()
+    ns.Addon:Trace("damage_meter.import.begin", {
+        context = session and session.context or "unknown",
+        baseline = self.activeSessionBaselineId or 0,
+        lastSeen = self.lastSeenSessionId or 0,
+        availableSessions = #allSessions,
+        hasCurrentSnapshot = self.currentSessionSnapshot ~= nil,
+        currentSnapshotDamage = self.currentSessionSnapshot and self.currentSessionSnapshot.damageDone or 0,
+        currentSnapshotEnemyDamage = self.currentSessionSnapshot and self.currentSessionSnapshot.enemyDamageTaken or 0,
+        sessionDuration = session and session.duration or 0,
+        inCombatLockdown = InCombatLockdown and InCombatLockdown() or false,
+        isPvPRestricted = ApiCompat.IsPvPMatchRestricted and ApiCompat.IsPvPMatchRestricted() or false,
+    })
 
     -- Re-capture the "current" DM snapshot now (import runs after stabilization
     -- delay, so DM data should be settled). The regen_end capture often fires
@@ -1366,6 +1644,7 @@ function DamageMeterService:ImportSession(session)
             ns.Addon:Trace("damage_meter.import.candidate", {
                 duration = builtCandidate.snapshot and builtCandidate.snapshot.duration or 0,
                 durationDelta = builtCandidate.durationDelta or 0,
+                damageEvidence = builtCandidate.damageEvidenceScore or 0,
                 enemyDamage = builtCandidate.snapshot and builtCandidate.snapshot.enemyDamageTaken or 0,
                 enemySpellTotal = builtCandidate.snapshot and builtCandidate.snapshot.enemyDamageSpellTotal or 0,
                 localDamage = builtCandidate.snapshot and builtCandidate.snapshot.damageDone or 0,
@@ -1378,9 +1657,28 @@ function DamageMeterService:ImportSession(session)
                 signalScore = builtCandidate.signalScore or 0,
                 sourceCount = builtCandidate.enemySources and #builtCandidate.enemySources or 0,
             })
+            local selectedDamageScore = selectedCandidate and (selectedCandidate.damageEvidenceScore or 0) or 0
+            local builtDamageScore = builtCandidate.damageEvidenceScore or 0
+            local builtHasDamage = snapshotHasMeaningfulDamage(builtCandidate.snapshot)
+            local selectedHasDamage = selectedCandidate and snapshotHasMeaningfulDamage(selectedCandidate.snapshot) or false
+
             if not selectedCandidate
                 or builtCandidate.score > selectedCandidate.score
-                or (builtCandidate.score == selectedCandidate.score and (builtCandidate.sessionId or 0) > (selectedCandidate.sessionId or 0))
+                or (
+                    builtHasDamage
+                    and not selectedHasDamage
+                    and builtCandidate.score >= (selectedCandidate.score or 0) - 20
+                )
+                or (
+                    builtCandidate.score == selectedCandidate.score
+                    and (
+                        builtDamageScore > selectedDamageScore
+                        or (
+                            builtDamageScore == selectedDamageScore
+                            and (builtCandidate.sessionId or 0) > (selectedCandidate.sessionId or 0)
+                        )
+                    )
+                )
             then
                 selectedCandidate = builtCandidate
                 selectedCandidate.hasMeaningfulData = hasMeaningfulData
@@ -1396,6 +1694,55 @@ function DamageMeterService:ImportSession(session)
         diag.signalScore         = selectedCandidate.signalScore
     else
         diag.failureReason = "no_candidate_matched"
+    end
+
+    local currentDamageScore = getDamageEvidenceScore(self.currentSessionSnapshot)
+    local selectedDamageScore = selectedCandidate and (selectedCandidate.damageEvidenceScore or 0) or 0
+    local shouldPreferCurrentSnapshot =
+        self.currentSessionSnapshot
+        and snapshotHasMeaningfulData(self.currentSessionSnapshot)
+        and (
+            not selectedCandidate
+            or not snapshotHasMeaningfulDamage(selectedCandidate.snapshot)
+            or (
+                currentDamageScore > selectedDamageScore
+                and selectedDamageScore <= 0
+            )
+            or (
+                currentDamageScore >= selectedDamageScore + 25
+                and (selectedCandidate.snapshot and (selectedCandidate.snapshot.damageDone or 0) or 0) <= 0
+            )
+        )
+
+    if shouldPreferCurrentSnapshot then
+        self:ApplyImportMetadata(session, {
+            source = "current",
+            confidence = 78,
+            durationDelta = getDurationDelta(session and session.duration, self.currentSessionSnapshot and self.currentSessionSnapshot.duration),
+            signalScore = 0,
+            score = currentDamageScore,
+            opponentFitScore = 0,
+            enemySourceCount = 0,
+        })
+        ns.Addon:Trace("damage_meter.import.prefer_current_damage", {
+            currentDamage = self.currentSessionSnapshot and self.currentSessionSnapshot.damageDone or 0,
+            currentEnemyDamage = self.currentSessionSnapshot and self.currentSessionSnapshot.enemyDamageTaken or 0,
+            currentDamageScore = currentDamageScore,
+            selectedCandidateId = selectedCandidate and selectedCandidate.sessionId or 0,
+            selectedDamageScore = selectedDamageScore,
+        })
+        local ok = self:ApplySnapshotToSession(session, self.currentSessionSnapshot)
+        if ok then
+            local latestId = self:GetLatestSessionId()
+            if latestId then
+                self:ApplyPrimaryOpponent(session, latestId)
+            end
+        end
+        if diag.failureReason ~= nil or #(diag.candidateIds or {}) > 0 then
+            session.importedTotals = session.importedTotals or {}
+            session.importedTotals.importDiagnostics = diag
+        end
+        return ok
     end
 
     if (not selectedCandidate or not selectedCandidate.hasMeaningfulData) and self.currentSessionSnapshot and snapshotHasMeaningfulData(self.currentSessionSnapshot) then
@@ -1574,36 +1921,51 @@ function DamageMeterService:ImportSession(session)
             if row.spellID then
                 local spellInfo = ns.ApiCompat.GetSpellInfo(row.spellID)
                 tp:AppendTimelineEvent(session, {
-                    t = session.duration,
-                    lane = Constants.TIMELINE_LANE.DM_SPELL,
-                    type = "player_spell",
-                    spellId = row.spellID,
-                    spellName = spellInfo and spellInfo.name or nil,
-                    amount = row.totalAmount or 0,
-                    source = Constants.PROVENANCE_SOURCE.DAMAGE_METER,
-                    confidence = "confirmed",
+                    t          = session.duration,
+                    lane       = Constants.TIMELINE_LANE.DM_SPELL,
+                    type       = "player_spell",
+                    spellId    = row.spellID,
+                    spellName  = spellInfo and spellInfo.name or nil,
+                    amount     = row.totalAmount or 0,
+                    source     = Constants.PROVENANCE_SOURCE.DAMAGE_METER,
+                    -- T011: summary_derived confidence; chronology="summary" so
+                    -- chronological analysis (death attribution) skips this row.
+                    confidence = Constants.ATTRIBUTION_CONFIDENCE.summary_derived,
+                    chronology = "summary",
                 })
             end
         end
 
         -- T058: Emit dm_enemy_spell timeline events for each enemy damage source row.
+        -- T012: sourceGuid/sourceName/sourceClassFile promoted to top-level (canonical
+        -- read path). Meta copy preserved for backward compat with existing UI consumers.
         for _, entry in ipairs(enemySources or {}) do
             local combatSource = entry.combatSource
             local sessionSource = entry.sessionSource
+            local srcGuid      = combatSource and combatSource.sourceGUID or nil
+            local srcName      = combatSource and combatSource.name or nil
+            local srcClassFile = combatSource and combatSource.classFilename or nil
             for _, combatSpell in ipairs(sessionSource and sessionSource.combatSpells or {}) do
                 if combatSpell.spellID then
                     tp:AppendTimelineEvent(session, {
-                        t = session.duration,
-                        lane = Constants.TIMELINE_LANE.DM_ENEMY_SPELL,
-                        type = "enemy_spell",
-                        spellId = combatSpell.spellID,
-                        amount = combatSpell.totalAmount or 0,
-                        source = Constants.PROVENANCE_SOURCE.DAMAGE_METER,
-                        confidence = "confirmed",
+                        t               = session.duration,
+                        lane            = Constants.TIMELINE_LANE.DM_ENEMY_SPELL,
+                        type            = "enemy_spell",
+                        spellId         = combatSpell.spellID,
+                        amount          = combatSpell.totalAmount or 0,
+                        source          = Constants.PROVENANCE_SOURCE.DAMAGE_METER,
+                        -- T011: summary chronology and confidence.
+                        confidence      = Constants.ATTRIBUTION_CONFIDENCE.summary_derived,
+                        chronology      = "summary",
+                        -- T012: Top-level normalized source identity.
+                        sourceGuid      = srcGuid,
+                        sourceName      = srcName,
+                        sourceClassFile = srcClassFile,
+                        -- Backward-compat meta copy.
                         meta = {
-                            sourceGuid = combatSource and combatSource.sourceGUID or nil,
-                            sourceName = combatSource and combatSource.name or nil,
-                            sourceClassFile = combatSource and combatSource.classFilename or nil,
+                            sourceGuid      = srcGuid,
+                            sourceName      = srcName,
+                            sourceClassFile = srcClassFile,
                         },
                     })
                 end
@@ -1611,20 +1973,28 @@ function DamageMeterService:ImportSession(session)
         end
 
         -- T050: Merge Death Recap rows into timeline as dm_enemy_spell lane events.
+        -- T011/T012: chronology="summary"; source identity promoted to top level.
         local deathRecap = self:CollectDeathRecapSnapshot(sessionId)
         if deathRecap and deathRecap.available and deathRecap.rows then
             for _, row in ipairs(deathRecap.rows) do
                 tp:AppendTimelineEvent(session, {
-                    t = session.duration,
-                    lane = Constants.TIMELINE_LANE.DM_ENEMY_SPELL,
-                    type = "death_recap",
-                    spellId = row.spellId,
-                    amount = row.amount,
-                    source = Constants.PROVENANCE_SOURCE.DAMAGE_METER,
-                    confidence = "confirmed",
+                    t               = session.duration,
+                    lane            = Constants.TIMELINE_LANE.DM_ENEMY_SPELL,
+                    type            = "death_recap",
+                    spellId         = row.spellId,
+                    amount          = row.amount,
+                    source          = Constants.PROVENANCE_SOURCE.DEATH_RECAP_SUMMARY,
+                    confidence      = Constants.ATTRIBUTION_CONFIDENCE.summary_derived,
+                    -- T011: Post-match summary; excluded from chronological analysis.
+                    chronology      = "summary",
+                    -- T012: Top-level normalized source identity.
+                    sourceGuid      = row.sourceGuid,
+                    sourceName      = row.sourceName,
+                    sourceClassFile = row.sourceClassFile,
+                    -- Backward-compat meta copy.
                     meta = {
-                        sourceGuid = row.sourceGuid,
-                        sourceName = row.sourceName,
+                        sourceGuid      = row.sourceGuid,
+                        sourceName      = row.sourceName,
                         sourceClassFile = row.sourceClassFile,
                     },
                 })

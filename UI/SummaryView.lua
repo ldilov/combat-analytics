@@ -64,6 +64,8 @@ local function buildSpellRows(session, limit)
                 casts = aggregate.castCount or 0,
                 hits = aggregate.hitCount or 0,
                 share = amount / totalOutput,
+                estimated = aggregate.estimated or false,
+                syntheticKind = aggregate.syntheticKind,
             }
         end
     end
@@ -194,7 +196,7 @@ function SummaryView:Build(parent)
     self.dummyNotice = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.dummyNotice:SetPoint("TOPLEFT", self.caption, "BOTTOMLEFT", 0, -6)
     self.dummyNotice:SetTextColor(unpack(Theme.warning))
-    self.dummyNotice:SetText("Note: Training dummy sessions may not appear reliably on Summary. See the Dummy tab for the most complete dummy-specific analysis.")
+    self.dummyNotice:SetText("Training dummy sessions now use the same Midnight-safe spell totals as the main dashboard. The Dummy tab still provides the deepest long-term benchmark view.")
     self.dummyNotice:Hide()
 
     self.shell, self.scrollFrame, self.canvas = ns.Widgets.CreateScrollCanvas(self.frame, 808, 410)
@@ -479,8 +481,7 @@ function SummaryView:Refresh(payload)
         -- For non-PvP contexts with unknown result, show "Log" instead of "Unknown"
         if session.result == "unknown" or not session.result then
             local ctx = session.context
-            if ctx ~= Constants.CONTEXT.ARENA and ctx ~= Constants.CONTEXT.BATTLEGROUND
-                and ctx ~= Constants.CONTEXT.DUEL and ctx ~= Constants.CONTEXT.WORLD_PVP then
+            if not Helpers.IsPvpAnalyticsContext(ctx) then
                 resultText = "Log"
             end
         end
@@ -550,10 +551,18 @@ function SummaryView:Refresh(payload)
             for idx, row in ipairs(self.topSpellRows) do
                 local spell = topSpells[idx]
                 if spell then
+                    local detail = string.format("Damage %s  |  Casts %d  |  %s of output", Helpers.FormatNumber(spell.damage), spell.casts or 0, formatPercent((spell.share or 0) * 100))
+                    if spell.syntheticKind == "unattributed_damage" then
+                        detail = string.format("Damage %s  |  Damage Meter total with no spell row", Helpers.FormatNumber(spell.damage))
+                    elseif spell.syntheticKind == "environmental" or spell.spellId == 0 then
+                        detail = string.format("Damage %s  |  Environmental / map hazard", Helpers.FormatNumber(spell.damage))
+                    elseif spell.estimated then
+                        detail = string.format("Damage %s  |  Casts %d  |  Estimated from Damage Meter total", Helpers.FormatNumber(spell.damage), spell.casts or 0)
+                    end
                     row:SetData(
                         spell.icon,
                         spell.name,
-                        string.format("Damage %s  |  Casts %d  |  %s of output", Helpers.FormatNumber(spell.damage), spell.casts or 0, formatPercent((spell.share or 0) * 100)),
+                        detail,
                         Helpers.FormatNumber(spell.amount),
                         spell.share,
                         Theme.accent
@@ -663,6 +672,30 @@ function SummaryView:Refresh(payload)
         readSource
     ))
 
+    -- Damage import failure banner — helps user understand zero-damage sessions.
+    if self.dmWarningBanner then self.dmWarningBanner:Hide() end
+    local importedTotals = session.importedTotals or {}
+    local authority = importedTotals.totalAuthority
+    if authority == "failed" and (session.totals and (session.totals.damageDone or 0) <= 0) then
+        if not self.dmWarningBanner then
+            self.dmWarningBanner = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            self.dmWarningBanner:SetPoint("TOPLEFT", self.caption, "BOTTOMLEFT", 0, -4)
+            self.dmWarningBanner:SetWidth(700)
+            self.dmWarningBanner:SetJustifyH("LEFT")
+            self.dmWarningBanner:SetWordWrap(true)
+        end
+        local status = importedTotals.importStatus or "unknown"
+        local hint = ""
+        if status == "failed_damage_meter_unavailable" or status == "failed_no_candidate" then
+            hint = "Make sure Blizzard's Damage Meter is enabled: ESC > Options > Gameplay > Combat > Enable Damage Meter."
+        elseif status == "failed_no_meaningful_data" then
+            hint = "C_DamageMeter returned no damage data. Verify the built-in Damage Meter is enabled and visible in your UI."
+        end
+        self.dmWarningBanner:SetTextColor(0.96, 0.55, 0.20, 1.0)
+        self.dmWarningBanner:SetText("|cFFFF8800(!) Damage import failed:|r " .. hint)
+        self.dmWarningBanner:Show()
+    end
+
     if session.context == ns.Constants.CONTEXT.TRAINING_DUMMY then
         for _, benchmark in ipairs(store:GetDummyBenchmarks(characterKey)) do
             if benchmark.buildHash == buildHash and benchmark.dummyName == (session.primaryOpponent and session.primaryOpponent.name or "") then
@@ -688,10 +721,24 @@ function SummaryView:Refresh(payload)
     )
     self.metricCards[2]:Show()
 
+    local avoidableTaken = (session.totals and session.totals.avoidableDamageTaken) or 0
+    local survivabilitySubtitle
+    if avoidableTaken > 0 then
+        survivabilitySubtitle = string.format("%s taken (%s avoidable), %s healing, %d deaths.",
+            Helpers.FormatNumber(session.totals.damageTaken or 0),
+            Helpers.FormatNumber(avoidableTaken),
+            Helpers.FormatNumber(session.totals.healingDone or 0),
+            session.survival and session.survival.deaths or 0)
+    else
+        survivabilitySubtitle = string.format("%s taken, %s healing, %d deaths.",
+            Helpers.FormatNumber(session.totals.damageTaken or 0),
+            Helpers.FormatNumber(session.totals.healingDone or 0),
+            session.survival and session.survival.deaths or 0)
+    end
     self.metricCards[3]:SetData(
         string.format("%.1f", session.metrics.survivabilityScore or 0),
         "Survivability",
-        string.format("%s taken, %s healing, %d deaths.", Helpers.FormatNumber(session.totals.damageTaken or 0), Helpers.FormatNumber(session.totals.healingDone or 0), session.survival and session.survival.deaths or 0),
+        survivabilitySubtitle,
         Theme.success
     )
     self.metricCards[3]:Show()
@@ -847,10 +894,18 @@ function SummaryView:Refresh(payload)
     for index, row in ipairs(self.spellRows) do
         local spell = spells[index]
         if spell then
+            local detail = string.format("Damage %s  |  Healing %s  |  Casts %d  |  Hits %d", Helpers.FormatNumber(spell.damage), Helpers.FormatNumber(spell.healing), spell.casts or 0, spell.hits or 0)
+            if spell.syntheticKind == "unattributed_damage" then
+                detail = string.format("Damage %s  |  Damage Meter total with no spell row", Helpers.FormatNumber(spell.damage))
+            elseif spell.syntheticKind == "environmental" or spell.spellId == 0 then
+                detail = string.format("Damage %s  |  Environmental / map hazard", Helpers.FormatNumber(spell.damage))
+            elseif spell.estimated then
+                detail = string.format("Damage %s  |  Casts %d  |  Estimated from Damage Meter total", Helpers.FormatNumber(spell.damage), spell.casts or 0)
+            end
             row:SetData(
                 spell.icon,
                 spell.name,
-                string.format("Damage %s  |  Healing %s  |  Casts %d  |  Hits %d", Helpers.FormatNumber(spell.damage), Helpers.FormatNumber(spell.healing), spell.casts or 0, spell.hits or 0),
+                detail,
                 string.format("%s  (%s of output)", Helpers.FormatNumber(spell.amount), formatPercent((spell.share or 0) * 100)),
                 spell.share,
                 Theme.accent
