@@ -98,6 +98,7 @@ local function createUnitInfo(unitToken)
         unitToken = unitToken,
         isPlayer = ApiCompat.UnitIsPlayer(unitToken),
         isHostile = ApiCompat.UnitCanAttack("player", unitToken) or ApiCompat.UnitIsEnemy("player", unitToken),
+        isPet = ApiCompat.IsGuidPet(guid),
         creatureId = ApiCompat.GetCreatureIdFromGUID(guid),
     }
 end
@@ -476,9 +477,39 @@ function SessionClassifier:GetWorldPvpScore(session, info, source)
     return math.min(score, 100)
 end
 
+function SessionClassifier:GetVisibleHostileCandidates(preferredUnitToken)
+    local candidates = {}
+    local seenTokens = {}
+
+    local function addToken(unitToken)
+        if not unitToken or seenTokens[unitToken] then
+            return
+        end
+        local info = createUnitInfo(unitToken)
+        if not info then
+            return
+        end
+        seenTokens[unitToken] = true
+        candidates[#candidates + 1] = info
+    end
+
+    addToken(preferredUnitToken)
+    addToken("target")
+    addToken("focus")
+
+    local ugs = ns.Addon:GetModule("UnitGraphService")
+    if ugs and ugs.GetHostileCandidates then
+        for _, candidate in ipairs(ugs:GetHostileCandidates(preferredUnitToken) or {}) do
+            addToken(candidate.unitToken)
+        end
+    end
+
+    return candidates
+end
+
 function SessionClassifier:AccumulateUnitEvidence(session, unitToken, source)
     local info = createUnitInfo(unitToken)
-    if not info or isMineGuid(info.guid) then
+    if not info or isMineGuid(info.guid) or info.isPet then
         return false
     end
 
@@ -570,6 +601,11 @@ function SessionClassifier:RefreshSessionIdentity(session, preferredUnitToken, s
     addToken("target")
     addToken("focus")
 
+    local candidateInfos = self:GetVisibleHostileCandidates(preferredUnitToken)
+    for _, info in ipairs(candidateInfos) do
+        addToken(info.unitToken)
+    end
+
     for _, unitToken in ipairs(orderedTokens) do
         self:AccumulateUnitEvidence(session, unitToken, source)
     end
@@ -625,7 +661,7 @@ end
 -- Context is determined entirely from WoW API state: C_PvP queries for arena/BG,
 -- DUEL_* event flags for duels, creature ID + UnitClassification for dummies,
 -- and hostile-player unit checks for world PvP.
-function SessionClassifier:ResolveContextFromState()
+function SessionClassifier:ResolveContextFromState(preferredUnitToken)
     local pendingDuel = self:GetPendingDuel()
 
     if ApiCompat.IsMatchConsideredArena() or ApiCompat.IsSoloShuffle() then
@@ -643,27 +679,26 @@ function SessionClassifier:ResolveContextFromState()
         return Constants.CONTEXT.DUEL, pendingDuel.isToTheDeath and Constants.SUBCONTEXT.TO_THE_DEATH or nil, nil
     end
 
-    for _, unitToken in ipairs({ "target", "focus" }) do
-        local info = createUnitInfo(unitToken)
+    for _, info in ipairs(self:GetVisibleHostileCandidates(preferredUnitToken)) do
         if info then
             info.isTrainingDummyById = info.creatureId and Constants.TRAINING_DUMMY_CREATURE_IDS[info.creatureId] or false
             info.isTrainingDummyByName = self:IsTrainingDummyName(info.name)
 
             -- T032: Confirm duel opponent from visible unit when duel is active.
             if pendingDuel and pendingDuel.state == "active" and self:TryConfirmPendingDuelInfo(info, "state") then
-                return Constants.CONTEXT.DUEL, pendingDuel.isToTheDeath and Constants.SUBCONTEXT.TO_THE_DEATH or nil, unitToken
+                return Constants.CONTEXT.DUEL, pendingDuel.isToTheDeath and Constants.SUBCONTEXT.TO_THE_DEATH or nil, info.unitToken
             end
 
             -- T033: Dummy detection — creature ID from SeedDummyCatalog +
             -- UnitClassification check. Name-based patterns are a fallback.
-            local dummyScore = self:GetTrainingDummyScore(info)
-            if dummyScore >= (Constants.TRAINING_DUMMY_PROMOTION_THRESHOLD or 70) then
+                local dummyScore = self:GetTrainingDummyScore(info)
+                if dummyScore >= (Constants.TRAINING_DUMMY_PROMOTION_THRESHOLD or 70) then
                 -- Extra guard: if detection was name-only (no creature ID match),
                 -- verify UnitClassification to avoid false positives from NPCs
                 -- whose names happen to contain "dummy" or "training".
                 local passedClassificationCheck = true
                 if not info.isTrainingDummyById and info.isTrainingDummyByName then
-                    local classification = UnitClassification and UnitClassification(unitToken) or nil
+                    local classification = UnitClassification and UnitClassification(info.unitToken) or nil
                     -- Training dummies are typically "trivial" or "minus" classification.
                     -- If we can query classification and it's a normal/elite/boss NPC,
                     -- do not treat it as a dummy.
@@ -676,14 +711,14 @@ function SessionClassifier:ResolveContextFromState()
                     if ApiCompat.AreTrainingGroundsEnabled() then
                         subcontext = Constants.SUBCONTEXT.TRAINING_GROUNDS
                     end
-                    return Constants.CONTEXT.TRAINING_DUMMY, subcontext, unitToken
+                    return Constants.CONTEXT.TRAINING_DUMMY, subcontext, info.unitToken
                 end
             end
 
             -- World PvP detection — hostile player outside arena/BG instances.
             -- Arena/BG are already handled above with early returns.
             if info.isPlayer and info.isHostile then
-                return Constants.CONTEXT.WORLD_PVP, nil, unitToken
+                return Constants.CONTEXT.WORLD_PVP, nil, info.unitToken
             end
         end
     end

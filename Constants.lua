@@ -75,14 +75,20 @@ ns.Constants = {
     },
     -- Provenance source: which sanctioned API produced a persisted field.
     PROVENANCE_SOURCE = {
-        STATE          = "state",           -- REGEN, PVP_MATCH, DUEL events
-        DAMAGE_METER   = "damage_meter",    -- C_DamageMeter APIs
-        VISIBLE_UNIT   = "visible_unit",    -- UNIT_AURA, UNIT_SPELLCAST_SUCCEEDED, ARENA_OPPONENT_UPDATE
-        INSPECT        = "inspect",         -- NotifyInspect / INSPECT_READY
-        LOSS_OF_CONTROL = "loss_of_control", -- LOSS_OF_CONTROL_*, PLAYER_CONTROL_*
-        SPELL_DIMINISH = "spell_diminish",  -- UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED
-        ESTIMATED      = "estimated",       -- derived / calculated
-        LEGACY_IMPORT  = "legacy_import",   -- migrated from pre-v6 schema
+        STATE               = "state",               -- REGEN, PVP_MATCH, DUEL events
+        DAMAGE_METER        = "damage_meter",         -- C_DamageMeter APIs
+        VISIBLE_UNIT        = "visible_unit",         -- Legacy: UNIT_AURA, UNIT_SPELLCAST_SUCCEEDED
+        VISIBLE_UNIT_CAST   = "visible_unit_cast",   -- Observed via UNIT_SPELLCAST_* (v7+)
+        VISIBLE_UNIT_AURA   = "visible_unit_aura",   -- Observed via UNIT_AURA (v7+)
+        ARENA_SLOT_MAPPING  = "arena_slot_mapping",  -- From ARENA_OPPONENT_UPDATE (v7+)
+        SNAPSHOT_SERVICE    = "snapshot_service",    -- From SnapshotService (v7+)
+        PET_OWNER_INFERENCE = "pet_owner_inference", -- Derived pet→owner link (v7+)
+        DEATH_RECAP_SUMMARY = "death_recap_summary", -- From C_DamageMeter DeathRecap (v7+)
+        INSPECT             = "inspect",             -- NotifyInspect / INSPECT_READY
+        LOSS_OF_CONTROL     = "loss_of_control",     -- LOSS_OF_CONTROL_*, PLAYER_CONTROL_*
+        SPELL_DIMINISH      = "spell_diminish",      -- UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED
+        ESTIMATED           = "estimated",           -- derived / calculated
+        LEGACY_IMPORT       = "legacy_import",       -- migrated from pre-v6 schema
     },
     -- Session-level confidence — replaces ANALYSIS_CONFIDENCE for v6+ sessions.
     SESSION_CONFIDENCE = {
@@ -93,9 +99,23 @@ ns.Constants = {
         ESTIMATED               = "estimated",               -- insufficient direct observation
         LEGACY_CLEU_IMPORT      = "legacy_cleu_import",      -- old session from pre-v6
     },
+    -- Per-event source identity certainty. Orthogonal to SESSION_CONFIDENCE
+    -- (which measures session-level data quality) and ANALYSIS_CONFIDENCE
+    -- (legacy session quality). New code should use ATTRIBUTION_CONFIDENCE for
+    -- individual event attribution certainty.
+    ATTRIBUTION_CONFIDENCE = {
+        confirmed        = "confirmed",        -- Direct visible unit observation
+        owner_confirmed  = "owner_confirmed",  -- Pet action, owner identity confirmed
+        slot_confirmed   = "slot_confirmed",   -- Arena slot mapping confirmed identity
+        inferred         = "inferred",         -- Derived from context (target/focus, timing)
+        summary_derived  = "summary_derived",  -- From DamageMeter summary data
+        unknown          = "unknown",          -- Cannot determine source
+    },
     -- Timeline lane types for the timelineEvents system (v6+).
     TIMELINE_LANE = {
-        PLAYER_CAST    = "player_cast",
+        PLAYER_CAST    = "player_cast",     -- Legacy alias; prefer VISIBLE_CAST for new code
+        VISIBLE_CAST   = "visible_cast",    -- All visible spellcast lifecycle events (v7+)
+        VISIBILITY     = "visibility",      -- Actor visibility/identity transition events (v7+)
         VISIBLE_AURA   = "visible_aura",
         CC_RECEIVED    = "cc_received",
         DR_UPDATE      = "dr_update",
@@ -179,6 +199,15 @@ ns.Constants = {
         "DAMAGE_METER_CURRENT_SESSION_UPDATED",
         "DAMAGE_METER_RESET",
         "UNIT_SPELLCAST_SUCCEEDED",
+        -- T016: Cast lifecycle events for arena opponent tracking.
+        -- NOTE: These may be forbidden in Midnight restricted sessions;
+        -- ADDON_ACTION_BLOCKED diagnostic in Events.lua will surface violations.
+        "UNIT_SPELLCAST_START",
+        "UNIT_SPELLCAST_STOP",
+        "UNIT_SPELLCAST_INTERRUPTED",
+        "UNIT_SPELLCAST_FAILED",
+        "UNIT_SPELLCAST_CHANNEL_START",
+        "UNIT_SPELLCAST_CHANNEL_STOP",
         "SPELL_DATA_LOAD_RESULT",
         "UNIT_AURA",
         "PLAYER_SPECIALIZATION_CHANGED",
@@ -205,6 +234,13 @@ ns.Constants = {
         "LOSS_OF_CONTROL_UPDATE",
         "PLAYER_CONTROL_LOST",
         "PLAYER_CONTROL_GAINED",
+        -- UnitGraphService: identity graph events
+        "PLAYER_TARGET_CHANGED",
+        "PLAYER_FOCUS_CHANGED",
+        "GROUP_ROSTER_UPDATE",
+        "UNIT_PET",
+        "NAME_PLATE_UNIT_ADDED",
+        "NAME_PLATE_UNIT_REMOVED",
     },
     DEFAULT_SETTINGS = {
         showSummaryAfterCombat = false,
@@ -248,7 +284,20 @@ ns.Constants = {
         "damage dummy",
         "healing dummy",
     },
+    -- Creature IDs synced from seed/generated/SeedDummyCatalog.lua.
+    -- Enables fast creature-ID-based dummy detection (score 100) without
+    -- falling back to name-pattern matching (score 70-85).
     TRAINING_DUMMY_CREATURE_IDS = {
+        [31144]  = true,  -- Training Dummy
+        [31146]  = true,  -- Raider's Training Dummy
+        [31147]  = true,  -- Dungeoneer's Training Dummy
+        [32666]  = true,  -- Training Dummy
+        [44171]  = true,  -- Training Dummy
+        [44614]  = true,  -- Training Dummy
+        [194643] = true,  -- Training Grounds Damage Dummy
+        [194644] = true,  -- Training Grounds Tank Dummy
+        [194648] = true,  -- Training Grounds DPS Dummy
+        [194649] = true,  -- Training Grounds Healer Dummy
     },
     SPELL_CATEGORY = {
         OFFENSIVE = "offensive",
