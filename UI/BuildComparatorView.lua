@@ -789,48 +789,54 @@ function BuildComparatorView:_renderStatBars(canvas, y, statProfileA, statProfil
 
         y = y + BAR_HEIGHT + 3
 
-        -- Bar B (orange)
-        local widthB = math.max(1, math.min((vB or 0) / 50, 1) * BAR_MAX_WIDTH)
-        local trackB = canvas:CreateTexture(nil, "BACKGROUND")
-        trackB:SetTexture("Interface\\Buttons\\WHITE8x8")
-        trackB:SetVertexColor(BAR_TRACK_COLOR[1], BAR_TRACK_COLOR[2], BAR_TRACK_COLOR[3], BAR_TRACK_COLOR[4])
-        trackB:SetPoint("TOPLEFT", canvas, "TOPLEFT", BAR_X, -y)
-        trackB:SetSize(BAR_MAX_WIDTH, BAR_HEIGHT)
-        self:_track(trackB)
+        -- Bar B (orange) — only rendered when a second build is being compared
+        if statProfileB then
+            local widthB = math.max(1, math.min((vB or 0) / 50, 1) * BAR_MAX_WIDTH)
+            local trackB = canvas:CreateTexture(nil, "BACKGROUND")
+            trackB:SetTexture("Interface\\Buttons\\WHITE8x8")
+            trackB:SetVertexColor(BAR_TRACK_COLOR[1], BAR_TRACK_COLOR[2], BAR_TRACK_COLOR[3], BAR_TRACK_COLOR[4])
+            trackB:SetPoint("TOPLEFT", canvas, "TOPLEFT", BAR_X, -y)
+            trackB:SetSize(BAR_MAX_WIDTH, BAR_HEIGHT)
+            self:_track(trackB)
 
-        local barB = canvas:CreateTexture(nil, "ARTWORK")
-        barB:SetTexture("Interface\\Buttons\\WHITE8x8")
-        barB:SetVertexColor(COLOR_B[1], COLOR_B[2], COLOR_B[3], 0.85)
-        barB:SetPoint("TOPLEFT", canvas, "TOPLEFT", BAR_X, -y)
-        barB:SetSize(widthB, BAR_HEIGHT)
-        self:_track(barB)
+            local barB = canvas:CreateTexture(nil, "ARTWORK")
+            barB:SetTexture("Interface\\Buttons\\WHITE8x8")
+            barB:SetVertexColor(COLOR_B[1], COLOR_B[2], COLOR_B[3], 0.85)
+            barB:SetPoint("TOPLEFT", canvas, "TOPLEFT", BAR_X, -y)
+            barB:SetSize(widthB, BAR_HEIGHT)
+            self:_track(barB)
 
-        local valBFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        valBFs:SetPoint("LEFT", trackB, "RIGHT", 4, 0)
-        valBFs:SetWidth(VAL_W)
-        valBFs:SetJustifyH("LEFT")
-        valBFs:SetTextColor(COLOR_B[1], COLOR_B[2], COLOR_B[3], 1.0)
-        valBFs:SetText(vB and string.format("%.1f%%", vB) or "---")
-        self:_track(valBFs)
+            local valBFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            valBFs:SetPoint("LEFT", trackB, "RIGHT", 4, 0)
+            valBFs:SetWidth(VAL_W)
+            valBFs:SetJustifyH("LEFT")
+            valBFs:SetTextColor(COLOR_B[1], COLOR_B[2], COLOR_B[3], 1.0)
+            valBFs:SetText(vB and string.format("%.1f%%", vB) or "---")
+            self:_track(valBFs)
 
-        -- Delta text
-        local deltaFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        deltaFs:SetPoint("LEFT", valBFs, "RIGHT", 8, 0)
-        deltaFs:SetWidth(60)
-        deltaFs:SetJustifyH("LEFT")
-        if dv and dv > 0 then
-            deltaFs:SetTextColor(0.44, 0.82, 0.60, 1.0)
-            deltaFs:SetText(string.format("+%.1f%%", dv))
-        elseif dv and dv < 0 then
-            deltaFs:SetTextColor(0.86, 0.38, 0.38, 1.0)
-            deltaFs:SetText(string.format("%.1f%%", dv))
-        else
-            deltaFs:SetTextColor(0.55, 0.55, 0.55, 1.0)
-            deltaFs:SetText(dv and "0.0%" or "---")
+            -- Delta text
+            if dv then
+                local deltaFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                deltaFs:SetPoint("LEFT", valBFs, "RIGHT", 8, 0)
+                deltaFs:SetWidth(60)
+                deltaFs:SetJustifyH("LEFT")
+                if dv > 0 then
+                    deltaFs:SetTextColor(0.44, 0.82, 0.60, 1.0)
+                    deltaFs:SetText(string.format("+%.1f%%", dv))
+                elseif dv < 0 then
+                    deltaFs:SetTextColor(0.86, 0.38, 0.38, 1.0)
+                    deltaFs:SetText(string.format("%.1f%%", dv))
+                else
+                    deltaFs:SetTextColor(0.55, 0.55, 0.55, 1.0)
+                    deltaFs:SetText("0.0%")
+                end
+                self:_track(deltaFs)
+            end
+
+            y = y + BAR_HEIGHT + 3
         end
-        self:_track(deltaFs)
 
-        y = y + BAR_HEIGHT + 10  -- gap before next stat
+        y = y + 7  -- gap before next stat
     end
 
     return y
@@ -1537,45 +1543,25 @@ function BuildComparatorView:_renderSingleBuildOverview(profile)
     self:_track(metaFs)
     y = y + 22
 
-    -- ── 2. Secondary Stats Card ─────────────────────────────────────────────
-    local statHeader = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    statHeader:SetPoint("TOPLEFT", canvas, "TOPLEFT", 4, -y)
-    statHeader:SetTextColor(unpack(Theme.textMuted))
-    statHeader:SetText("Secondary Stats")
-    self:_track(statHeader)
-    y = y + 16
-
-    local sep1 = canvas:CreateTexture(nil, "ARTWORK")
-    sep1:SetColorTexture(unpack(Theme.border))
-    sep1:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, -y)
-    sep1:SetSize(640, 1)
-    self:_track(sep1)
-    y = y + 6
-
+    -- ── 2. Visual Stat Bars (single build — show as Build A only) ──────────
     if statProf then
-        local stats = {
-            { label = "Critical Strike", value = statProf.critPct },
-            { label = "Haste",           value = statProf.hastePct },
-            { label = "Mastery",         value = statProf.masteryPct },
-            { label = "Versatility",     value = statProf.versDamageDonePct },
-            { label = "Item Level",      value = statProf.itemLevelEquipped, isFmt = false },
-        }
-        for _, stat in ipairs(stats) do
-            local row = ns.Widgets.CreateIconRow(canvas, { maxLabelWidth = 160, maxValueWidth = 100, showPlaceholder = false })
-            row:SetWidth(400)
-            row:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -y)
-            local valText
-            if stat.isFmt == false then
-                valText = stat.value and tostring(math.floor(stat.value)) or "—"
-            else
-                valText = fmtPct(stat.value)
-            end
-            row:SetData(nil, stat.label, valText, "")
-            row.labelFs:SetTextColor(0.70, 0.70, 0.70, 1.0)
-            row.valueFs:SetTextColor(1, 1, 1, 1)
-            self:_track(row)
-            y = y + L.ROW_HEIGHT + L.ROW_GAP
-        end
+        y = self:_renderStatBars(canvas, y, statProf, nil, nil)
+        y = y + 8
+
+        -- ── 2b. Stat Diamond (single build — shows one shape) ───────────────
+        y = self:_renderStatDiamond(canvas, y, statProf, nil)
+        y = y + 8
+
+        -- Item Level row (not part of the 4-axis diamond)
+        local ilvlRow = ns.Widgets.CreateIconRow(canvas, { maxLabelWidth = 160, maxValueWidth = 100, showPlaceholder = false })
+        ilvlRow:SetWidth(400)
+        ilvlRow:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -y)
+        local ilvlText = statProf.itemLevelEquipped and tostring(math.floor(statProf.itemLevelEquipped)) or "—"
+        ilvlRow:SetData(nil, "Item Level", ilvlText, "")
+        ilvlRow.labelFs:SetTextColor(0.70, 0.70, 0.70, 1.0)
+        ilvlRow.valueFs:SetTextColor(1, 1, 1, 1)
+        self:_track(ilvlRow)
+        y = y + L.ROW_HEIGHT + L.ROW_GAP
     else
         local noStatFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         noStatFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -y)
