@@ -43,6 +43,32 @@ local function isMineGuid(guid)
     return guid == ApiCompat.GetPlayerGUID() or ApiCompat.IsGuidPet(guid)
 end
 
+local function shouldUseAsPrimaryOpponent(actor, currentOpponent)
+    if not actor or not actor.guid or isMineGuid(actor.guid) or ApiCompat.IsGuidPet(actor.guid) then
+        return false
+    end
+    if not currentOpponent or not currentOpponent.guid then
+        return true
+    end
+    if ApiCompat.IsGuidPet(currentOpponent.guid) then
+        return true
+    end
+
+    local actorToken = actor.unitToken or ""
+    local currentToken = currentOpponent.unitToken or ""
+    local actorIsArena = actorToken:match("^arena%d$") ~= nil
+    local currentIsArena = currentToken:match("^arena%d$") ~= nil
+    if actorIsArena ~= currentIsArena then
+        return actorIsArena
+    end
+
+    if actorToken == "target" and currentToken ~= "target" then
+        return true
+    end
+
+    return false
+end
+
 local function createSpellAggregate(spellId)
     return {
         spellId = spellId,
@@ -329,15 +355,6 @@ function CombatTracker:FlushSessionForInspection()
     return false
 end
 
-function CombatTracker:AddTimelineMarker(session, markerType, payload)
-    session.timeline = session.timeline or {}
-    session.timeline[#session.timeline + 1] = {
-        markerType = markerType,
-        timestampOffset = session.lastEventOffset or 0,
-        payload = payload,
-    }
-end
-
 function CombatTracker:RefreshSessionIdentity(session, preferredUnitToken, source)
     if not session then
         return
@@ -469,10 +486,10 @@ function CombatTracker:CreateSession(context, subcontext, identitySource)
             signalScore = 0,
             score = 0,
         },
+        -- captureQuality: legacy summary field kept for UI backward-compat.
+        -- Sub-fields other than .confidence are write-only and have been removed (T024).
+        -- .confidence is computed at FinalizeSession from coverage lane scores.
         captureQuality = {
-            rawEvents = Constants.CAPTURE_QUALITY.OK,
-            timeline = Constants.CAPTURE_QUALITY.TIMELINE_OK,
-            enemyBuild = Constants.CAPTURE_QUALITY.DEGRADED,
             confidence = Constants.SESSION_CONFIDENCE.ESTIMATED,
         },
         -- arena is populated at FinalizeSession by ArenaRoundTracker.
@@ -532,11 +549,75 @@ function CombatTracker:CreateSession(context, subcontext, identitySource)
     snapshotService:UpdateSessionActor(session, "player", "session_start")
     snapshotService:UpdateSessionActor(session, "pet", "session_start")
     self:SetCurrentSession(session)
+
+    -- T028: Initialize UnitGraphService for this new session. Archives any
+    -- prior-session actor identity and resets the per-session working set.
+    local ugsInit = ns.Addon:GetModule("UnitGraphService")
+    if ugsInit and ugsInit.InitializeForSession then
+        pcall(ugsInit.InitializeForSession, ugsInit)
+    end
+
     ns.Addon:Trace("session.create.ready", {
         context = session.context or "nil",
         id = session.id or "unknown",
     })
     ns.Addon:Debug("Started session %s context=%s subcontext=%s", session.id, tostring(context), tostring(subcontext))
+    return session
+end
+
+function CombatTracker:EnsureSessionFromState(preferredUnitToken, source)
+    local session = self:GetCurrentSession()
+    if session and session.state == "active" then
+        return session
+    end
+    if not self.playerInCombat then
+        return nil
+    end
+
+    local classifier = ns.Addon:GetModule("SessionClassifier")
+    local context, subcontext, resolvedUnitToken = nil, nil, nil
+    if classifier and classifier.ResolveContextFromState then
+        context, subcontext, resolvedUnitToken = classifier:ResolveContextFromState(preferredUnitToken)
+    end
+    if not context then
+        return nil
+    end
+
+    if context == Constants.CONTEXT.ARENA or context == Constants.CONTEXT.BATTLEGROUND then
+        self:CreateOrRefreshMatch(context, subcontext)
+    end
+
+    local damageMeterService = ns.Addon:GetModule("DamageMeterService")
+    if damageMeterService then
+        damageMeterService:MarkSessionStart()
+    end
+
+    session = self:CreateSession(context, subcontext, source or "state")
+
+    local snapshotService = ns.Addon:GetModule("SnapshotService")
+    local discoveryToken = resolvedUnitToken or preferredUnitToken
+    if snapshotService then
+        if discoveryToken then
+            local actor = snapshotService:UpdateSessionActor(session, discoveryToken, source or "state")
+            if shouldUseAsPrimaryOpponent(actor, session.primaryOpponent) then
+                session.primaryOpponent = actor
+            end
+        end
+        if ApiCompat.UnitExists("target") then
+            local actor = snapshotService:UpdateSessionActor(session, "target", source or "state")
+            if shouldUseAsPrimaryOpponent(actor, session.primaryOpponent) then
+                session.primaryOpponent = actor
+            end
+        end
+        if ApiCompat.UnitExists("focus") then
+            local actor = snapshotService:UpdateSessionActor(session, "focus", source or "state")
+            if shouldUseAsPrimaryOpponent(actor, session.primaryOpponent) then
+                session.primaryOpponent = actor
+            end
+        end
+    end
+
+    self:RefreshSessionIdentity(session, discoveryToken, source or "state")
     return session
 end
 
@@ -1248,6 +1329,20 @@ function CombatTracker:ResolveDataConfidence(session)
     -- Fallback: derive from what data is available.
     local hasRawTimeline = #(session.rawEvents or {}) > 0
     if not hasRawTimeline then
+        local importedTotals = session.importedTotals or {}
+        local hasDamageMeterEvidence =
+            (session.import and session.import.source and session.import.source ~= "none")
+            or (session.damageBreakdownSource and session.damageBreakdownSource ~= "none")
+            or (tonumber(importedTotals.damageDone) or 0) > 0
+            or (tonumber(importedTotals.healingDone) or 0) > 0
+            or (tonumber(importedTotals.damageTaken) or 0) > 0
+            or (tonumber(importedTotals.absorbed) or 0) > 0
+        if hasDamageMeterEvidence then
+            if session.damageBreakdownSource and session.damageBreakdownSource ~= "none" then
+                return AC.RESTRICTED_RAW
+            end
+            return AC.DEGRADED
+        end
         return AC.UNKNOWN
     end
 
@@ -1279,7 +1374,7 @@ end
 -- Task 2.3 / T056: Death Cause Attribution
 -- Scans timelineEvents for death-lane entries and looks backwards through the
 -- timeline for the damage events leading up to each death.  Also checks the
--- ccTimeline to determine if the player was crowd-controlled at death time.
+-- CC_RECEIVED lane to determine if the player was crowd-controlled at death time.
 local function analyzeDeath(session)
     if (session.survival and session.survival.deaths or 0) == 0 then return end
 
@@ -1303,12 +1398,15 @@ local function analyzeDeath(session)
         local totalBurstDamage = 0
         local sourceGuid, sourceName, sourceSpecId = nil, nil, nil
 
-        -- Scan backwards from death event to find last 6 damage events targeting the player
+        -- Scan backwards from death event to find last 6 damage events targeting the player.
+        -- T029: Skip chronology = "summary" rows — DM post-match aggregate rows must
+        -- never be selected as the killing blow or last hostile cast.
         local count = 0
         for i = deathIdx - 1, 1, -1 do
             if count >= 6 then break end
             local ev = timeline[i]
-            if ev and ev.amount and ev.amount > 0 and ev.destMine then
+            if ev and ev.amount and ev.amount > 0 and ev.destMine
+                    and ev.chronology ~= "summary" then
                 -- Resolve source name from session actors table
                 local resolvedName = nil
                 if ev.sourceGuid and session.actors and session.actors[ev.sourceGuid] then
@@ -1331,17 +1429,18 @@ local function analyzeDeath(session)
             end
         end
 
-        -- Check if player was under CC at time of death
+        -- Check if player was under CC at time of death (reads CC_RECEIVED lane)
         local wasCCed = false
         local ccSpellId = nil
-        if session.ccTimeline then
-            local deathOffset = deathEvt.timestampOffset or 0
-            for _, cc in ipairs(session.ccTimeline) do
-                local ccStart = cc.startOffset or 0
-                local ccEnd = ccStart + (cc.duration or 0)
+        local deathOffset = deathEvt.timestampOffset or 0
+        for _, ev in ipairs(timeline) do
+            if ev.lane == Constants.TIMELINE_LANE.CC_RECEIVED and ev.type == "start" then
+                local meta = ev.meta or {}
+                local ccStart = ev.t or 0
+                local ccEnd = ccStart + (meta.duration or 0)
                 if deathOffset >= ccStart and deathOffset <= ccEnd then
                     wasCCed = true
-                    ccSpellId = cc.spellId
+                    ccSpellId = meta.spellID or ev.spellId
                     break
                 end
             end
@@ -1512,12 +1611,17 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
     self:CloseOpenAuras(session)
     analyzeDeath(session)
 
-    -- T055: Extract opener sequence from timelineEvents (player_cast lane)
-    -- instead of rawEvents.  Scans for the first 5 player-cast timeline entries.
+    -- T055/T030: Extract opener sequence from timelineEvents (VISIBLE_CAST lane;
+    -- PLAYER_CAST is the legacy alias kept for sessions recorded before T013).
+    -- T030: chronology guard — only realtime observed casts count; DM summary
+    -- rows must not appear in the opener sequence.
     local openerSpells = {}
     for _, ev in ipairs(session.timelineEvents or {}) do
         if #openerSpells >= 5 then break end
-        if ev.lane == Constants.TIMELINE_LANE.PLAYER_CAST and ev.spellId then
+        if (ev.lane == Constants.TIMELINE_LANE.VISIBLE_CAST
+                or ev.lane == Constants.TIMELINE_LANE.PLAYER_CAST)
+            and ev.chronology ~= "summary"
+            and ev.spellId then
             openerSpells[#openerSpells + 1] = ev.spellId
         end
     end
@@ -1603,23 +1707,34 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
 
     session.damageMeterImportAttempts = session.damageMeterImportAttempts or 0
     local damageMeterService = ns.Addon:GetModule("DamageMeterService")
+    -- C_DamageMeter APIs are marked SecretWhenInCombat=true: they return
+    -- opaque secret values during combat lockdown that IsSecretValue()
+    -- sanitizes to zero. When finalizing during combat (training dummy idle
+    -- timeout), queue a deferred import for after combat ends instead.
     if damageMeterService and not (InCombatLockdown and InCombatLockdown()) then
         local okImport, importedOrError = xpcall(function()
             return damageMeterService:ImportSession(session)
         end, debugstack)
         if not okImport then
-            -- T020: Mark import authority as failed (xpcall error path).
-            session.captureQuality = session.captureQuality or {}
-            session.captureQuality.damageMeter = Constants.CAPTURE_QUALITY.DEGRADED
             self:SetImportAuthority(session, Constants.IMPORT_STATUS.FAILED_DAMAGE_METER_UNAVAILABLE)
             ns.Addon:Warn("Damage Meter import failed; storing limited session data.")
             ns.Addon:Debug("%s", importedOrError)
         elseif not importedOrError then
-            -- T020: Mark import authority as failed (import returned falsy path).
-            session.captureQuality = session.captureQuality or {}
-            session.captureQuality.damageMeter = Constants.CAPTURE_QUALITY.DEGRADED
             self:SetImportAuthority(session, Constants.IMPORT_STATUS.FAILED_NO_CANDIDATE)
         end
+    elseif damageMeterService and (InCombatLockdown and InCombatLockdown()) then
+        -- Queue deferred import: C_DamageMeter data is secret right now.
+        -- HandlePlayerRegenEnabled will pick this up and re-import.
+        -- Only one session can be finalized-in-combat at a time because
+        -- training dummy timeouts are serialized through FinalizeSession.
+        -- If a second session overwrites this slot, the first is still safe —
+        -- the HandlePlayerRegenEnabled timer closure captures `deferredSession`
+        -- by value, not by re-reading this field.
+        self._deferredImportSession = session
+        ns.Addon:Trace("damage_meter.import.deferred", {
+            reason = "in_combat_lockdown",
+            context = session.context or "unknown",
+        })
     end
 
     local localDamageDone = session.localTotals and session.localTotals.damageDone or 0
@@ -1647,6 +1762,31 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         return nil
     end
 
+    -- Health-delta fallback for training dummy sessions: when C_DamageMeter
+    -- import produced zero damage but the OnUpdate health sampler observed
+    -- actual health decreases on the target, use that as an estimated total.
+    -- This handles the case where C_DamageMeter doesn't produce sessions for
+    -- training dummy combat or where SecretWhenInCombat zeroed the data.
+    if session.context == Constants.CONTEXT.TRAINING_DUMMY
+        and (session.totals.damageDone or 0) <= 0
+        and session._runtime
+        and session._runtime.healthDelta
+    then
+        local hd = session._runtime.healthDelta
+        if hd.totalDamageEstimate > 0 then
+            session.totals.damageDone = hd.totalDamageEstimate
+            session.importedTotals = session.importedTotals or {}
+            session.importedTotals.damageDone = hd.totalDamageEstimate
+            session.importedTotals.importStatus = Constants.IMPORT_STATUS.ESTIMATED_FROM_CASTS
+            session.importedTotals.healthDeltaSamples = hd.samples
+            self:SetImportAuthority(session, Constants.IMPORT_STATUS.ESTIMATED_FROM_CASTS)
+            ns.Addon:Trace("damage_meter.health_delta_fallback", {
+                estimatedDamage = hd.totalDamageEstimate,
+                samples = hd.samples,
+            })
+        end
+    end
+
     -- T019: Zero-damage real-combat override — if retries are exhausted and
     -- damage is still zero on a session with real combat signals, mark failed
     -- so the UI shows an honest reason rather than a silent zero.
@@ -1661,9 +1801,7 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
                 getRecordedCastCount(session) > 0
                 or session.primaryOpponent ~= nil
                 or (session.duration or 0) >= 5
-                or session.context == Constants.CONTEXT.ARENA
-                or session.context == Constants.CONTEXT.BATTLEGROUND
-                or session.context == Constants.CONTEXT.DUEL
+                or Helpers.IsPvpAnalyticsContext(session.context)
             )
         )
         if hasRealCombatSignals and (importedTotals.importStatus == nil or currentAuthority == nil) then
@@ -1713,8 +1851,6 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
                     end
                 end
                 if allocated > 0 then
-                    session.captureQuality = session.captureQuality or {}
-                    session.captureQuality.spellBreakdown = Constants.CAPTURE_QUALITY.DEGRADED
                     ns.Addon:Trace("finalize.spell_backfill", {
                         total = totalDamage,
                         existing = existingSpellDamage,
@@ -1734,6 +1870,27 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         if art then art:CopyStateIntoSession(session) end
     end
 
+    -- T028: Enrich primaryOpponent identity fields using UnitGraphService's
+    -- best-available resolution (which may have visible_unit priority data from
+    -- VisibleCastProducer / ArenaRoundTracker that DM summary rows lack).
+    do
+        local ugsFinalize = ns.Addon:GetModule("UnitGraphService")
+        local opp = session.primaryOpponent
+        if ugsFinalize and opp and opp.guid then
+            pcall(function()
+                local identity = ugsFinalize:GetBestDisplayIdentity(opp.guid)
+                if identity then
+                    opp.name      = opp.name      or identity.name
+                    opp.classFile = opp.classFile or identity.classFile
+                    opp.specId    = opp.specId    or identity.specId
+                    opp.arenaSlot = opp.arenaSlot or identity.arenaSlot
+                    -- Record where the identity came from for diagnostics.
+                    opp.identityProvenance = identity.provenance
+                end
+            end)
+        end
+    end
+
     local classifier = ns.Addon:GetModule("SessionClassifier")
     if classifier and classifier.SyncSessionIdentityFromOpponent and session.primaryOpponent then
         classifier:SyncSessionIdentityFromOpponent(session, session.primaryOpponent, "finalize")
@@ -1748,7 +1905,6 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         ns.Metrics.DeriveCoordination(session)
     end, debugstack)
     if not okWindows then
-        session.captureQuality.metrics = Constants.CAPTURE_QUALITY.DEGRADED
         session.metrics = session.metrics or {}
         ns.Addon:Warn("Metrics derivation failed; storing raw session only.")
         ns.Addon:Debug("%s", errWindows)
@@ -1820,6 +1976,35 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
     else
         session.captureQuality.confidence = SC.ESTIMATED
     end
+
+    -- T023: Wire session.deathRecap from DM API into a DEATH lane timeline marker
+    -- so the timeline and coverage services can account for death events.
+    if session.deathRecap then
+        local tp = ns.Addon:GetModule("TimelineProducer")
+        if tp then
+            local now = Helpers.Now()
+            local t   = now - (session.startedAt or now)
+            -- Use deathRecap.timeSeconds as the event offset when available.
+            local deathOffset = session.deathRecap.timeSeconds
+            if type(deathOffset) ~= "number" then deathOffset = t end
+            tp:AppendTimelineEvent(session, {
+                t          = deathOffset,
+                lane       = Constants.TIMELINE_LANE.DEATH,
+                type       = "death_recap",
+                source     = Constants.PROVENANCE_SOURCE.DAMAGE_METER,
+                confidence = "confirmed",
+                meta = {
+                    recapEvents = session.deathRecap.events,
+                    maxHealth   = session.deathRecap.maxHealth,
+                    recapID     = session.deathRecap.recapID,
+                },
+            })
+        end
+    end
+
+    -- Compute per-lane data coverage scores (T012).
+    local covSvc = ns.Addon:GetModule("CoverageService")
+    if covSvc then covSvc:Finalize(session) end
 
     session.state = "finalized"
 
@@ -1913,6 +2098,15 @@ function CombatTracker:HandleUnitSpellcastSucceeded(unitTarget, _, spellId)
     end
 
     local session = self:GetCurrentSession()
+    if (not session or session.state ~= "active") and self.playerInCombat then
+        local preferredUnitToken = nil
+        if ApiCompat.UnitExists("target") then
+            preferredUnitToken = "target"
+        elseif ApiCompat.UnitExists("focus") then
+            preferredUnitToken = "focus"
+        end
+        session = self:EnsureSessionFromState(preferredUnitToken, unitTarget == "pet" and "pet_cast" or "player_cast")
+    end
     if not session or session.state ~= "active" or not spellId then
         return
     end
@@ -1956,7 +2150,10 @@ function CombatTracker:HandleUnitAura(unitTarget, updateInfo)
     if not session or not ApiCompat.UnitExists(unitTarget) then
         return
     end
-    if not Constants.TRACKED_UNITS[unitTarget] and not string.find(unitTarget, "^arena") then
+    if not Constants.TRACKED_UNITS[unitTarget]
+        and not string.find(unitTarget, "^arena")
+        and not string.find(unitTarget, "^nameplate%d+$")
+    then
         return
     end
 
@@ -2093,43 +2290,13 @@ end
 
 function CombatTracker:HandlePlayerRegenDisabled()
     self.playerInCombat = true
+    local damageMeterService = ns.Addon:GetModule("DamageMeterService")
+    if damageMeterService then
+        damageMeterService:MarkSessionStart()
+    end
     local session = self:GetCurrentSession()
     if not session or session.state ~= "active" then
-        local classifier = ns.Addon:GetModule("SessionClassifier")
-        local context, subcontext, unitToken = nil, nil, nil
-        if classifier and classifier.ResolveContextFromState then
-            context, subcontext, unitToken = classifier:ResolveContextFromState()
-        end
-        if context then
-            if context == Constants.CONTEXT.ARENA or context == Constants.CONTEXT.BATTLEGROUND then
-                self:CreateOrRefreshMatch(context, subcontext)
-            end
-
-            local damageMeterService = ns.Addon:GetModule("DamageMeterService")
-            if damageMeterService then
-                damageMeterService:MarkSessionStart()
-            end
-
-            session = self:CreateSession(context, subcontext, "state")
-
-            local snapshotService = ns.Addon:GetModule("SnapshotService")
-            if snapshotService then
-                if unitToken then
-                    local actor = snapshotService:UpdateSessionActor(session, unitToken, "combat_start")
-                    if actor then
-                        session.primaryOpponent = actor
-                    end
-                end
-                if ApiCompat.UnitExists("target") then
-                    snapshotService:UpdateSessionActor(session, "target", "combat_start")
-                end
-                if ApiCompat.UnitExists("focus") then
-                    snapshotService:UpdateSessionActor(session, "focus", "combat_start")
-                end
-            end
-
-            self:RefreshSessionIdentity(session, unitToken, "combat_start")
-        end
+        session = self:EnsureSessionFromState(nil, "combat_start")
     end
 
     if session then
@@ -2142,6 +2309,48 @@ function CombatTracker:HandlePlayerRegenEnabled()
     local snapshotService = ns.Addon:GetModule("SnapshotService")
     if snapshotService then
         snapshotService:TryRefreshDeferredSnapshot("post_combat")
+    end
+
+    -- Deferred import: if a session was finalized during combat (training
+    -- dummy idle timeout), C_DamageMeter returned secret values. Now that
+    -- combat has ended, re-import with real data and persist the update.
+    local deferredSession = self._deferredImportSession
+    if deferredSession then
+        self._deferredImportSession = nil
+        local damageMeterService = ns.Addon:GetModule("DamageMeterService")
+        if damageMeterService then
+            -- Wait for DM Expired session to settle before re-importing.
+            scheduleAfter(DM_STABILIZATION_DELAY, function()
+                local okReimport = xpcall(function()
+                    if damageMeterService.CaptureCurrentSessionSnapshot then
+                        damageMeterService:CaptureCurrentSessionSnapshot(deferredSession)
+                    end
+                    damageMeterService:ImportSession(deferredSession)
+                    -- Read status after ImportSession populates importedTotals;
+                    -- the `and` guard returns false (not nil) when importedTotals
+                    -- is nil, which SetImportAuthority treats as a no-op sentinel.
+                    local newStatus = (deferredSession.importedTotals ~= nil)
+                        and deferredSession.importedTotals.importStatus
+                        or nil
+                    self:SetImportAuthority(deferredSession, newStatus)
+                    -- Recompute metrics with actual damage data.
+                    local okMetrics, metricsErr = xpcall(function()
+                        ns.Metrics.ComputeDerivedMetrics(deferredSession)
+                    end, debugstack)
+                    if not okMetrics then
+                        ns.Addon:Debug("Deferred import: metrics recompute failed: %s", tostring(metricsErr or "?"))
+                    end
+                    ns.Addon:GetModule("CombatStore"):PersistSession(deferredSession)
+                    ns.Addon:Trace("damage_meter.deferred_import.success", {
+                        damage = deferredSession.totals and deferredSession.totals.damageDone or 0,
+                        context = deferredSession.context or "unknown",
+                    })
+                end, debugstack)
+                if not okReimport then
+                    ns.Addon:Trace("damage_meter.deferred_import.failed", {})
+                end
+            end)
+        end
     end
 
     local session = self:GetCurrentSession()
@@ -2276,6 +2485,55 @@ function CombatTracker:HandleZoneChanged()
     local classifier = ns.Addon:GetModule("SessionClassifier")
     if classifier then
         classifier:RefreshZone()
+    end
+end
+
+function CombatTracker:RefreshVisibleUnitState(unitToken, source)
+    if not unitToken then
+        return
+    end
+
+    local session = self:GetCurrentSession()
+    if (not session or session.state ~= "active") and self.playerInCombat then
+        session = self:EnsureSessionFromState(unitToken, source)
+    end
+    if not session or session.state ~= "active" or not ApiCompat.UnitExists(unitToken) then
+        return
+    end
+
+    local snapshotService = ns.Addon:GetModule("SnapshotService")
+    if snapshotService then
+        local actor = snapshotService:UpdateSessionActor(session, unitToken, source)
+        if shouldUseAsPrimaryOpponent(actor, session.primaryOpponent) then
+            session.primaryOpponent = actor
+        end
+    end
+
+    self:RefreshSessionIdentity(session, unitToken, source)
+    if self.playerInCombat then
+        self:InvalidatePendingFinalize(session)
+    end
+end
+
+function CombatTracker:HandlePlayerTargetChanged()
+    self:RefreshVisibleUnitState("target", "target_changed")
+end
+
+function CombatTracker:HandlePlayerFocusChanged()
+    self:RefreshVisibleUnitState("focus", "focus_changed")
+end
+
+function CombatTracker:HandleNamePlateUnitAdded(unitToken)
+    self:RefreshVisibleUnitState(unitToken, "nameplate_added")
+end
+
+function CombatTracker:HandleUnitPet(unitId)
+    if not unitId then
+        return
+    end
+    local petToken = unitId .. "pet"
+    if ApiCompat.UnitExists(petToken) then
+        self:RefreshVisibleUnitState(petToken, "unit_pet")
     end
 end
 
@@ -2763,7 +3021,6 @@ function CombatTracker:HandleArenaOpponentUpdate(unitToken, updateReason)
         if snapshotService then
             snapshotService:UpdateSessionActor(session, unitToken, "arena_opponent")
         end
-        self:AddTimelineMarker(session, "arena_opponent_update", { unitToken = unitToken, reason = updateReason })
     end
 
     -- Forward to ArenaRoundTracker unconditionally — it manages slot state even
@@ -2880,7 +3137,6 @@ function CombatTracker:HandleDuelInbounds()
     end
 
     if session then
-        self:AddTimelineMarker(session, "duel_inbounds", {})
         self:InvalidatePendingFinalize(session)
     end
 end
@@ -2888,7 +3144,6 @@ end
 function CombatTracker:HandleDuelOutOfBounds()
     local session = self:GetCurrentSession()
     if session then
-        self:AddTimelineMarker(session, "duel_outofbounds", {})
     end
 end
 
@@ -2928,13 +3183,6 @@ function CombatTracker:HandleArenaCrowdControlUpdate(unitTarget, spellId)
             startOffset = startOffset,
         }
         session.ccReceived[#session.ccReceived + 1] = entry
-
-        -- Maintain a sorted timeline for downstream analytics
-        session.ccTimeline = session.ccTimeline or {}
-        session.ccTimeline[#session.ccTimeline + 1] = entry
-        table.sort(session.ccTimeline, function(a, b)
-            return (a.startOffset or 0) < (b.startOffset or 0)
-        end)
 
         ns.Addon:Trace("cc.received", {
             spellId     = ccSpellId,
@@ -3042,22 +3290,6 @@ function CombatTracker:HandleLossOfControlAdded(unitTarget, effectIndex)
     }
     session.lossOfControl[#session.lossOfControl + 1] = entry
 
-    -- Also append to the unified CC timeline for metric computation.
-    local spellName = locData.displayText
-    if not spellName and locData.spellID then
-        spellName = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(locData.spellID) or nil
-    end
-
-    session.ccTimeline = session.ccTimeline or {}
-    session.ccTimeline[#session.ccTimeline + 1] = {
-        spellId     = locData.spellID,
-        spellName   = spellName,
-        duration    = locData.duration or 0,
-        startOffset = startOffset,
-        locType     = locData.locType,
-        sourceName  = nil, -- LoC API does not expose source
-    }
-
     ns.Addon:Trace("loc.added", {
         locType  = locData.locType or "?",
         spellId  = locData.spellID or 0,
@@ -3099,15 +3331,51 @@ function CombatTracker:OnUpdate()
             timeout = Constants.GENERAL_IDLE_TIMEOUT
         end
 
+        -- Health-delta sampling for training dummy damage estimation.
+        -- C_DamageMeter may not produce usable data for dummy sessions
+        -- (SecretWhenInCombat during in-combat finalization). Track the
+        -- target's health changes as a last-resort damage approximation.
+        if session.context == Constants.CONTEXT.TRAINING_DUMMY
+            and self.playerInCombat
+            and ApiCompat.UnitExists("target")
+        then
+            local rt = session._runtime
+            if rt then
+                local currentHealth = UnitHealth("target") or 0
+                local maxHealth = UnitHealthMax("target") or 0
+                if not rt.healthDelta then
+                    rt.healthDelta = {
+                        totalDamageEstimate = 0,
+                        lastHealth = currentHealth,
+                        maxHealth = maxHealth,
+                        samples = 0,
+                    }
+                end
+                local hd = rt.healthDelta
+                if hd.lastHealth > 0 and currentHealth > 0 then
+                    local delta = hd.lastHealth - currentHealth
+                    -- Positive delta = damage dealt; ignore negative (dummy reset/heal).
+                    -- Also handle dummy health resetting to max (wrap-around).
+                    if delta > 0 and delta < (maxHealth * 0.5) then
+                        hd.totalDamageEstimate = hd.totalDamageEstimate + delta
+                        hd.samples = hd.samples + 1
+                    end
+                end
+                hd.lastHealth = currentHealth
+                hd.maxHealth = maxHealth
+            end
+        end
+
         if session.pendingFinalizeAt and not self.playerInCombat and now >= session.pendingFinalizeAt then
             self:FinalizeSession(nil, "regen_end")
             return
         end
 
-        -- Training dummy sessions often need the post-combat Damage Meter snapshot
-        -- to resolve output on Midnight-safe mode, so do not finalize them while
-        -- the player is still in combat.
-        local canTimeoutWhileInCombat = false
+        -- Training dummy combat can linger after the pull ends, which would leave
+        -- the session unpersisted forever. Allow idle dummy sessions to finalize
+        -- in-combat, then queue a deferred DM import for after combat ends via
+        -- HandlePlayerRegenEnabled (C_DamageMeter returns secret values in combat).
+        local canTimeoutWhileInCombat = session.context == Constants.CONTEXT.TRAINING_DUMMY
         if session.lastRelevantAt and (not self.playerInCombat or canTimeoutWhileInCombat) and (now - session.lastRelevantAt) >= timeout then
             self:FinalizeSession(nil, "timeout")
         end

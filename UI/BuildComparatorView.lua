@@ -57,7 +57,7 @@ local FRESHNESS_COLOR = {
     [Constants.SNAPSHOT_FRESHNESS.UNAVAILABLE]     = { 0.55, 0.55, 0.55, 1.0 },
 }
 
--- ── stat section local factory (T046) ─────────────────────────────────────────
+-- ── stat keys ─────────────────────────────────────────────────────────────────
 
 local STAT_ROWS = {
     { key = "critPct",           label = "Crit"        },
@@ -66,82 +66,43 @@ local STAT_ROWS = {
     { key = "versDamageDonePct", label = "Versatility" },
 }
 
--- Creates a frame with four labeled stat rows (Crit, Haste, Mastery, Vers).
--- Each row: left-label | left-value | delta | right-value
-local function CreateStatRowSection(parent)
-    local section = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    section:SetSize(660, 120)
+-- ── visual constants ──────────────────────────────────────────────────────────
 
-    local LABEL_W  = 80
-    local VAL_W    = 70
-    local DELTA_W  = 90
-    local ROW_H    = 22
-    local PAD_LEFT = 8
+local BAR_MAX_WIDTH   = 280   -- max pixel width of a stat bar (at 50% stat)
+local BAR_HEIGHT      = 10
+local BAR_TRACK_COLOR = { 0.10, 0.10, 0.12, 0.8 }
+local DIAMOND_RADIUS  = 80
+local DIAMOND_SIZE    = 200
 
-    -- Column header
-    local colA = section:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    colA:SetPoint("TOPLEFT", section, "TOPLEFT", PAD_LEFT + LABEL_W, -2)
-    colA:SetWidth(VAL_W)
-    colA:SetJustifyH("CENTER")
-    colA:SetTextColor(0.40, 0.78, 1.00, 1.0)
-    colA:SetText("Build A")
+-- ── geometry helpers ──────────────────────────────────────────────────────────
 
-    local colDelta = section:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    colDelta:SetPoint("TOPLEFT", section, "TOPLEFT", PAD_LEFT + LABEL_W + VAL_W, -2)
-    colDelta:SetWidth(DELTA_W)
-    colDelta:SetJustifyH("RIGHT")
-    colDelta:SetTextColor(0.70, 0.70, 0.70, 1.0)
-    colDelta:SetText("Delta")
+local function DrawLine(parent, x1, y1, x2, y2, thickness, r, g, b, a)
+    local dx, dy = x2 - x1, y2 - y1
+    local length = math.sqrt(dx * dx + dy * dy)
+    if length < 0.5 then return nil end
+    local angle = math.atan2(dy, dx)
+    local line = parent:CreateTexture(nil, "ARTWORK")
+    line:SetTexture("Interface\\Buttons\\WHITE8x8")
+    line:SetVertexColor(r, g, b, a or 1)
+    line:SetSize(length, thickness)
+    local cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+    line:SetPoint("CENTER", parent, "CENTER", cx, cy)
+    line:SetRotation(-angle)
+    return line
+end
 
-    local colB = section:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    colB:SetPoint("TOPLEFT", section, "TOPLEFT", PAD_LEFT + LABEL_W + VAL_W + DELTA_W, -2)
-    colB:SetWidth(VAL_W)
-    colB:SetJustifyH("CENTER")
-    colB:SetTextColor(0.96, 0.74, 0.38, 1.0)
-    colB:SetText("Build B")
+local function statToRadius(statPct)
+    return math.min((statPct or 0) / 50, 1) * DIAMOND_RADIUS
+end
 
-    section.rows = {}
-    local yBase = ROW_H + 4
-
-    for i, rowDef in ipairs(STAT_ROWS) do
-        local y = yBase + (i - 1) * ROW_H
-
-        local lbl = section:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        lbl:SetPoint("TOPLEFT", section, "TOPLEFT", PAD_LEFT, -y)
-        lbl:SetWidth(LABEL_W)
-        lbl:SetJustifyH("RIGHT")
-        lbl:SetTextColor(0.70, 0.70, 0.70, 1.0)
-        lbl:SetText(rowDef.label)
-
-        local valA = section:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        valA:SetPoint("TOPLEFT", section, "TOPLEFT", PAD_LEFT + LABEL_W + 4, -y)
-        valA:SetWidth(VAL_W)
-        valA:SetJustifyH("CENTER")
-        valA:SetText("—")
-
-        local delta = section:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        delta:SetPoint("TOPLEFT", section, "TOPLEFT", PAD_LEFT + LABEL_W + VAL_W, -y)
-        delta:SetWidth(DELTA_W)
-        delta:SetJustifyH("RIGHT")
-        delta:SetText("")
-
-        local valB = section:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        valB:SetPoint("TOPLEFT", section, "TOPLEFT", PAD_LEFT + LABEL_W + VAL_W + DELTA_W + 4, -y)
-        valB:SetWidth(VAL_W)
-        valB:SetJustifyH("CENTER")
-        valB:SetText("—")
-
-        section.rows[i] = {
-            key   = rowDef.key,
-            label = lbl,
-            valA  = valA,
-            delta = delta,
-            valB  = valB,
-        }
+-- Win rate → background color (returns r,g,b,a for SetColorTexture).
+-- See also winRateColor() in _renderSingleBuildOverview which returns a
+-- table for SetTextColor. Same thresholds, different opacity/brightness.
+local function wrColor(rate)
+    if rate > 0.55 then return 0.20, 0.50, 0.25, 0.6
+    elseif rate >= 0.45 then return 0.50, 0.45, 0.15, 0.6
+    else return 0.50, 0.20, 0.20, 0.6
     end
-
-    section:SetHeight(yBase + #STAT_ROWS * ROW_H + 4)
-    return section
 end
 
 -- ── module table ──────────────────────────────────────────────────────────────
@@ -171,19 +132,7 @@ local function getStore()
     return ns.Addon:GetModule("CombatStore")
 end
 
--- ── element pool ─────────────────────────────────────────────────────────────
-
-function BuildComparatorView:_clear()
-    for _, el in ipairs(self._elems) do
-        if el and el.Hide then el:Hide() end
-    end
-    self._elems = {}
-end
-
-function BuildComparatorView:_track(el)
-    self._elems[#self._elems + 1] = el
-    return el
-end
+-- ── element pool (forward declarations, defined after _clearDiff below) ──────
 
 -- ── profile list helpers ──────────────────────────────────────────────────────
 
@@ -247,6 +196,7 @@ local function filterAndSort(profiles, searchText, sortKey, scope, compSvc)
     return result
 end
 
+
 -- ── Build ─────────────────────────────────────────────────────────────────────
 
 function BuildComparatorView:Build(parent)
@@ -282,7 +232,7 @@ function BuildComparatorView:Build(parent)
         if userInput then
             self._searchText = eb:GetText()
             self._profilesCache = nil
-            self:_renderSelectorPanels()
+            self:Refresh()
         end
     end)
     self.searchBox:SetScript("OnEscapePressed", function(eb)
@@ -416,7 +366,7 @@ function BuildComparatorView:Build(parent)
             C_Timer.After(3, function()
                 if self.statStatusText then self.statStatusText:SetText("") end
             end)
-            self:_renderStatSection(profile, profile)
+            self:Refresh()
         else
             self.statStatusText:SetText("|cFFFF4444Stats unavailable|r")
             self.statStatusText:Show()
@@ -442,120 +392,200 @@ function BuildComparatorView:Build(parent)
     self.captureSpacer:SetSize(1, 18)
     self.captureSpacer:SetPoint("TOPLEFT", self.captureBtn, "BOTTOMLEFT", 0, -4)
 
-    -- Selector panels (A and B) — created once, populated in Refresh
-    local selectorAnchor = self.captureSpacer
+    -- Dropdown selectors (replace old scroll list panels)
+    self.dropdownA = self:_buildDropdown("A", COLOR_A)
+    self.dropdownA.button:SetPoint("TOPLEFT", self.captureSpacer, "BOTTOMLEFT", 0, -8)
 
-    -- Panel A
-    self.panelA = self:_buildSidePanel("A", COLOR_A, selectorAnchor, 0)
-    -- Panel B
-    self.panelB = self:_buildSidePanel("B", COLOR_B, selectorAnchor, 340)
+    self.dropdownB = self:_buildDropdown("B", COLOR_B)
+    self.dropdownB.button:SetPoint("LEFT", self.dropdownA.button, "RIGHT", 8, 0)
 
-    -- T057: Dynamic panel widths — recalculate on resize and on first show
-    -- OnShow fires when the Builds tab becomes visible (covers the fw==0 at Build() time case)
-    self.frame:SetScript("OnSizeChanged", function() self:_recalcPanelWidths() end)
-    self.frame:HookScript("OnShow", function() self:_recalcPanelWidths() end)
-    self:_recalcPanelWidths()
+    -- Re-anchor swap button next to dropdowns
+    self.swapBtn:ClearAllPoints()
+    self.swapBtn:SetPoint("LEFT", self.dropdownB.button, "RIGHT", 8, 0)
 
-    -- Scrollable content area below the side panels — holds stat rows + talent diff.
-    -- Anchored directly to panelA bottom so it fills remaining frame height.
+    -- Scrollable content area (visual graphics go here)
     self.diffShell, self.diffScroll, self.diffCanvas =
         ns.Widgets.CreateScrollCanvas(self.frame, 660, 260)
-    self.diffShell:SetPoint("TOPLEFT", self.panelA.frame, "BOTTOMLEFT", 0, -8)
+    self.diffShell:SetPoint("TOPLEFT", self.dropdownA.button, "BOTTOMLEFT", 0, -8)
     self.diffShell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 16)
-
-    -- T046: Stat rows section — lives INSIDE the scroll canvas (prevents overflow)
-    self.statSection = CreateStatRowSection(self.diffCanvas)
-    self.statSection:SetPoint("TOPLEFT", self.diffCanvas, "TOPLEFT", 0, 0)
-    self.statSection:Hide()
 
     return self.frame
 end
 
--- Build one side-panel (A or B). Returns a table with sub-widgets.
-function BuildComparatorView:_buildSidePanel(side, color, anchor, xOffset)
-    local isA = (side == "A")
-    local panel = { side = side, color = color }
+-- Build a compact dropdown selector for side A or B.
+-- Returns a table: { button, popup, side, _rowButtons }
+function BuildComparatorView:_buildDropdown(side, color)
+    local dd = { side = side, color = color, _rowButtons = {} }
 
-    -- Header label
-    panel.label = self.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    panel.label:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", xOffset, -12)
-    panel.label:SetTextColor(color[1], color[2], color[3], color[4])
-    panel.label:SetWidth(310)
-    panel.label:SetWordWrap(false)
-    panel.label:SetNonSpaceWrap(false)
-    panel.label:SetText("Build " .. side .. ":")
+    -- Toggle button (280px wide, 26px tall)
+    dd.button = CreateFrame("Button", nil, self.frame, "BackdropTemplate")
+    dd.button:SetSize(280, 26)
+    ns.Widgets.ApplyBackdrop(dd.button, Theme.panel, Theme.border)
 
-    -- Scrollable list frame (120px fits ~5 entries comfortably)
-    panel.listFrame = CreateFrame("Frame", nil, self.frame, "BackdropTemplate")
-    panel.listFrame:SetSize(310, 120)
-    panel.listFrame:SetPoint("TOPLEFT", panel.label, "BOTTOMLEFT", 0, -4)
-    ns.Widgets.ApplyBackdrop(panel.listFrame, Theme.panel, Theme.border)
+    dd.buttonText = dd.button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    dd.buttonText:SetPoint("LEFT", dd.button, "LEFT", 8, 0)
+    dd.buttonText:SetPoint("RIGHT", dd.button, "RIGHT", -8, 0)
+    dd.buttonText:SetJustifyH("LEFT")
+    dd.buttonText:SetWordWrap(false)
+    dd.buttonText:SetTextColor(color[1], color[2], color[3], 1.0)
+    dd.buttonText:SetText("Build " .. side .. ": (none)")
 
-    panel.scrollFrame = CreateFrame("ScrollFrame", nil, panel.listFrame, "UIPanelScrollFrameTemplate")
-    panel.scrollFrame:SetPoint("TOPLEFT", panel.listFrame, "TOPLEFT", 4, -4)
-    panel.scrollFrame:SetPoint("BOTTOMRIGHT", panel.listFrame, "BOTTOMRIGHT", -22, 4)
+    -- Hover highlight
+    dd.button:SetScript("OnEnter", function(btn)
+        btn:SetBackdropBorderColor(color[1], color[2], color[3], 0.8)
+    end)
+    dd.button:SetScript("OnLeave", function(btn)
+        btn:SetBackdropBorderColor(Theme.border[1], Theme.border[2], Theme.border[3], Theme.border[4])
+    end)
 
-    panel.listCanvas = CreateFrame("Frame", nil, panel.scrollFrame)
-    panel.listCanvas:SetWidth(panel.scrollFrame:GetWidth())
-    panel.scrollFrame:SetScrollChild(panel.listCanvas)
+    -- Popup frame (scrollable, max 150px tall)
+    dd.popup = CreateFrame("Frame", nil, dd.button, "BackdropTemplate")
+    dd.popup:SetPoint("TOPLEFT", dd.button, "BOTTOMLEFT", 0, -2)
+    dd.popup:SetSize(280, 150)
+    dd.popup:SetFrameStrata("DIALOG")
+    ns.Widgets.ApplyBackdrop(dd.popup, Theme.panel, Theme.border)
+    dd.popup:Hide()
 
-    -- Info row: display label + session count + confidence badge
-    panel.frame = CreateFrame("Frame", nil, self.frame, "BackdropTemplate")
-    panel.frame:SetSize(310, 76)
-    panel.frame:SetPoint("TOPLEFT", panel.listFrame, "BOTTOMLEFT", 0, -6)
-    ns.Widgets.ApplyBackdrop(panel.frame, Theme.panelAlt, Theme.border)
+    dd.popupScroll = CreateFrame("ScrollFrame", nil, dd.popup, "UIPanelScrollFrameTemplate")
+    dd.popupScroll:SetPoint("TOPLEFT", dd.popup, "TOPLEFT", 4, -4)
+    dd.popupScroll:SetPoint("BOTTOMRIGHT", dd.popup, "BOTTOMRIGHT", -22, 4)
 
-    panel.nameLabel = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    panel.nameLabel:SetPoint("TOPLEFT", panel.frame, "TOPLEFT", 8, -8)
-    panel.nameLabel:SetWidth(200)
-    panel.nameLabel:SetJustifyH("LEFT")
-    panel.nameLabel:SetTextColor(color[1], color[2], color[3], 1.0)
-    panel.nameLabel:SetText("—")
+    dd.popupCanvas = CreateFrame("Frame", nil, dd.popupScroll)
+    dd.popupCanvas:SetWidth(250)
+    dd.popupScroll:SetScrollChild(dd.popupCanvas)
 
-    panel.sampleLabel = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.sampleLabel:SetPoint("TOPLEFT", panel.nameLabel, "BOTTOMLEFT", 0, -4)
-    panel.sampleLabel:SetTextColor(unpack(Theme.textMuted))
-    panel.sampleLabel:SetText("No sessions")
+    -- Toggle on button click
+    dd.button:SetScript("OnClick", function()
+        if dd.popup:IsShown() then
+            dd.popup:Hide()
+        else
+            -- Close the other dropdown first
+            local other = (side == "A") and self.dropdownB or self.dropdownA
+            if other and other.popup then other.popup:Hide() end
+            dd.popup:Show()
+        end
+    end)
 
-    panel.confidenceLabel = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.confidenceLabel:SetPoint("LEFT", panel.sampleLabel, "RIGHT", 8, 0)
-    panel.confidenceLabel:SetText("")
+    -- Close on click-outside: full-screen intercept frame (reliable, no polling)
+    dd.interceptor = CreateFrame("Button", nil, UIParent)
+    dd.interceptor:SetAllPoints(UIParent)
+    dd.interceptor:SetFrameStrata("FULLSCREEN")
+    dd.interceptor:EnableMouse(true)
+    dd.interceptor:SetScript("OnClick", function()
+        dd.popup:Hide()
+    end)
+    dd.interceptor:Hide()
 
-    -- T048: Freshness badge — right-aligned to panel edge so it stays visible
-    -- regardless of build name length.
-    panel.freshnessBadge = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.freshnessBadge:SetPoint("TOPRIGHT", panel.frame, "TOPRIGHT", -8, -8)
-    panel.freshnessBadge:SetJustifyH("RIGHT")
-    panel.freshnessBadge:SetText("")
+    dd.popup:SetScript("OnShow", function()
+        dd.interceptor:Show()
+        dd.popup:SetFrameStrata("FULLSCREEN_DIALOG")
+    end)
+    dd.popup:SetScript("OnHide", function()
+        dd.interceptor:Hide()
+    end)
 
-    -- T049: Capture timestamp label anchored below sampleLabel.
-    -- Created before metricsLabel/noHistoryLabel so they can anchor below it.
-    panel.captureTimeLabel = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    panel.captureTimeLabel:SetPoint("TOPLEFT", panel.sampleLabel, "BOTTOMLEFT", 0, -2)
-    panel.captureTimeLabel:SetTextColor(0.55, 0.55, 0.55, 1.0)
-    panel.captureTimeLabel:SetText("")
+    return dd
+end
 
-    panel.metricsLabel = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.metricsLabel:SetPoint("TOPLEFT", panel.captureTimeLabel, "BOTTOMLEFT", 0, -2)
-    panel.metricsLabel:SetWidth(290)
-    panel.metricsLabel:SetJustifyH("LEFT")
-    panel.metricsLabel:SetTextColor(unpack(Theme.text))
-    panel.metricsLabel:SetText("")
+-- Populate a dropdown's popup with the current profile list.
+function BuildComparatorView:_populateDropdown(dd, profiles, side)
+    -- Reuse existing row frames to prevent frame accumulation (WoW frames
+    -- cannot be garbage-collected). Hide excess rows if profile count shrinks.
+    dd._rowButtons = dd._rowButtons or {}
 
-    -- "No combat history" placeholder
-    panel.noHistoryLabel = panel.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    panel.noHistoryLabel:SetPoint("TOPLEFT", panel.captureTimeLabel, "BOTTOMLEFT", 0, -2)
-    panel.noHistoryLabel:SetTextColor(unpack(Theme.textMuted))
-    panel.noHistoryLabel:SetText("No combat history in this scope")
-    panel.noHistoryLabel:Hide()
+    local canvas  = dd.popupCanvas
+    local ROW_H   = 22
+    local y       = 0
+    local catalog = getCatalog()
+    local selectedId = (side == "A") and self._selectedA or self._selectedB
+    local otherId    = (side == "A") and self._selectedB or self._selectedA
 
-    -- Store the panel
-    if isA then
-        self.panelA = panel
-    else
-        self.panelB = panel
+    for i, p in ipairs(profiles) do
+        local bid   = p.buildId
+        local label = catalog and catalog:GetDisplayLabel(bid) or (bid or "?")
+        if p.isCurrentBuild then
+            label = "★ " .. label
+        end
+
+        local isSelected = (bid == selectedId)
+        local isOther    = (bid == otherId)
+
+        -- Reuse or create row frame
+        local row = dd._rowButtons[i]
+        if not row then
+            row = {}
+            row.btn = CreateFrame("Button", nil, canvas)
+            row.btn:EnableMouse(true)
+            row.bg = row.btn:CreateTexture(nil, "BACKGROUND")
+            row.bg:SetAllPoints()
+            row.fs = row.btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.fs:SetPoint("LEFT", row.btn, "LEFT", 6, 0)
+            row.fs:SetJustifyH("LEFT")
+            row.fs:SetWordWrap(false)
+            dd._rowButtons[i] = row
+        end
+
+        row.btn:SetSize(canvas:GetWidth(), ROW_H)
+        row.btn:ClearAllPoints()
+        row.btn:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, -y)
+        row.fs:SetWidth(canvas:GetWidth() - 12)
+        row.btn:Show()
+
+        if isSelected then
+            row.bg:SetColorTexture(dd.color[1] * 0.3, dd.color[2] * 0.3, dd.color[3] * 0.3, 0.7)
+        elseif isOther then
+            row.bg:SetColorTexture(0.12, 0.12, 0.12, 0.5)
+        else
+            row.bg:SetColorTexture(0.06, 0.08, 0.10, 0.0)
+        end
+
+        if isOther then
+            row.fs:SetTextColor(0.40, 0.40, 0.40, 1.0)
+            row.fs:SetText(label)
+            row.btn:SetScript("OnClick", nil)
+            row.btn:SetScript("OnEnter", function(b)
+                GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+                GameTooltip:SetText("Already selected on the other side", 1, 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            row.btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        else
+            row.fs:SetTextColor(1, 1, 1, 1)
+            row.fs:SetText(label)
+            row.btn:SetScript("OnClick", function()
+                if side == "A" then
+                    self._selectedA = bid
+                else
+                    self._selectedB = bid
+                end
+                dd.popup:Hide()
+                self:Refresh()
+            end)
+            row.btn:SetScript("OnEnter", function()
+                if not isSelected then row.bg:SetColorTexture(0.20, 0.30, 0.40, 0.75) end
+            end)
+            row.btn:SetScript("OnLeave", function()
+                if isSelected then
+                    row.bg:SetColorTexture(dd.color[1] * 0.3, dd.color[2] * 0.3, dd.color[3] * 0.3, 0.7)
+                else
+                    row.bg:SetColorTexture(0.06, 0.08, 0.10, 0.0)
+                end
+            end)
+        end
+
+        y = y + ROW_H
     end
-    return panel
+
+    -- Hide excess rows from previous population
+    for i = #profiles + 1, #dd._rowButtons do
+        if dd._rowButtons[i] and dd._rowButtons[i].btn then
+            dd._rowButtons[i].btn:Hide()
+        end
+    end
+
+    canvas:SetHeight(math.max(y, 1))
+    local popupH = math.min(y + 8, 150)
+    dd.popup:SetHeight(math.max(popupH, 30))
 end
 
 -- ── Refresh ───────────────────────────────────────────────────────────────────
@@ -586,39 +616,50 @@ function BuildComparatorView:Refresh()
     local allProfiles = catalog and catalog:GetAllProfiles(characterKey) or {}
     self._profilesCache = filterAndSort(allProfiles, self._searchText, self._sortKey, self._scope, compSvc)
 
-    -- Single-build empty state (T029)
+    -- Single-build overview (replaces the old empty state T029)
     if #allProfiles < 2 then
-        self.emptyOneBuild:Show()
-        -- Show captured build name in the Build A header so user sees confirmation
-        if #allProfiles == 1 and catalog then
-            local label = catalog:GetDisplayLabel(allProfiles[1].buildId) or "---"
-            -- Truncate long labels to prevent overflow
-            if #label > 36 then label = label:sub(1, 36) .. "..." end
-            self.panelA.label:SetText("Build A: " .. label)
-        else
-            self.panelA.label:SetText("Build A:")
-        end
-        self.panelA.listFrame:Hide()
-        self.panelA.scrollFrame:Hide()
-        self.panelA.frame:Hide()
-        self.panelB.listFrame:Hide()
-        self.panelB.scrollFrame:Hide()
-        self.panelB.frame:Hide()
-        if self.panelB.label then self.panelB.label:Hide() end
-        self.diffShell:Hide()
-        self:_clear()
+        self.emptyOneBuild:Hide()
+        self.dropdownA.button:Hide()
+        self.dropdownB.button:Hide()
+
+        -- Hide comparison-only controls
+        self.searchBox:Hide()
+        if self.searchPlaceholder then self.searchPlaceholder:Hide() end
+        self.sortBtn:Hide()
+        self.vsPrevBtn:Hide()
+        self.vsBestBtn:Hide()
+        self.vsMostBtn:Hide()
+        self.swapBtn:Hide()
+        self.scopeLabel:Hide()
+        self.contextBtn:Hide()
+        self.scopeDesc:Hide()
+
+        local profile = #allProfiles == 1 and allProfiles[1] or nil
+        local liveBuildProfile = profile or (catalog and catalog:GetCurrentLiveBuild())
+        self:_renderSingleBuildOverview(liveBuildProfile)
         return
     end
 
+    -- Restore comparison controls hidden by single-build path
+    self.searchBox:Show()
+    self.sortBtn:Show()
+    self.vsPrevBtn:Show()
+    self.vsBestBtn:Show()
+    self.vsMostBtn:Show()
+    self.swapBtn:Show()
+    self.scopeLabel:Show()
+    self.contextBtn:Show()
+    self.scopeDesc:Show()
+
     self.emptyOneBuild:Hide()
-    self.panelA.listFrame:Show()
-    self.panelA.scrollFrame:Show()
-    self.panelA.frame:Show()
-    if self.panelB.label then self.panelB.label:Show() end
-    self.panelB.listFrame:Show()
-    self.panelB.scrollFrame:Show()
-    self.panelB.frame:Show()
+    self.dropdownA.button:Show()
+    self.dropdownB.button:Show()
     self.diffShell:Show()
+
+    -- Reset diffShell anchor back to comparison mode (may have been moved by single-build overview)
+    self.diffShell:ClearAllPoints()
+    self.diffShell:SetPoint("TOPLEFT", self.dropdownA.button, "BOTTOMLEFT", 0, -8)
+    self.diffShell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 16)
 
     -- Auto-select defaults if needed
     local profiles = self._profilesCache
@@ -646,8 +687,15 @@ function BuildComparatorView:Refresh()
         end
     end
 
-    -- Render selector lists
-    self:_renderSelectorPanels()
+    -- Populate dropdown selectors
+    self:_populateDropdown(self.dropdownA, profiles, "A")
+    self:_populateDropdown(self.dropdownB, profiles, "B")
+
+    -- Update dropdown button text
+    local labelA = self._selectedA and catalog and catalog:GetDisplayLabel(self._selectedA) or "(none)"
+    self.dropdownA.buttonText:SetText("Build A: " .. labelA .. "  |v")
+    local labelB = self._selectedB and catalog and catalog:GetDisplayLabel(self._selectedB) or "(none)"
+    self.dropdownB.buttonText:SetText("Build B: " .. labelB .. "  |v")
 
     -- Update scope description
     self:_updateScopeDesc()
@@ -656,108 +704,6 @@ function BuildComparatorView:Refresh()
     self:_renderComparison()
 end
 
--- ── selector panel rendering ─────────────────────────────────────────────────
-
-function BuildComparatorView:_renderSelectorPanels()
-    local catalog = getCatalog()
-    local profiles = self._profilesCache or {}
-
-    -- Re-filter if needed (search changed without full Refresh)
-    if self._needsRefilter then
-        local allP = catalog and catalog:GetAllProfiles(getStore() and getStore():GetCurrentCharacterKey()) or {}
-        profiles = filterAndSort(allP, self._searchText, self._sortKey, self._scope, getComparison())
-        self._profilesCache = profiles
-        self._needsRefilter = false
-    end
-
-    self:_populateList(self.panelA, profiles, "A")
-    self:_populateList(self.panelB, profiles, "B")
-end
-
-function BuildComparatorView:_populateList(panel, profiles, side)
-    local canvas = panel.listCanvas
-    -- Clear previous row buttons
-    panel._rowButtons = panel._rowButtons or {}
-    for _, btn in ipairs(panel._rowButtons) do
-        if btn.Hide then btn:Hide() end
-    end
-    panel._rowButtons = {}
-
-    local ROW_H   = 22
-    local y       = 0
-    local catalog = getCatalog()
-
-    for _, p in ipairs(profiles) do
-        local bid      = p.buildId
-        local isThisSide = (side == "A" and bid == self._selectedA) or (side == "B" and bid == self._selectedB)
-        local isOther    = (side == "A" and bid == self._selectedB) or (side == "B" and bid == self._selectedA)
-        local label    = catalog and catalog:GetDisplayLabel(bid) or (bid or "?")
-        if p.isCurrentBuild then
-            label = "* " .. label  -- star prefix for current live build
-        end
-
-        local btn = CreateFrame("Button", nil, canvas)
-        btn:SetSize(canvas:GetWidth(), ROW_H)
-        btn:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, -y)
-        btn:EnableMouse(true)
-
-        -- Background
-        local bg = btn:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        if isThisSide then
-            bg:SetColorTexture(0.15, 0.25, 0.35, 0.85)
-        elseif isOther then
-            bg:SetColorTexture(0.12, 0.12, 0.12, 0.5)
-        else
-            bg:SetColorTexture(0.06, 0.08, 0.10, 0.0)
-        end
-
-        local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        fs:SetPoint("LEFT", btn, "LEFT", 6, 0)
-        fs:SetWidth(canvas:GetWidth() - 8)
-        fs:SetJustifyH("LEFT")
-
-        if isOther then
-            fs:SetTextColor(0.40, 0.40, 0.40, 1.0)
-            fs:SetText(label)
-            -- tooltip for disabled slot
-            btn:SetScript("OnEnter", function(b)
-                GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
-                GameTooltip:SetText("Already selected on the other side", 1, 1, 1, 1, true)
-                GameTooltip:Show()
-            end)
-            btn:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-        else
-            fs:SetTextColor(1, 1, 1, 1)
-            fs:SetText(label)
-            btn:SetScript("OnClick", function()
-                if side == "A" then
-                    self._selectedA = bid
-                else
-                    self._selectedB = bid
-                end
-                self:Refresh()
-            end)
-            btn:SetScript("OnEnter", function(b)
-                bg:SetColorTexture(0.20, 0.30, 0.40, 0.75)
-            end)
-            btn:SetScript("OnLeave", function()
-                if isThisSide then
-                    bg:SetColorTexture(0.15, 0.25, 0.35, 0.85)
-                else
-                    bg:SetColorTexture(0.06, 0.08, 0.10, 0.0)
-                end
-            end)
-        end
-
-        panel._rowButtons[#panel._rowButtons + 1] = btn
-        y = y + ROW_H
-    end
-
-    canvas:SetHeight(math.max(y, 1))
-end
 
 -- ── side-panel info update ────────────────────────────────────────────────────
 
@@ -776,122 +722,395 @@ local function relativeTime(capturedAt)
     end
 end
 
-function BuildComparatorView:_updatePanelInfo(panel, buildId, result)
-    local catalog = getCatalog()
-    local label = catalog and catalog:GetDisplayLabel(buildId) or "—"
-    panel.nameLabel:SetText(label)
+-- ── visual stat rendering methods ────────────────────────────────────────────
 
-    -- T048/T049: freshness badge and capture timestamp
-    local profile = buildId and catalog and catalog:GetProfile(buildId)
-    local statProf = profile and profile.latestStatProfile
-    local freshness = statProf and statProf.snapshotFreshness or Constants.SNAPSHOT_FRESHNESS.UNAVAILABLE
-    if panel.freshnessBadge then
-        local col = FRESHNESS_COLOR[freshness] or FRESHNESS_COLOR[Constants.SNAPSHOT_FRESHNESS.UNAVAILABLE]
-        panel.freshnessBadge:SetTextColor(col[1], col[2], col[3], col[4])
-        panel.freshnessBadge:SetText("[" .. (FRESHNESS_LABEL[freshness] or freshness) .. "]")
-    end
-    if panel.captureTimeLabel then
-        local ts = statProf and statProf.capturedAt
-        -- Use result's per-side capturedAt when the comparison result provides it
-        if result then
-            ts = (panel.side == "A") and result.buildAStatCapturedAt or result.buildBStatCapturedAt
-        end
-        panel.captureTimeLabel:SetText(ts and relativeTime(ts) or "")
-    end
+-- Render dual horizontal bars for each secondary stat.
+-- Returns the new y position after rendering.
+function BuildComparatorView:_renderStatBars(canvas, y, statProfileA, statProfileB, statDelta)
+    local hasData = (statProfileA ~= nil) or (statProfileB ~= nil)
+    if not hasData then return y end
 
-    if not result then
-        panel.sampleLabel:SetText("No sessions")
-        panel.confidenceLabel:SetText("")
-        panel.metricsLabel:SetText("")
-        panel.noHistoryLabel:Show()
-        panel.metricsLabel:Hide()
-        return
-    end
+    -- Section header
+    local header = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    header:SetPoint("TOPLEFT", canvas, "TOPLEFT", 4, -y)
+    header:SetTextColor(unpack(Theme.textMuted))
+    header:SetText("Secondary Stats")
+    self:_track(header)
+    y = y + 16
 
-    local samples    = (panel.side == "A") and result.samplesA or result.samplesB
-    local confidence = (panel.side == "A") and result.confidenceA or result.confidenceB
-    local metrics    = (panel.side == "A") and result.metricsA or result.metricsB
+    local sep = canvas:CreateTexture(nil, "ARTWORK")
+    sep:SetColorTexture(unpack(Theme.border))
+    sep:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, -y)
+    sep:SetSize(640, 1)
+    self:_track(sep)
+    y = y + 8
 
-    local tier = confidence or Constants.CONFIDENCE_TIER.NO_DATA
-    local col  = CONF_COLOR[tier] or CONF_COLOR[Constants.CONFIDENCE_TIER.NO_DATA]
-    local confText = string.format("%s — %d session%s",
-        CONF_LABEL[tier] or tier, samples, samples == 1 and "" or "s")
-    panel.sampleLabel:SetText(samples == 1 and "1 session" or (samples .. " sessions"))
-    panel.confidenceLabel:SetTextColor(col[1], col[2], col[3], col[4])
-    panel.confidenceLabel:SetText(confText)
+    local LABEL_W = 80
+    local VAL_W   = 50
+    local BAR_X   = LABEL_W + 4
 
-    -- Metrics row — hidden below LOW confidence
-    if tier == Constants.CONFIDENCE_TIER.NO_DATA or tier == Constants.CONFIDENCE_TIER.LOW then
-        panel.metricsLabel:SetText("")
-        panel.metricsLabel:Hide()
-        if samples == 0 then
-            panel.noHistoryLabel:Show()
+    for _, rowDef in ipairs(STAT_ROWS) do
+        local vA = statProfileA and statProfileA[rowDef.key]
+        local vB = statProfileB and statProfileB[rowDef.key]
+        local dv = statDelta and statDelta[rowDef.key]
+
+        -- Stat label
+        local lbl = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        lbl:SetPoint("TOPLEFT", canvas, "TOPLEFT", 4, -y)
+        lbl:SetWidth(LABEL_W)
+        lbl:SetJustifyH("RIGHT")
+        lbl:SetTextColor(0.70, 0.70, 0.70, 1.0)
+        lbl:SetText(rowDef.label)
+        self:_track(lbl)
+
+        -- Bar A (blue)
+        local widthA = math.max(1, math.min((vA or 0) / 50, 1) * BAR_MAX_WIDTH)
+        local trackA = canvas:CreateTexture(nil, "BACKGROUND")
+        trackA:SetTexture("Interface\\Buttons\\WHITE8x8")
+        trackA:SetVertexColor(BAR_TRACK_COLOR[1], BAR_TRACK_COLOR[2], BAR_TRACK_COLOR[3], BAR_TRACK_COLOR[4])
+        trackA:SetPoint("TOPLEFT", canvas, "TOPLEFT", BAR_X, -y)
+        trackA:SetSize(BAR_MAX_WIDTH, BAR_HEIGHT)
+        self:_track(trackA)
+
+        local barA = canvas:CreateTexture(nil, "ARTWORK")
+        barA:SetTexture("Interface\\Buttons\\WHITE8x8")
+        barA:SetVertexColor(COLOR_A[1], COLOR_A[2], COLOR_A[3], 0.85)
+        barA:SetPoint("TOPLEFT", canvas, "TOPLEFT", BAR_X, -y)
+        barA:SetSize(widthA, BAR_HEIGHT)
+        self:_track(barA)
+
+        local valAFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        valAFs:SetPoint("LEFT", trackA, "RIGHT", 4, 0)
+        valAFs:SetWidth(VAL_W)
+        valAFs:SetJustifyH("LEFT")
+        valAFs:SetTextColor(COLOR_A[1], COLOR_A[2], COLOR_A[3], 1.0)
+        valAFs:SetText(vA and string.format("%.1f%%", vA) or "---")
+        self:_track(valAFs)
+
+        y = y + BAR_HEIGHT + 3
+
+        -- Bar B (orange)
+        local widthB = math.max(1, math.min((vB or 0) / 50, 1) * BAR_MAX_WIDTH)
+        local trackB = canvas:CreateTexture(nil, "BACKGROUND")
+        trackB:SetTexture("Interface\\Buttons\\WHITE8x8")
+        trackB:SetVertexColor(BAR_TRACK_COLOR[1], BAR_TRACK_COLOR[2], BAR_TRACK_COLOR[3], BAR_TRACK_COLOR[4])
+        trackB:SetPoint("TOPLEFT", canvas, "TOPLEFT", BAR_X, -y)
+        trackB:SetSize(BAR_MAX_WIDTH, BAR_HEIGHT)
+        self:_track(trackB)
+
+        local barB = canvas:CreateTexture(nil, "ARTWORK")
+        barB:SetTexture("Interface\\Buttons\\WHITE8x8")
+        barB:SetVertexColor(COLOR_B[1], COLOR_B[2], COLOR_B[3], 0.85)
+        barB:SetPoint("TOPLEFT", canvas, "TOPLEFT", BAR_X, -y)
+        barB:SetSize(widthB, BAR_HEIGHT)
+        self:_track(barB)
+
+        local valBFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        valBFs:SetPoint("LEFT", trackB, "RIGHT", 4, 0)
+        valBFs:SetWidth(VAL_W)
+        valBFs:SetJustifyH("LEFT")
+        valBFs:SetTextColor(COLOR_B[1], COLOR_B[2], COLOR_B[3], 1.0)
+        valBFs:SetText(vB and string.format("%.1f%%", vB) or "---")
+        self:_track(valBFs)
+
+        -- Delta text
+        local deltaFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        deltaFs:SetPoint("LEFT", valBFs, "RIGHT", 8, 0)
+        deltaFs:SetWidth(60)
+        deltaFs:SetJustifyH("LEFT")
+        if dv and dv > 0 then
+            deltaFs:SetTextColor(0.44, 0.82, 0.60, 1.0)
+            deltaFs:SetText(string.format("+%.1f%%", dv))
+        elseif dv and dv < 0 then
+            deltaFs:SetTextColor(0.86, 0.38, 0.38, 1.0)
+            deltaFs:SetText(string.format("%.1f%%", dv))
         else
-            panel.noHistoryLabel:Hide()
+            deltaFs:SetTextColor(0.55, 0.55, 0.55, 1.0)
+            deltaFs:SetText(dv and "0.0%" or "---")
         end
-    else
-        panel.noHistoryLabel:Hide()
-        panel.metricsLabel:Show()
-        if metrics then
-            local wr = metrics.winRate and string.format("%.0f%%", metrics.winRate * 100) or "—"
-            local pr = metrics.pressureScore and string.format("%.1f", metrics.pressureScore) or "—"
-            local bu = metrics.burstScore and string.format("%.1f", metrics.burstScore) or "—"
-            panel.metricsLabel:SetText(string.format(
-                "WR %s  |  Pressure %s  |  Burst %s", wr, pr, bu))
-        else
-            panel.metricsLabel:SetText("")
-        end
+        self:_track(deltaFs)
+
+        y = y + BAR_HEIGHT + 10  -- gap before next stat
     end
+
+    return y
 end
 
--- T046/T047: Populate the stat row section from the comparison result.
-function BuildComparatorView:_renderStatSection(statProfileA, statProfileB, statDelta)
-    if not self.statSection then return end
+-- Render a 4-axis stat diamond (Crit up, Haste right, Mastery down, Vers left).
+-- Returns the new y position after rendering.
+function BuildComparatorView:_renderStatDiamond(canvas, y, statProfileA, statProfileB)
+    local hasData = (statProfileA ~= nil) or (statProfileB ~= nil)
+    if not hasData then return y end
 
-    local function fmtStat(val)
-        if val == nil then return "—" end
-        return string.format("%.1f%%", val)
+    -- Section header
+    local header = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    header:SetPoint("TOPLEFT", canvas, "TOPLEFT", 4, -y)
+    header:SetTextColor(unpack(Theme.textMuted))
+    header:SetText("Stat Profile Diamond")
+    self:_track(header)
+    y = y + 16
+
+    -- Container frame for diamond (centered in canvas)
+    local diamond = CreateFrame("Frame", nil, canvas)
+    diamond:SetSize(DIAMOND_SIZE, DIAMOND_SIZE)
+    diamond:SetPoint("TOPLEFT", canvas, "TOPLEFT", 100, -y)
+    self:_track(diamond)
+
+    local cx, cy = 0, 0  -- center of diamond frame (relative to CENTER anchor)
+
+    -- Draw axis lines (thin gray cross)
+    local axisColor = { 0.25, 0.25, 0.28, 0.8 }
+    -- Vertical axis (Crit top, Mastery bottom)
+    local axV = DrawLine(diamond, 0, DIAMOND_RADIUS, 0, -DIAMOND_RADIUS, 1,
+        axisColor[1], axisColor[2], axisColor[3], axisColor[4])
+    if axV then self:_track(axV) end
+    -- Horizontal axis (Vers left, Haste right)
+    local axH = DrawLine(diamond, -DIAMOND_RADIUS, 0, DIAMOND_RADIUS, 0, 1,
+        axisColor[1], axisColor[2], axisColor[3], axisColor[4])
+    if axH then self:_track(axH) end
+
+    -- Axis labels
+    local labels = {
+        { text = "Crit",    x = 0,                   y = DIAMOND_RADIUS + 12 },
+        { text = "Haste",   x = DIAMOND_RADIUS + 8,  y = 0 },
+        { text = "Mastery", x = 0,                   y = -(DIAMOND_RADIUS + 12) },
+        { text = "Vers",    x = -(DIAMOND_RADIUS + 8), y = 0 },
+    }
+    for _, lb in ipairs(labels) do
+        local fs = diamond:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        fs:SetPoint("CENTER", diamond, "CENTER", lb.x, lb.y)
+        fs:SetTextColor(0.60, 0.60, 0.60, 1.0)
+        fs:SetText(lb.text)
+        self:_track(fs)
     end
 
-    local function fmtDelta(val)
-        if val == nil then return "|cFF888888—|r" end
-        if val > 0 then
-            return string.format("|cFF00FF00+%.1f%%|r", val)
-        elseif val < 0 then
-            return string.format("|cFFFF4444%.1f%%|r", val)
+    -- Stat axis mapping:
+    -- Crit (up):    x=0,  y=+r
+    -- Haste (right): x=+r, y=0
+    -- Mastery (down): x=0,  y=-r
+    -- Vers (left):  x=-r, y=0
+    local function getPoints(prof)
+        if not prof then return nil end
+        local rC = statToRadius(prof.critPct)
+        local rH = statToRadius(prof.hastePct)
+        local rM = statToRadius(prof.masteryPct)
+        local rV = statToRadius(prof.versDamageDonePct)
+        return {
+            { x = 0,   y = rC },   -- Crit (up)
+            { x = rH,  y = 0 },    -- Haste (right)
+            { x = 0,   y = -rM },  -- Mastery (down)
+            { x = -rV, y = 0 },    -- Vers (left)
+        }
+    end
+
+    local function drawShape(pts, color, thickness)
+        if not pts then return end
+        for i = 1, #pts do
+            local j = (i % #pts) + 1
+            local line = DrawLine(diamond, pts[i].x, pts[i].y, pts[j].x, pts[j].y,
+                thickness, color[1], color[2], color[3], color[4] * 0.7)
+            if line then self:_track(line) end
+        end
+        -- Dots at each point
+        for _, pt in ipairs(pts) do
+            local dot = diamond:CreateTexture(nil, "OVERLAY")
+            dot:SetTexture("Interface\\Buttons\\WHITE8x8")
+            dot:SetVertexColor(color[1], color[2], color[3], color[4])
+            dot:SetSize(6, 6)
+            dot:SetPoint("CENTER", diamond, "CENTER", pt.x, pt.y)
+            self:_track(dot)
+        end
+    end
+
+    -- Draw Build A shape (blue, behind)
+    drawShape(getPoints(statProfileA), COLOR_A, 2)
+    -- Draw Build B shape (orange, on top)
+    drawShape(getPoints(statProfileB), COLOR_B, 2)
+
+    y = y + DIAMOND_SIZE + 12
+    return y
+end
+
+-- Render a scrollable heatmap grid comparing win rates vs opponent specs.
+-- Returns the new y position after rendering.
+function BuildComparatorView:_renderWinRateHeatmap(canvas, y, buildHashA, buildHashB)
+    local store = getStore()
+    local db = store and store:GetDB()
+    if not db or not db.aggregates or not db.aggregates.buildEffectiveness then
+        return y
+    end
+
+    local bucketA = db.aggregates.buildEffectiveness[buildHashA]
+    local bucketB = db.aggregates.buildEffectiveness[buildHashB]
+    if not bucketA and not bucketB then return y end
+
+    -- Collect all spec keys that either build has fought
+    local specKeys = {}
+    local seen = {}
+    local function addSpecs(bucket)
+        if not bucket then return end
+        for specKey, entry in pairs(bucket) do
+            if not seen[specKey] and entry.fights and entry.fights >= 1 then
+                seen[specKey] = true
+                specKeys[#specKeys + 1] = specKey
+            end
+        end
+    end
+    addSpecs(bucketA)
+    addSpecs(bucketB)
+
+    if #specKeys == 0 then return y end
+
+    -- Sort by total fights descending
+    table.sort(specKeys, function(a, b)
+        local fA = ((bucketA and bucketA[a]) and bucketA[a].fights or 0)
+                  + ((bucketB and bucketB[a]) and bucketB[a].fights or 0)
+        local fB = ((bucketA and bucketA[b]) and bucketA[b].fights or 0)
+                  + ((bucketB and bucketB[b]) and bucketB[b].fights or 0)
+        return fA > fB
+    end)
+
+    -- Section header
+    local header = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    header:SetPoint("TOPLEFT", canvas, "TOPLEFT", 4, -y)
+    header:SetTextColor(unpack(Theme.textMuted))
+    header:SetText("Win Rate vs Opponent Specs")
+    self:_track(header)
+    y = y + 16
+
+    local sep = canvas:CreateTexture(nil, "ARTWORK")
+    sep:SetColorTexture(unpack(Theme.border))
+    sep:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, -y)
+    sep:SetSize(640, 1)
+    self:_track(sep)
+    y = y + 6
+
+    -- Column headers
+    local COL_SPEC = 8
+    local COL_A    = 220
+    local COL_B    = 370
+    local COL_D    = 520
+    local ROW_H    = 22
+    local BAR_W    = 120
+
+    local colHeaders = {
+        { x = COL_SPEC, text = "Opponent Spec", color = Theme.textMuted },
+        { x = COL_A,    text = "Build A",       color = COLOR_A },
+        { x = COL_B,    text = "Build B",       color = COLOR_B },
+        { x = COL_D,    text = "Delta",          color = Theme.textMuted },
+    }
+    for _, ch in ipairs(colHeaders) do
+        local fs = canvas:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        fs:SetPoint("TOPLEFT", canvas, "TOPLEFT", ch.x, -y)
+        fs:SetTextColor(ch.color[1], ch.color[2], ch.color[3], ch.color[4] or 1.0)
+        fs:SetText(ch.text)
+        self:_track(fs)
+    end
+    y = y + 16
+
+    for _, specKey in ipairs(specKeys) do
+        local specId = tonumber(specKey)
+        local specMeta = specId and ns.StaticPvpData and ns.StaticPvpData.GetSpecMeta
+                         and ns.StaticPvpData.GetSpecMeta(specId)
+        local specName = specMeta and specMeta.name or ("Spec " .. specKey)
+        local iconId   = specMeta and specMeta.iconFileDataId or nil
+
+        local entryA = bucketA and bucketA[specKey]
+        local entryB = bucketB and bucketB[specKey]
+        local wrA = entryA and entryA.fights > 0 and (entryA.wins / entryA.fights) or nil
+        local wrB = entryB and entryB.fights > 0 and (entryB.wins / entryB.fights) or nil
+
+        -- Spec icon + name
+        if iconId then
+            local icon = canvas:CreateTexture(nil, "ARTWORK")
+            icon:SetTexture(iconId)
+            icon:SetSize(16, 16)
+            icon:SetPoint("TOPLEFT", canvas, "TOPLEFT", COL_SPEC, -y)
+            self:_track(icon)
+        end
+
+        local nameFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        nameFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", COL_SPEC + 20, -y)
+        nameFs:SetWidth(180)
+        nameFs:SetJustifyH("LEFT")
+        nameFs:SetWordWrap(false)
+        nameFs:SetTextColor(1, 1, 1, 1)
+        nameFs:SetText(specName)
+        self:_track(nameFs)
+
+        -- Build A win rate bar + text
+        if wrA then
+            local bgA = canvas:CreateTexture(nil, "BACKGROUND")
+            bgA:SetTexture("Interface\\Buttons\\WHITE8x8")
+            local rr, gg, bb, aa = wrColor(wrA)
+            bgA:SetVertexColor(rr, gg, bb, aa)
+            bgA:SetPoint("TOPLEFT", canvas, "TOPLEFT", COL_A, -(y + 1))
+            bgA:SetSize(math.max(1, wrA * BAR_W), ROW_H - 4)
+            self:_track(bgA)
+
+            local fsA = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            fsA:SetPoint("TOPLEFT", canvas, "TOPLEFT", COL_A + 2, -y)
+            fsA:SetTextColor(1, 1, 1, 1)
+            fsA:SetText(string.format("%.0f%% (%d)", wrA * 100, entryA.fights))
+            self:_track(fsA)
         else
-            return string.format("|cFF888888%.1f%%|r", val)
+            local fsA = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            fsA:SetPoint("TOPLEFT", canvas, "TOPLEFT", COL_A + 2, -y)
+            fsA:SetTextColor(0.45, 0.45, 0.45, 1.0)
+            fsA:SetText("---")
+            self:_track(fsA)
         end
+
+        -- Build B win rate bar + text
+        if wrB then
+            local bgB = canvas:CreateTexture(nil, "BACKGROUND")
+            bgB:SetTexture("Interface\\Buttons\\WHITE8x8")
+            local rr, gg, bb, aa = wrColor(wrB)
+            bgB:SetVertexColor(rr, gg, bb, aa)
+            bgB:SetPoint("TOPLEFT", canvas, "TOPLEFT", COL_B, -(y + 1))
+            bgB:SetSize(math.max(1, wrB * BAR_W), ROW_H - 4)
+            self:_track(bgB)
+
+            local fsB = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            fsB:SetPoint("TOPLEFT", canvas, "TOPLEFT", COL_B + 2, -y)
+            fsB:SetTextColor(1, 1, 1, 1)
+            fsB:SetText(string.format("%.0f%% (%d)", wrB * 100, entryB.fights))
+            self:_track(fsB)
+        else
+            local fsB = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            fsB:SetPoint("TOPLEFT", canvas, "TOPLEFT", COL_B + 2, -y)
+            fsB:SetTextColor(0.45, 0.45, 0.45, 1.0)
+            fsB:SetText("---")
+            self:_track(fsB)
+        end
+
+        -- Delta
+        local deltaFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        deltaFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", COL_D, -y)
+        deltaFs:SetWidth(60)
+        deltaFs:SetJustifyH("LEFT")
+        if wrA and wrB then
+            local d = (wrA - wrB) * 100
+            if d > 0 then
+                deltaFs:SetTextColor(COLOR_A[1], COLOR_A[2], COLOR_A[3], 1.0)
+                deltaFs:SetText(string.format("+%.0f%%", d))
+            elseif d < 0 then
+                deltaFs:SetTextColor(COLOR_B[1], COLOR_B[2], COLOR_B[3], 1.0)
+                deltaFs:SetText(string.format("%.0f%%", d))
+            else
+                deltaFs:SetTextColor(0.55, 0.55, 0.55, 1.0)
+                deltaFs:SetText("0%")
+            end
+        else
+            deltaFs:SetTextColor(0.45, 0.45, 0.45, 1.0)
+            deltaFs:SetText("---")
+        end
+        self:_track(deltaFs)
+
+        y = y + ROW_H
     end
 
-    local hasData = statProfileA ~= nil or statProfileB ~= nil
-    if not hasData then
-        self.statSection:Hide()
-        -- Reset canvas height so _renderDiffPanel sets the authoritative final height
-        if self.diffCanvas then
-            ns.Widgets.SetCanvasHeight(self.diffCanvas, 1)
-        end
-        return
-    end
-
-    self.statSection:Show()
-    -- Ensure scroll canvas is tall enough for the stat section
-    if self.diffCanvas then
-        local minH = self.statSection:GetHeight() + 8
-        local curH = self.diffCanvas:GetHeight() or 0
-        if curH < minH then
-            ns.Widgets.SetCanvasHeight(self.diffCanvas, minH)
-        end
-    end
-    for _, row in ipairs(self.statSection.rows) do
-        local k = row.key
-        local vA = statProfileA and statProfileA[k]
-        local vB = statProfileB and statProfileB[k]
-        local dv = statDelta and statDelta[k]
-        row.valA:SetText(fmtStat(vA))
-        row.valB:SetText(fmtStat(vB))
-        row.delta:SetText(fmtDelta(dv))
-    end
+    return y + 8
 end
 
 -- ── comparison and diff rendering ────────────────────────────────────────────
@@ -901,29 +1120,17 @@ function BuildComparatorView:_renderComparison()
 
     local compSvc = getComparison()
     if not compSvc or not self._selectedA or not self._selectedB then
-        self:_updatePanelInfo(self.panelA, self._selectedA, nil)
-        self:_updatePanelInfo(self.panelB, self._selectedB, nil)
         return
     end
 
     local result = compSvc:Compare(self._selectedA, self._selectedB, self._scope)
-    if not result then
-        self:_updatePanelInfo(self.panelA, self._selectedA, nil)
-        self:_updatePanelInfo(self.panelB, self._selectedB, nil)
-        return
-    end
+    if not result then return end
 
-    self:_updatePanelInfo(self.panelA, self._selectedA, result)
-    self:_updatePanelInfo(self.panelB, self._selectedB, result)
-
-    -- T046/T047: Render stat section from comparison result
     local catalog = getCatalog()
     local profA = catalog and catalog:GetProfile(self._selectedA)
     local profB = catalog and catalog:GetProfile(self._selectedB)
-    self:_renderStatSection(
-        profA and profA.latestStatProfile,
-        profB and profB.latestStatProfile,
-        result.statDelta)
+    local statA = profA and profA.latestStatProfile
+    local statB = profB and profB.latestStatProfile
 
     -- Empty-scope state (T030)
     if result.samplesA == 0 and result.samplesB == 0 then
@@ -931,8 +1138,26 @@ function BuildComparatorView:_renderComparison()
         return
     end
 
-    -- Diff panel
-    self:_renderDiffPanel(result)
+    local canvas = self.diffCanvas
+    local y = 8
+
+    -- 1. Stat Bars
+    y = self:_renderStatBars(canvas, y, statA, statB, result.statDelta)
+    y = y + 8
+
+    -- 2. Stat Diamond
+    y = self:_renderStatDiamond(canvas, y, statA, statB)
+    y = y + 8
+
+    -- 3. Talent Diff panel
+    self:_renderDiffPanel(result, y)
+
+    -- Recalculate y from diff panel rendering (it sets canvas height internally)
+    -- 4. Win Rate Heatmap — appended after diff panel
+    local afterDiff = (self.diffCanvas:GetHeight() or y) + 4
+    y = self:_renderWinRateHeatmap(canvas, afterDiff, self._selectedA, self._selectedB)
+
+    ns.Widgets.SetCanvasHeight(canvas, (y or afterDiff) + 16)
 end
 
 function BuildComparatorView:_clearDiff()
@@ -947,12 +1172,14 @@ function BuildComparatorView:_track(el)
     return el
 end
 
+-- Alias for _clearDiff (used by single-build overview path)
+BuildComparatorView._clear = BuildComparatorView._clearDiff
+
 -- Empty scope state (T030)
 function BuildComparatorView:_renderEmptyScope()
     local canvas = self.diffCanvas
-    local startY = self:_diffStartY()
     local fs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    fs:SetPoint("TOPLEFT", canvas, "TOPLEFT", 12, -(startY + 16))
+    fs:SetPoint("TOPLEFT", canvas, "TOPLEFT", 12, -24)
     fs:SetWidth(620)
     fs:SetJustifyH("LEFT")
     fs:SetWordWrap(true)
@@ -961,14 +1188,14 @@ function BuildComparatorView:_renderEmptyScope()
         "No sessions found for the current scope.\n"
         .. "Try broadening the filter or selecting a different context.")
     self:_track(fs)
-    ns.Widgets.SetCanvasHeight(canvas, startY + 60)
+    ns.Widgets.SetCanvasHeight(canvas, 80)
 end
 
--- Diff panel (T023)
-function BuildComparatorView:_renderDiffPanel(result)
+-- Diff panel (T023). startY allows the caller to chain after other visuals.
+function BuildComparatorView:_renderDiffPanel(result, startY)
     local canvas = self.diffCanvas
     local diff   = result and result.diff
-    local y      = self:_diffStartY() + 8
+    local y      = (startY or 8) + 8
 
     -- Diff header
     local header = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -1093,45 +1320,6 @@ function BuildComparatorView:_renderDiffPanel(result)
     ns.Widgets.SetCanvasHeight(canvas, y + 12)
 end
 
--- Returns the Y offset where diff content should start inside diffCanvas,
--- accounting for the stat section if it is visible.
-function BuildComparatorView:_diffStartY()
-    if self.statSection and self.statSection:IsShown() then
-        return self.statSection:GetHeight() + 8
-    end
-    return 0
-end
-
--- ── layout helpers ────────────────────────────────────────────────────────────
-
--- T057: Recalculate side-panel widths based on current frame width.
--- Panels each get half the frame width minus three CARD_PAD gutters, clamped to 220px min.
-function BuildComparatorView:_recalcPanelWidths()
-    local L  = ns.Widgets.LAYOUT
-    local fw = self.frame:GetWidth()
-    if not fw or fw <= 0 then return end
-    local pw = math.max(220, math.floor((fw / 2) - (L.CARD_PAD * 3)))
-
-    local function resizePanel(p)
-        if not p then return end
-        if p.label     then p.label:SetWidth(pw) end
-        if p.listFrame then p.listFrame:SetWidth(pw) end
-        if p.frame     then p.frame:SetWidth(pw) end
-        local innerW = pw - 20
-        -- Reserve ~70px on the right for the freshness badge.
-        if p.nameLabel    then p.nameLabel:SetWidth(math.max(80, innerW - 70)) end
-        if p.metricsLabel then p.metricsLabel:SetWidth(innerW) end
-    end
-
-    resizePanel(self.panelA)
-    resizePanel(self.panelB)
-
-    -- Re-anchor panel B header label so it sits right of panel A
-    if self.panelB and self.panelB.label and self.captureSpacer then
-        self.panelB.label:ClearAllPoints()
-        self.panelB.label:SetPoint("TOPLEFT", self.captureSpacer, "BOTTOMLEFT", pw + L.CARD_PAD, -12)
-    end
-end
 
 -- ── scope helpers ─────────────────────────────────────────────────────────────
 
@@ -1142,7 +1330,7 @@ function BuildComparatorView:_cycleSortKey()
     local labels = { recent = "Most Recent", sessions = "Session Count", winrate = "Win Rate", name = "Name A–Z" }
     self.sortBtn:SetText("Sort: " .. (labels[self._sortKey] or "Most Recent"))
     self._profilesCache = nil
-    self:_renderSelectorPanels()
+    self:Refresh()
 end
 
 function BuildComparatorView:_cycleContextScope()
@@ -1256,6 +1444,337 @@ function BuildComparatorView:_selectCurrentVsMostUsed()
     self._selectedA = live.buildId
     self._selectedB = mostId
     self:Refresh()
+end
+
+-- ── Single-Build Overview ─────────────────────────────────────────────────────
+-- Renders a full Build Overview dashboard when only one build exists.
+-- Surfaces performance data, secondary stats, and effectiveness vs opponent
+-- specs — making the Builds tab useful from the very first session.
+
+local WINRATE_GREEN  = { 0.44, 0.82, 0.60, 1.0 }
+local WINRATE_YELLOW = { 0.96, 0.84, 0.20, 1.0 }
+local WINRATE_RED    = { 0.86, 0.38, 0.38, 1.0 }
+
+local function winRateColor(rate)
+    if rate > 0.55 then return WINRATE_GREEN end
+    if rate >= 0.45 then return WINRATE_YELLOW end
+    return WINRATE_RED
+end
+
+local function fmtPct(val)
+    if val == nil then return "—" end
+    return string.format("%.1f%%", val)
+end
+
+function BuildComparatorView:_renderSingleBuildOverview(profile)
+    self:_clear()
+
+    if not profile then
+        self.emptyOneBuild:SetText("No builds captured yet.\nEnter combat to record your first build.")
+        self.emptyOneBuild:Show()
+        self.diffShell:Hide()
+        return
+    end
+    self.emptyOneBuild:Hide()
+
+    local catalog = getCatalog()
+    local store   = getStore()
+    local L       = ns.Widgets.LAYOUT
+
+    local buildId   = profile.buildId
+    local buildHash = profile.buildId -- buildId IS the canonical hash
+    local label     = catalog and catalog:GetDisplayLabel(buildId) or (buildId or "?")
+
+    -- Use the diffShell scroll area for the overview content
+    self.diffShell:Show()
+    self.diffShell:ClearAllPoints()
+    self.diffShell:SetPoint("TOPLEFT", self.captureBtn, "BOTTOMLEFT", 0, -12)
+    self.diffShell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 16)
+
+    local canvas = self.diffCanvas
+    local y = 0
+
+    -- ── 1. Build Identity Header ────────────────────────────────────────────
+    local titleFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    titleFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", 4, -y)
+    titleFs:SetWidth(620)
+    titleFs:SetJustifyH("LEFT")
+    titleFs:SetWordWrap(false)
+    titleFs:SetText("Build Overview")
+    self:_track(titleFs)
+    y = y + 22
+
+    local nameFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    nameFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", 4, -y)
+    nameFs:SetWidth(620)
+    nameFs:SetJustifyH("LEFT")
+    nameFs:SetWordWrap(false)
+    nameFs:SetTextColor(COLOR_A[1], COLOR_A[2], COLOR_A[3], 1.0)
+    nameFs:SetText(label)
+    self:_track(nameFs)
+    y = y + 18
+
+    -- Session count + freshness badge
+    local sessionCount = profile.sessionCount or 0
+    local statProf = profile.latestStatProfile
+    local freshness = statProf and statProf.snapshotFreshness or Constants.SNAPSHOT_FRESHNESS.UNAVAILABLE
+    local fCol = FRESHNESS_COLOR[freshness] or FRESHNESS_COLOR[Constants.SNAPSHOT_FRESHNESS.UNAVAILABLE]
+    local fLabel = FRESHNESS_LABEL[freshness] or freshness
+
+    local metaFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    metaFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", 4, -y)
+    metaFs:SetWidth(620)
+    metaFs:SetJustifyH("LEFT")
+    local metaText = string.format("%d session%s recorded", sessionCount, sessionCount == 1 and "" or "s")
+    if statProf then
+        local ts = statProf.capturedAt and relativeTime(statProf.capturedAt) or ""
+        metaText = metaText .. string.format("  |  Stats: %s %s", fLabel, ts ~= "" and ("(" .. ts .. ")") or "")
+    else
+        metaText = metaText .. "  |  No stat snapshot — click Capture"
+    end
+    metaFs:SetTextColor(fCol[1], fCol[2], fCol[3], 0.9)
+    metaFs:SetText(metaText)
+    self:_track(metaFs)
+    y = y + 22
+
+    -- ── 2. Secondary Stats Card ─────────────────────────────────────────────
+    local statHeader = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    statHeader:SetPoint("TOPLEFT", canvas, "TOPLEFT", 4, -y)
+    statHeader:SetTextColor(unpack(Theme.textMuted))
+    statHeader:SetText("Secondary Stats")
+    self:_track(statHeader)
+    y = y + 16
+
+    local sep1 = canvas:CreateTexture(nil, "ARTWORK")
+    sep1:SetColorTexture(unpack(Theme.border))
+    sep1:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, -y)
+    sep1:SetSize(640, 1)
+    self:_track(sep1)
+    y = y + 6
+
+    if statProf then
+        local stats = {
+            { label = "Critical Strike", value = statProf.critPct },
+            { label = "Haste",           value = statProf.hastePct },
+            { label = "Mastery",         value = statProf.masteryPct },
+            { label = "Versatility",     value = statProf.versDamageDonePct },
+            { label = "Item Level",      value = statProf.itemLevelEquipped, isFmt = false },
+        }
+        for _, stat in ipairs(stats) do
+            local row = ns.Widgets.CreateIconRow(canvas, { maxLabelWidth = 160, maxValueWidth = 100, showPlaceholder = false })
+            row:SetWidth(400)
+            row:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -y)
+            local valText
+            if stat.isFmt == false then
+                valText = stat.value and tostring(math.floor(stat.value)) or "—"
+            else
+                valText = fmtPct(stat.value)
+            end
+            row:SetData(nil, stat.label, valText, "")
+            row.labelFs:SetTextColor(0.70, 0.70, 0.70, 1.0)
+            row.valueFs:SetTextColor(1, 1, 1, 1)
+            self:_track(row)
+            y = y + L.ROW_HEIGHT + L.ROW_GAP
+        end
+    else
+        local noStatFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        noStatFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -y)
+        noStatFs:SetTextColor(unpack(Theme.textMuted))
+        noStatFs:SetText("No stats captured. Click \"Capture\" above to record your current gear stats.")
+        self:_track(noStatFs)
+        y = y + 20
+    end
+    y = y + 8
+
+    -- ── 3. Overall Performance Summary ──────────────────────────────────────
+    local perfHeader = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    perfHeader:SetPoint("TOPLEFT", canvas, "TOPLEFT", 4, -y)
+    perfHeader:SetTextColor(unpack(Theme.textMuted))
+    perfHeader:SetText("Performance Summary")
+    self:_track(perfHeader)
+    y = y + 16
+
+    local sep2 = canvas:CreateTexture(nil, "ARTWORK")
+    sep2:SetColorTexture(unpack(Theme.border))
+    sep2:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, -y)
+    sep2:SetSize(640, 1)
+    self:_track(sep2)
+    y = y + 6
+
+    local sessions = store and store:GetSessionsForBuild(buildId, self._scope) or {}
+    if #sessions > 0 then
+        local wins, losses, totalDuration = 0, 0, 0
+        local sumPressure, sumBurst, sumSurvival, metricCount = 0, 0, 0, 0
+        local contextCounts = {}
+        for _, s in ipairs(sessions) do
+            if s.result == Constants.SESSION_RESULT.WON then wins = wins + 1 end
+            if s.result == Constants.SESSION_RESULT.LOST then losses = losses + 1 end
+            totalDuration = totalDuration + (s.duration or 0)
+            local m = s.metrics
+            if m then
+                if m.pressureScore then sumPressure = sumPressure + m.pressureScore end
+                if m.burstScore then sumBurst = sumBurst + m.burstScore end
+                if m.survivabilityScore then sumSurvival = sumSurvival + m.survivabilityScore end
+                metricCount = metricCount + 1
+            end
+            local ctx = s.context or "unknown"
+            contextCounts[ctx] = (contextCounts[ctx] or 0) + 1
+        end
+
+        local n = #sessions
+        local wr = n > 0 and (wins / n) or 0
+        local avgDur = n > 0 and (totalDuration / n) or 0
+        local avgPress = metricCount > 0 and (sumPressure / metricCount) or 0
+        local avgBurst = metricCount > 0 and (sumBurst / metricCount) or 0
+        local avgSurv = metricCount > 0 and (sumSurvival / metricCount) or 0
+
+        local summaryLines = {
+            { label = "Total Sessions", value = tostring(n) },
+            { label = "Win Rate",       value = string.format("%.0f%%  (%dW / %dL)", wr * 100, wins, losses), color = winRateColor(wr) },
+            { label = "Avg Duration",   value = string.format("%.0fs", avgDur) },
+            { label = "Avg Pressure",   value = string.format("%.1f", avgPress) },
+            { label = "Avg Burst",      value = string.format("%.1f", avgBurst) },
+            { label = "Avg Survivability", value = string.format("%.1f", avgSurv) },
+        }
+
+        for _, line in ipairs(summaryLines) do
+            local row = ns.Widgets.CreateIconRow(canvas, { maxLabelWidth = 160, maxValueWidth = 200, showPlaceholder = false })
+            row:SetWidth(500)
+            row:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -y)
+            row:SetData(nil, line.label, line.value, "")
+            row.labelFs:SetTextColor(0.70, 0.70, 0.70, 1.0)
+            if line.color then
+                row.valueFs:SetTextColor(line.color[1], line.color[2], line.color[3], 1.0)
+            else
+                row.valueFs:SetTextColor(1, 1, 1, 1)
+            end
+            self:_track(row)
+            y = y + L.ROW_HEIGHT + L.ROW_GAP
+        end
+
+        -- Context breakdown
+        local contextOrder = { "arena", "battleground", "duel", "world_pvp", "training_dummy", "general" }
+        local contextNames = { arena = "Arena", battleground = "BG", duel = "Duel", world_pvp = "World PvP", training_dummy = "Dummy", general = "General" }
+        local parts = {}
+        for _, ctx in ipairs(contextOrder) do
+            if contextCounts[ctx] then
+                parts[#parts + 1] = string.format("%s: %d", contextNames[ctx] or ctx, contextCounts[ctx])
+            end
+        end
+        if #parts > 0 then
+            local ctxFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            ctxFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -y)
+            ctxFs:SetWidth(600)
+            ctxFs:SetJustifyH("LEFT")
+            ctxFs:SetTextColor(0.55, 0.55, 0.55, 1.0)
+            ctxFs:SetText("By context:  " .. table.concat(parts, "  |  "))
+            self:_track(ctxFs)
+            y = y + 18
+        end
+    else
+        local noPerfFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        noPerfFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -y)
+        noPerfFs:SetTextColor(unpack(Theme.textMuted))
+        noPerfFs:SetText("No combat sessions recorded with this build yet.")
+        self:_track(noPerfFs)
+        y = y + 20
+    end
+    y = y + 12
+
+    -- ── 4. Effectiveness vs Opponent Specs ──────────────────────────────────
+    local effHeader = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    effHeader:SetPoint("TOPLEFT", canvas, "TOPLEFT", 4, -y)
+    effHeader:SetTextColor(unpack(Theme.textMuted))
+    effHeader:SetText("Effectiveness vs Opponent Specs")
+    self:_track(effHeader)
+    y = y + 16
+
+    local sep3 = canvas:CreateTexture(nil, "ARTWORK")
+    sep3:SetColorTexture(unpack(Theme.border))
+    sep3:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, -y)
+    sep3:SetSize(640, 1)
+    self:_track(sep3)
+    y = y + 6
+
+    -- Gather effectiveness data from aggregates
+    local db = store and store:GetDB()
+    local buildBucket = db and db.aggregates and db.aggregates.buildEffectiveness and db.aggregates.buildEffectiveness[buildHash]
+
+    local effEntries = {}
+    if buildBucket then
+        for specKey, entry in pairs(buildBucket) do
+            if entry.fights and entry.fights >= 1 then
+                local specId = tonumber(specKey)
+                local specMeta = specId and ns.StaticPvpData and ns.StaticPvpData.GetSpecMeta and ns.StaticPvpData.GetSpecMeta(specId)
+                local specName = specMeta and specMeta.name or ("Spec " .. specKey)
+                local className = specMeta and specMeta.classFile or nil
+                local iconId = specMeta and specMeta.iconFileDataId or nil
+                local wr = entry.fights > 0 and (entry.wins / entry.fights) or 0
+                effEntries[#effEntries + 1] = {
+                    specId = specId,
+                    specName = specName,
+                    className = className,
+                    iconId = iconId,
+                    fights = entry.fights,
+                    wins = entry.wins,
+                    losses = entry.losses or 0,
+                    winRate = wr,
+                    avgPressure = entry.avgPressureScore or 0,
+                }
+            end
+        end
+    end
+
+    -- Sort by fight count descending
+    table.sort(effEntries, function(a, b) return a.fights > b.fights end)
+
+    if #effEntries > 0 then
+        -- Column headers
+        local colFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        colFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -y)
+        colFs:SetWidth(600)
+        colFs:SetJustifyH("LEFT")
+        colFs:SetTextColor(0.50, 0.50, 0.50, 1.0)
+        colFs:SetText(string.format("%-28s %8s %10s %12s", "Spec", "Fights", "Win Rate", "Pressure"))
+        self:_track(colFs)
+        y = y + 16
+
+        for _, eff in ipairs(effEntries) do
+            local row = ns.Widgets.CreateIconRow(canvas, { maxLabelWidth = 180, maxValueWidth = 260 })
+            row:SetWidth(620)
+            row:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -y)
+
+            local wrText = string.format("%dW/%dL (%.0f%%)", eff.wins, eff.losses, eff.winRate * 100)
+            local valText = string.format("%d fights  |  %s  |  P: %.1f", eff.fights, wrText, eff.avgPressure)
+            row:SetData(eff.iconId, eff.specName, valText, "")
+
+            local wrCol = winRateColor(eff.winRate)
+            row.valueFs:SetTextColor(wrCol[1], wrCol[2], wrCol[3], 1.0)
+            self:_track(row)
+            y = y + L.ROW_HEIGHT + L.ROW_GAP
+        end
+    else
+        local noEffFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        noEffFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -y)
+        noEffFs:SetTextColor(unpack(Theme.textMuted))
+        noEffFs:SetText("No opponent matchup data yet. Play some PvP matches to see effectiveness breakdown.")
+        self:_track(noEffFs)
+        y = y + 20
+    end
+    y = y + 12
+
+    -- Hint about comparisons
+    local hintFs = canvas:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    hintFs:SetPoint("TOPLEFT", canvas, "TOPLEFT", 4, -y)
+    hintFs:SetWidth(600)
+    hintFs:SetJustifyH("LEFT")
+    hintFs:SetWordWrap(true)
+    hintFs:SetTextColor(0.45, 0.45, 0.45, 1.0)
+    hintFs:SetText("Switch to a different talent setup and play a match to unlock build-vs-build comparison.")
+    self:_track(hintFs)
+    y = y + 30
+
+    ns.Widgets.SetCanvasHeight(canvas, y + 8)
 end
 
 ns.Addon:RegisterModule("BuildComparatorView", BuildComparatorView)
