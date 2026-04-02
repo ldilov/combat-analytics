@@ -1862,6 +1862,26 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         end
     end
 
+    -- Spell auto-classification: enrich spell aggregates with Midnight C_Spell
+    -- classification APIs. These work on non-secret spellIDs (player's own casts)
+    -- and provide authoritative CC/defensive/important flags that supplement
+    -- the manual SeedSpellIntelligence catalog.
+    do
+        for spellId, agg in pairs(session.spells or {}) do
+            if spellId and spellId > 0 and not agg.autoClassified then
+                local isCC = ApiCompat.IsSpellCrowdControl(spellId)
+                local isDef = ApiCompat.IsExternalDefensive(spellId)
+                local isImportant = ApiCompat.IsSpellImportant(spellId)
+                if isCC ~= nil or isDef ~= nil or isImportant ~= nil then
+                    agg.autoClassified = true
+                    if isCC then agg.isCC = true end
+                    if isDef then agg.isDefensive = true end
+                    if isImportant then agg.isImportant = true end
+                end
+            end
+        end
+    end
+
     -- T011: Export arena round state BEFORE classifier sync, metrics, and
     -- suggestions so all downstream analytics consume the hardened opponent
     -- identity rather than the first-hit placeholder.
@@ -2020,6 +2040,19 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         analysisConfidence = session.analysisConfidence or "unknown",
     })
 
+    -- Export enemy CC records from runtime to session
+    if session._runtime and session._runtime.enemyCC then
+        session.enemyCCEvents = {}
+        for _, ccRecord in pairs(session._runtime.enemyCC) do
+            session.enemyCCEvents[#session.enemyCCEvents + 1] = ccRecord
+        end
+    end
+
+    -- Export DR snapshots from runtime
+    if session._runtime and session._runtime.drSnapshots and #session._runtime.drSnapshots > 0 then
+        session.drSnapshots = session._runtime.drSnapshots
+    end
+
     -- Runtime-only tracking tables must not persist to SavedVariables.
     if session._runtime and session._runtime.killWindowOpen then
         -- Close any window still open at match end.
@@ -2092,7 +2125,7 @@ end
 -- Was the only caller of NormalizeCombatLogEvent (also deleted, T013).
 -- Session data now sourced from DamageMeter + visible-unit state APIs.
 
-function CombatTracker:HandleUnitSpellcastSucceeded(unitTarget, _, spellId)
+function CombatTracker:HandleUnitSpellcastSucceeded(unitTarget, castGUID, spellId, castBarId)
     if unitTarget ~= "player" and unitTarget ~= "pet" then
         return
     end
@@ -2115,6 +2148,7 @@ function CombatTracker:HandleUnitSpellcastSucceeded(unitTarget, _, spellId)
         eventType = "cast",
         subEvent = "UNIT_SPELLCAST_SUCCEEDED",
         spellId = spellId,
+        castBarId = castBarId,  -- non-secret cast sequence counter (12.0.0+)
         sourceMine = true,
         destMine = false,
         timestampOffset = getSessionRelativeOffset(session),
@@ -2286,6 +2320,22 @@ function CombatTracker:HandleUnitAura(unitTarget, updateInfo)
             removeAuraState(auraInstanceId)
         end
     end
+end
+
+function CombatTracker:HandleRestrictionStateChanged()
+    local session = self:GetCurrentSession()
+    if not session then return end
+    local isPvPRestricted = ApiCompat.IsPvPMatchRestricted()
+    local isCombatRestricted = ApiCompat.IsCombatRestricted()
+    session.restrictionState = {
+        pvpMatch = isPvPRestricted,
+        combat = isCombatRestricted,
+        lastUpdatedAt = Helpers.Now(),
+    }
+    ns.Addon:Trace("restriction.state_changed", {
+        pvpMatch = isPvPRestricted,
+        combat = isCombatRestricted,
+    })
 end
 
 function CombatTracker:HandlePlayerRegenDisabled()
@@ -3295,6 +3345,33 @@ function CombatTracker:HandleLossOfControlAdded(unitTarget, effectIndex)
         spellId  = locData.spellID or 0,
         duration = locData.duration or 0,
     })
+
+    -- Track CC on arena opponents (C_LossOfControl.GetActiveLossOfControlDataByUnit)
+    if session and session.context == Constants.CONTEXT.ARENA and session._runtime then
+        session._runtime.enemyCC = session._runtime.enemyCC or {}
+        for i = 1, 5 do
+            local unitToken = "arena" .. i
+            if ApiCompat.UnitExists(unitToken) then
+                local count = ApiCompat.GetActiveLossOfControlDataCount(unitToken)
+                for idx = 1, (count or 0) do
+                    local enemyLocData = ApiCompat.GetActiveLossOfControlData(unitToken, idx)
+                    if enemyLocData and enemyLocData.spellID then
+                        local key = unitToken .. ":" .. tostring(enemyLocData.spellID)
+                        if not session._runtime.enemyCC[key] then
+                            session._runtime.enemyCC[key] = {
+                                unitToken = unitToken,
+                                spellID = enemyLocData.spellID,
+                                locType = enemyLocData.locType,
+                                startTime = enemyLocData.startTime,
+                                duration = enemyLocData.duration,
+                                recordedAt = Helpers.Now(),
+                            }
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
 function CombatTracker:HandleLossOfControlUpdate(unitTarget)
@@ -3363,6 +3440,32 @@ function CombatTracker:OnUpdate()
                 end
                 hd.lastHealth = currentHealth
                 hd.maxHealth = maxHealth
+            end
+        end
+
+        -- Periodic DR state snapshot (every 5s for arena sessions)
+        if session.context == Constants.CONTEXT.ARENA and session._runtime then
+            local rt = session._runtime
+            rt.lastDRSnapshotAt = rt.lastDRSnapshotAt or 0
+            if (now - rt.lastDRSnapshotAt) >= 5 then
+                rt.lastDRSnapshotAt = now
+                rt.drSnapshots = rt.drSnapshots or {}
+                local snapshot = { t = getSessionRelativeOffset(session), units = {} }
+                local art = ns.Addon:GetModule("ArenaRoundTracker")
+                if art and art.GetDiminishState then
+                    for i = 1, 5 do
+                        local unitToken = "arena" .. i
+                        if ApiCompat.UnitExists(unitToken) then
+                            local drState = art:GetDiminishState(unitToken)
+                            if drState then
+                                snapshot.units[unitToken] = drState
+                            end
+                        end
+                    end
+                end
+                if next(snapshot.units) then
+                    rt.drSnapshots[#rt.drSnapshots + 1] = snapshot
+                end
             end
         end
 
