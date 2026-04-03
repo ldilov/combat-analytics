@@ -35,7 +35,11 @@ Utils\Metrics.lua
 ArenaRoundTracker.lua
 SpellAttributionPipeline.lua
 TimelineProducer.lua
+AuraReconciliationService.lua
+VisibleCastProducer.lua
 CompArchetypeClassifier.lua
+UnitGraphService.lua
+CoverageService.lua
 CombatTracker.lua
 ArenaScoutService.lua
 TradeLedgerService.lua

@@ -291,6 +291,7 @@ end
 function Addon:PrintCommandHelp()
     self:Print("|cff73d98bReady|r  |cff35c7e5/ca|r opens the dashboard, |cff35c7e5/ca history|r shows sessions, |cff35c7e5/ca insights|r shows coaching.")
     self:Print("|cffd7e9ffUtilities|r  |cff35c7e5/ca detail|r, |cff35c7e5/ca cleanup|r, |cff35c7e5/ca settings|r, |cff35c7e5/ca trace|r.")
+    self:Print("|cffd7e9ffDebug|r  |cff35c7e5/ca debug actors|r — actor registry, |cff35c7e5/ca debug timeline|r — lane/chronology/confidence counts, |cff35c7e5/ca debug coverage|r — lane coverage.")
 end
 
 function Addon:OpenView(viewId, payload)
@@ -494,6 +495,118 @@ function Addon:HandleCommand(input)
             return
         end
 
+        -- T027: /ca debug coverage — per-lane coverage scores for most recent session.
+        if argument == "coverage" then
+            local store = self:GetModule("CombatStore")
+            local session = nil
+            if self.runtime.reviewedSessionId and store then
+                session = store:GetSessionById(self.runtime.reviewedSessionId)
+            end
+            if not session and store then
+                session = store:GetLatestSession(store:GetCurrentCharacterKey())
+            end
+            if not session then
+                self:PrintWarning("No session available.")
+                return
+            end
+            local cov = session.coverage
+            if not cov then
+                self:PrintWarning("No coverage data in this session (session may predate CoverageService).")
+                return
+            end
+            self:Print("|cff35c7e5--- Coverage Report ---|r")
+            self:Print(string.format("  Session: %s | %s/%s", session.id or "?", session.context or "?", session.subcontext or "?"))
+            -- Sorted lane list for stable output.
+            local lanes = {}
+            for lane in pairs(cov) do lanes[#lanes + 1] = lane end
+            table.sort(lanes)
+            for _, lane in ipairs(lanes) do
+                local rec = cov[lane]
+                if type(rec) == "table" then
+                    local score    = rec.score      or 0
+                    local evCount  = rec.eventCount  or 0
+                    local dropped  = rec.droppedCount or 0
+                    local summary  = rec.summary     or ""
+                    local bar = string.rep("|cff00cc44#|r", math.floor(score * 10)) ..
+                                string.rep("|cff666666-|r", 10 - math.floor(score * 10))
+                    self:Print(string.format("  %-20s [%s] %.2f  ev=%d drop=%d%s",
+                        lane, bar, score, evCount, dropped,
+                        summary ~= "" and ("  " .. summary) or ""))
+                end
+            end
+            self:Print("|cff35c7e5--- End Coverage Report ---|r")
+            return
+        end
+
+        -- /ca debug actors — dump UnitGraphService actor registry
+        if argument == "actors" then
+            local ugs = self:GetModule("UnitGraphService")
+            if not ugs or not ugs.DumpState then
+                self:PrintWarning("UnitGraphService.DumpState not available.")
+                return
+            end
+            local lines = ugs:DumpState()
+            if type(lines) == "table" then
+                for _, line in ipairs(lines) do
+                    self:Print(line)
+                end
+            else
+                self:Print(tostring(lines))
+            end
+            return
+        end
+
+        -- /ca debug timeline — count timeline events by lane → chronology → confidence
+        if argument == "timeline" then
+            local store = self:GetModule("CombatStore")
+            local session = nil
+            if self.runtime.reviewedSessionId and store then
+                session = store:GetSessionById(self.runtime.reviewedSessionId)
+            end
+            if not session and store then
+                session = store:GetLatestSession(store:GetCurrentCharacterKey())
+            end
+            if not session then
+                self:PrintWarning("No session available.")
+                return
+            end
+            local byLane = {}
+            for _, evt in ipairs(session.timelineEvents or {}) do
+                local lane  = evt.lane       or "unknown"
+                local chron = evt.chronology or "realtime"
+                local conf  = evt.confidence or "unknown"
+                if not byLane[lane]        then byLane[lane]        = {} end
+                if not byLane[lane][chron] then byLane[lane][chron] = {} end
+                byLane[lane][chron][conf] = (byLane[lane][chron][conf] or 0) + 1
+            end
+            self:Print("|cff35c7e5--- Timeline Summary ---|r")
+            self:Print(string.format("  Session: %s | total events: %d",
+                session.id or "?", #(session.timelineEvents or {})))
+            local laneOrder = {}
+            for lane in pairs(byLane) do laneOrder[#laneOrder + 1] = lane end
+            table.sort(laneOrder)
+            for _, lane in ipairs(laneOrder) do
+                local chronMap   = byLane[lane]
+                local chronOrder = {}
+                for chron in pairs(chronMap) do chronOrder[#chronOrder + 1] = chron end
+                table.sort(chronOrder)
+                for _, chron in ipairs(chronOrder) do
+                    local confMap   = chronMap[chron]
+                    local confOrder = {}
+                    for conf in pairs(confMap) do confOrder[#confOrder + 1] = conf end
+                    table.sort(confOrder)
+                    local parts = {}
+                    for _, conf in ipairs(confOrder) do
+                        parts[#parts + 1] = string.format("%s=%d", conf, confMap[conf])
+                    end
+                    self:Print(string.format("  %-22s [%-10s] {%s}",
+                        lane, chron, table.concat(parts, ", ")))
+                end
+            end
+            self:Print("|cff35c7e5--- End Timeline Summary ---|r")
+            return
+        end
+
         local enabled = not self:IsDebugEnabled()
         self:SetSetting("enableDebugLogging", enabled)
         self:PrintSuccess(string.format("Debug %s.", enabled and "enabled" or "disabled"))
@@ -609,6 +722,7 @@ function Addon:InitializeRuntime()
     self:InitializeCore()
 
     self:TryRegisterSlashCommands()
+    safeModuleCall(self, "UnitGraphService", "Initialize")
     safeModuleCall(self, "ArenaRoundTracker", "Initialize")
     safeModuleCall(self, "SpellAttributionPipeline", "Initialize")
     safeModuleCall(self, "CombatTracker", "Initialize")

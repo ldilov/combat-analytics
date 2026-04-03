@@ -9,16 +9,48 @@ local function addSuggestion(results, suggestion)
     results[#results + 1] = suggestion
 end
 
-local function buildSuggestion(session, reasonCode, severity, confidence, evidence, comparisonKey, message)
+-- T038: suggestionConf is an optional attribution confidence string indicating
+-- how trustworthy the source events for this suggestion are.
+--   "confirmed"      — based on realtime observed events
+--   "inferred"       — partially inferred / mixed sources
+--   "summary_derived"— derived solely from DM post-match aggregates
+--   "unknown"        — source confidence could not be determined
+-- Suggestions with "summary_derived" or "unknown" should be displayed with a
+-- lower weight or a visual caveat in the UI.
+local function buildSuggestion(session, reasonCode, severity, confidence, evidence, comparisonKey, message, suggestionConf)
     return {
-        sessionId = session.id,
-        reasonCode = reasonCode,
-        severity = severity,
-        confidence = Helpers.Round(confidence, 2),
-        evidence = evidence,
-        comparisonKey = comparisonKey,
-        message = message,
+        sessionId          = session.id,
+        reasonCode         = reasonCode,
+        severity           = severity,
+        confidence         = Helpers.Round(confidence, 2),
+        evidence           = evidence,
+        comparisonKey      = comparisonKey,
+        message            = message,
+        -- T038: Attribution-tier confidence for the source data behind this suggestion.
+        suggestionConfidence = suggestionConf or "observed",
     }
+end
+
+-- T038: Derive minimum event confidence across a list of timeline events.
+-- Returns "confirmed" > "inferred" > "summary_derived" > "unknown" in descending order.
+local CONFIDENCE_TIER = {
+    confirmed      = 1,
+    owner_confirmed = 2,
+    slot_confirmed = 3,
+    inferred       = 4,
+    summary_derived = 5,
+    unknown        = 6,
+    observed_active = 4,  -- treat as inferred
+}
+local CONFIDENCE_TIER_NAME = { [1]="confirmed", [2]="owner_confirmed", [3]="slot_confirmed", [4]="inferred", [5]="summary_derived", [6]="unknown" }
+
+local function minEventConfidence(events)
+    local worst = 1  -- start at "confirmed", worsen as we scan
+    for _, ev in ipairs(events) do
+        local tier = CONFIDENCE_TIER[ev.confidence] or 6
+        if tier > worst then worst = tier end
+    end
+    return CONFIDENCE_TIER_NAME[worst] or "unknown"
 end
 
 local function getSuccessfulCastCount(session)
@@ -36,6 +68,26 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     local characterKey = store:GetSessionCharacterKey(session)
     local contextKey = session.subcontext and string.format("%s:%s", session.context, session.subcontext) or session.context
     local opponent = session.primaryOpponent or {}
+    -- T022: Enrich opponent identity from UnitGraphService canonical node.
+    -- Falls back to session.primaryOpponent when node is absent (historical sessions).
+    do
+        local ugs = ns.Addon:GetModule("UnitGraphService")
+        if ugs and opponent.guid then
+            local node = ugs:GetNode(opponent.guid)
+            if node then
+                opponent = {
+                    guid           = opponent.guid,
+                    name           = node.name           or opponent.name,
+                    className      = node.className      or opponent.className,
+                    classFile      = node.classFile      or opponent.classFile,
+                    classId        = node.classId        or opponent.classId,
+                    specId         = node.specId         or opponent.specId,
+                    specName       = node.specName       or opponent.specName,
+                    preferredToken = node.preferredToken,
+                }
+            end
+        end
+    end
     local hasRawTimeline = #(session.rawEvents or {}) > 0
     local successfulCastCount = getSuccessfulCastCount(session)
     local matchupBaseline = nil
@@ -50,6 +102,20 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     local m        = session.metrics  or {}
     local survival = session.survival or {}
 
+    -- T020: Coverage-gated suggestion suppression.
+    -- Lane scores computed by CoverageService.Finalize(); absent before schema v6.
+    -- Suggestions requiring reliable cast / aura / identity data are suppressed
+    -- when the corresponding lane score is below threshold to avoid misleading
+    -- coaching based on incomplete observation.
+    local cov = session.coverage or {}
+    local CAST_COV_THRESHOLD     = 0.4
+    local AURA_COV_THRESHOLD     = 0.4
+    local IDENTITY_COV_THRESHOLD = 0.6
+
+    local hasCastCoverage     = (cov.visibleCasts and cov.visibleCasts.score     or 0) >= CAST_COV_THRESHOLD
+    local hasCCCoverage       = (cov.ccReceived   and cov.ccReceived.score       or 0) >= AURA_COV_THRESHOLD
+    local hasIdentityCoverage = (cov.identity     and cov.identity.score         or 0) >= IDENTITY_COV_THRESHOLD
+
     local buildBaseline = store:GetBuildBaseline(buildHash, contextKey, nil, characterKey)
     if buildBaseline and buildBaseline.fights >= 5 and m.pressureScore and m.pressureScore < (buildBaseline.averagePressureScore * 0.8) then
         addSuggestion(results, buildSuggestion(
@@ -63,7 +129,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         ))
     end
 
-    if successfulCastCount >= 6 and (m.rotationalConsistencyScore or 0) > 0 and m.rotationalConsistencyScore < 45 then
+    if hasCastCoverage and successfulCastCount >= 6 and (m.rotationalConsistencyScore or 0) > 0 and m.rotationalConsistencyScore < 45 then
         addSuggestion(results, buildSuggestion(
             session,
             "ROTATION_GAPS_OBSERVED",
@@ -79,7 +145,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         ))
     end
 
-    if matchupBaseline and matchupBaseline.fights >= 5 then
+    if hasCastCoverage and matchupBaseline and matchupBaseline.fights >= 5 then
         local openerFingerprint = session.openerFingerprint or {}
         if openerFingerprint.firstMajorOffensiveAt
             and matchupBaseline.averageFirstMajorOffensiveAt
@@ -122,7 +188,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         end
     end
 
-    if (m.procWindowsObserved or 0) >= 3 and (m.procWindowCastCount or 0) < math.max(2, m.procWindowsObserved) then
+    if hasCastCoverage and (m.procWindowsObserved or 0) >= 3 and (m.procWindowCastCount or 0) < math.max(2, m.procWindowsObserved) then
         addSuggestion(results, buildSuggestion(
             session,
             "PROC_WINDOWS_UNDERUSED",
@@ -138,7 +204,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     end
 
     -- Task 2.2: High CC uptime suggestion
-    if (m.ccUptimePct or 0) > 0.35 then
+    if hasCCCoverage and (m.ccUptimePct or 0) > 0.35 then
         local damageTakenDuringCC = session.totals and session.totals.damageTakenDuringCC
         local totalDamageTaken = (session.totals and session.totals.damageTaken) or 0
         local fireSuggestion = false
@@ -194,7 +260,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     end
 
     -- Task 2.3: Death cause attribution — DIED_IN_CC
-    if session.deathCauses then
+    if hasCCCoverage and session.deathCauses then
         for _, cause in ipairs(session.deathCauses) do
             if cause.wasCCed and cause.ccSpellId then
                 addSuggestion(results, buildSuggestion(
@@ -216,7 +282,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         end
     end
 
-    if opponent.guid or opponent.name then
+    if hasIdentityCoverage and (opponent.guid or opponent.name) then
         local opponentKey = opponent.guid or opponent.name
         local opponentBaseline = store:GetOpponentBaseline(opponentKey, nil, characterKey)
         if opponentBaseline and opponentBaseline.fights >= 10 and ((session.totals and session.totals.damageTaken) or 0) > (opponentBaseline.averageDamageTaken * 1.25) then
@@ -232,8 +298,41 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         end
     end
 
+    -- Avoidable damage taken: flag when it exceeds 25% of total damage received.
+    local totalTaken = (session.totals and session.totals.damageTaken) or 0
+    local avoidable  = (session.totals and session.totals.avoidableDamageTaken) or 0
+    if avoidable > 0 and totalTaken > 0 then
+        local ratio = avoidable / totalTaken
+        if ratio >= 0.25 then
+            local topSpellName   = nil
+            local topSpellAmount = 0
+            local avoidableSpells = session.importedTotals and session.importedTotals.avoidableSpells or {}
+            for _, spell in ipairs(avoidableSpells) do
+                if (spell.totalAmount or 0) > topSpellAmount then
+                    topSpellAmount = spell.totalAmount
+                    local spellName = spell.spellID and ns.ApiCompat.GetSpellName(spell.spellID) or nil
+                    topSpellName = spellName or ("Spell " .. tostring(spell.spellID or "?"))
+                end
+            end
+            local msg = string.format(
+                "%.0f%% of damage you received was avoidable (%s). Work on positioning and defensive reaction.",
+                ratio * 100,
+                topSpellName and ("highest source: " .. topSpellName) or "multiple sources"
+            )
+            addSuggestion(results, buildSuggestion(
+                session,
+                "HIGH_AVOIDABLE_DAMAGE_TAKEN",
+                ratio >= 0.50 and "high" or "medium",
+                math.min(1.0, ratio * 2),
+                { avoidable = avoidable, total = totalTaken, ratio = ratio, topSpell = topSpellName },
+                "avoidable_damage",
+                msg
+            ))
+        end
+    end
+
     -- Task 4.3: Spec win rate threshold suggestions
-    if opponent.specId then
+    if hasIdentityCoverage and opponent.specId then
         local specBucket = store.GetAggregateBucketByKey and store:GetAggregateBucketByKey("specs", opponent.specId) or nil
         if specBucket and (specBucket.fights or 0) >= 10 then
             local winRate = (specBucket.wins or 0) / specBucket.fights
@@ -292,7 +391,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     end
 
     -- Task 2.5: Reactive defensive late suggestion
-    if session.cdSequence then
+    if hasCCCoverage and session.cdSequence then
         for _, entry in ipairs(session.cdSequence) do
             if entry.classification == "reactive_late" and entry.lagSeconds and entry.lagSeconds > 2.0 then
                 addSuggestion(results, buildSuggestion(
@@ -351,7 +450,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         end
     end
 
-    if session.captureQuality and session.captureQuality.rawEvents == Constants.CAPTURE_QUALITY.OVERFLOW then
+    if #(session.rawEvents or {}) >= Constants.MAX_RAW_EVENTS_PER_SESSION then
         addSuggestion(results, buildSuggestion(
             session,
             "RAW_EVENT_OVERFLOW",
@@ -376,7 +475,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     end
 
     -- Task 2.7: Suboptimal opener sequence suggestion
-    if session.openerSequence and session.openerSequence.hash and opponent.specId then
+    if hasCastCoverage and hasIdentityCoverage and session.openerSequence and session.openerSequence.hash and opponent.specId then
         local openerBuckets = store:GetOpenerSequenceEffectiveness(opponent.specId)
         local currentHash = session.openerSequence.hash
         local currentEntry = openerBuckets[currentHash]
@@ -419,7 +518,30 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     end
 
     -- Task 4.2: Trinket Timing Suggestion
-    if session.ccTimeline and #session.ccTimeline > 0 and hasRawTimeline then
+    -- T038: Also capture source event objects for suggestionConfidence derivation.
+    local ccWindowSourceEvents = {}
+    local ccWindows = (function()
+        local events = session.timelineEvents
+        if not events then return {} end
+        local w = {}
+        for _, ev in ipairs(events) do
+            -- T031: Only include realtime-observed CC events in timing analysis;
+            -- summary-derived rows (DM post-match) must not inflate CC windows.
+            if ev.lane == Constants.TIMELINE_LANE.CC_RECEIVED and ev.type == "start"
+                    and ev.chronology ~= "summary" then
+                local meta = ev.meta or {}
+                w[#w + 1] = {
+                    spellId     = meta.spellID or ev.spellId,
+                    duration    = meta.duration or 0,
+                    startOffset = ev.t or 0,
+                }
+                -- T038: Keep reference for confidence derivation.
+                ccWindowSourceEvents[#ccWindowSourceEvents + 1] = ev
+            end
+        end
+        return w
+    end)()
+    if #ccWindows > 0 and hasRawTimeline then
         -- Collect trinket use timestamps from raw events (spell 42292 + break CC tags)
         local trinketUseOffsets = {}
         local breakCcTags = ns.StaticPvpData and ns.StaticPvpData.ARENA_CONTROL
@@ -430,7 +552,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
             end
         end
 
-        for _, cc in ipairs(session.ccTimeline) do
+        for _, cc in ipairs(ccWindows) do
             if cc.duration and cc.duration > 3 then
                 local ccStart = cc.startOffset or 0
                 local threshold = ccStart + cc.duration * 0.75
@@ -442,6 +564,8 @@ function SuggestionEngine:BuildSessionSuggestions(session)
                     end
                 end
                 if not trinketUsedAt or trinketUsedAt > threshold then
+                    -- T038: Derive suggestionConfidence from the source CC events.
+                    local ccSuggestConf = minEventConfidence(ccWindowSourceEvents)
                     addSuggestion(results, buildSuggestion(
                         session,
                         "TRINKET_TIMING_POOR",
@@ -455,7 +579,8 @@ function SuggestionEngine:BuildSessionSuggestions(session)
                             sourceSpecName = opponent.specName,
                         },
                         "trinket_timing",
-                        "Trinket was used late or not at all during a significant CC window."
+                        "Trinket was used late or not at all during a significant CC window.",
+                        ccSuggestConf
                     ))
                     break -- One trinket timing suggestion per session
                 end
@@ -547,7 +672,7 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     end
 
     -- ── Phase 3.4: Comp Deficit ─────────────────────────────────────────────
-    if store and session.opponentCompKey then
+    if hasIdentityCoverage and store and session.opponentCompKey then
         local comps = store:GetCompWinRates()
         local comp = comps[session.opponentCompKey]
         if comp and comp.fights >= 5 then

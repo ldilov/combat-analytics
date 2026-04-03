@@ -138,6 +138,13 @@ local function getOrCreateRosterCard(self, index)
     card.specLabel:SetTextColor(unpack(Theme.textMuted))
     card.specLabel:SetJustifyH("LEFT")
 
+    -- Provenance label: shows identity resolution source (e.g. "via: arena_slot")
+    card.provenanceLabel = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    card.provenanceLabel:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 22, 5)
+    card.provenanceLabel:SetTextColor(unpack(Theme.textMuted))
+    card.provenanceLabel:SetAlpha(0.6)
+    card.provenanceLabel:SetJustifyH("LEFT")
+
     -- Confidence pill anchor (positioned at card right edge)
     card.pillAnchor = CreateFrame("Frame", nil, card)
     card.pillAnchor:SetPoint("RIGHT", card, "RIGHT", -10, 0)
@@ -372,11 +379,6 @@ function OpponentStatsView:Refresh()
                 date("%Y-%m-%d %H:%M", latestSession.timestamp or 0)
             ))
 
-            -- Determine confidence for pills
-            local sessionConfidence = latestSession.captureQuality
-                and latestSession.captureQuality.fieldConfidence
-                or nil
-
             for slot = 1, MAX_ROSTER_SLOTS do
                 local slotData = slots[slot]
                 if slotData then
@@ -410,14 +412,30 @@ function OpponentStatsView:Refresh()
                     end
                     card.specLabel:SetText(specText)
 
+                    -- Provenance label: identity resolution source for this slot
+                    local provStr = ""
+                    if slotData.guid then
+                        local ugs = ns.Addon:GetModule("UnitGraphService")
+                        if ugs and ugs.GetBestDisplayIdentity then
+                            local okP, identity = pcall(ugs.GetBestDisplayIdentity, ugs, slotData.guid)
+                            if okP and identity and identity.provenance then
+                                provStr = "via: " .. identity.provenance
+                            end
+                        end
+                    end
+                    if provStr == "" and slotData.identityProvenance then
+                        provStr = "via: " .. slotData.identityProvenance
+                    end
+                    if card.provenanceLabel then
+                        card.provenanceLabel:SetText(provStr)
+                    end
+
                     -- Confidence pill for this slot
                     if card.confidencePill then
                         card.confidencePill:Hide()
                     end
                     local slotConfidence = slotData.fieldConfidence
-                        or (sessionConfidence and sessionConfidence.roster)
-                        or (latestSession.captureQuality and latestSession.captureQuality.confidence and
-                            latestSession.captureQuality.confidence)
+                        or (latestSession.captureQuality and latestSession.captureQuality.confidence)
                         or nil
                     if slotConfidence then
                         card.confidencePill = ns.Widgets.CreateConfidencePill(card, slotConfidence)
