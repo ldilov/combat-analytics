@@ -314,25 +314,6 @@ local function collectEnemySpellsInWindow(timeline, deathTime, windowSeconds)
     return results
 end
 
---- Find the CC entry from ccTimeline that was active at deathTime.
-local function findCCAtDeath(session, deathTime)
-    local ccTimeline = session.ccTimeline
-    if not ccTimeline then
-        return nil
-    end
-
-    for i = #ccTimeline, 1, -1 do
-        local cc = ccTimeline[i]
-        local ccStart = cc.startOffset or 0
-        local ccEnd = ccStart + (cc.duration or 0)
-        if deathTime >= ccStart and deathTime <= ccEnd then
-            return cc
-        end
-    end
-
-    return nil
-end
-
 --- Find the CC entry from CC_RECEIVED timeline lane events active at deathTime.
 local function findCCAtDeathFromTimeline(timeline, deathTime)
     -- Build a list of active CC windows from start/end pairs.
@@ -542,12 +523,9 @@ function TradeLedgerService:BuildPartialDeathRecap(session)
     end
     deathTime = deathTime or session.duration or 0
 
-    -- CC at death from ccTimeline or CC_RECEIVED lane.
+    -- CC at death from CC_RECEIVED lane.
     local ccAtDeath = nil
-    local ccEntry = findCCAtDeath(session, deathTime)
-    if not ccEntry then
-        ccEntry = findCCAtDeathFromTimeline(timeline, deathTime)
-    end
+    local ccEntry = findCCAtDeathFromTimeline(timeline, deathTime)
 
     if ccEntry then
         local family = nil

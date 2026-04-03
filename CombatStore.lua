@@ -1025,12 +1025,10 @@ local function updateBuildEffectiveness(aggregates, session)
     if not buildHash then return end
     local opponent = getPrimaryOpponent(session)
     if not opponent or not opponent.specId then return end
-    -- Only update for PvP-relevant contexts
+    -- Dummy sessions remain their own context, but still feed PvP analytics so
+    -- practice pulls can exercise build and matchup tooling.
     local ctx = session.context
-    if ctx ~= Constants.CONTEXT.ARENA
-        and ctx ~= Constants.CONTEXT.DUEL
-        and ctx ~= Constants.CONTEXT.WORLD_PVP
-    then
+    if not Helpers.IsPvpAnalyticsContext(ctx) then
         return
     end
 
@@ -1160,7 +1158,7 @@ local function updateOpenerSequenceEffectiveness(aggregates, session)
     if not opponent or not opponent.specId then return end
 
     local context = session.context
-    if context ~= Constants.CONTEXT.ARENA and context ~= Constants.CONTEXT.DUEL and context ~= Constants.CONTEXT.WORLD_PVP then
+    if not Helpers.IsPvpAnalyticsContext(context) then
         return
     end
 

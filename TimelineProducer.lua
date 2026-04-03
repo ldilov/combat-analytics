@@ -11,11 +11,31 @@ local TimelineProducer = {}
 -- ---------------------------------------------------------------------------
 
 --- Append a timeline event to the active session's timelineEvents list.
---- Required fields: t, lane, type, source, confidence.
---- Optional fields: spellId, spellName, unitToken, guid, amount, meta.
+--- Required fields: t, lane, type, source.
+--- Auto-defaulted fields: confidence → "confirmed", guid → nil, ownerGUID → nil.
 function TimelineProducer:AppendTimelineEvent(session, event)
     if not session or not session.timelineEvents then return end
-    if not event or not event.t or not event.lane or not event.type then return end
+    if not event then return end
+
+    -- T014: Validate required fields; log and drop on violation.
+    if not event.t or not event.lane or not event.type or not event.source then
+        ns.Addon:Trace("timeline.schema_violation", {
+            missing_t          = not event.t      and true or nil,
+            missing_lane       = not event.lane   and true or nil,
+            missing_type       = not event.type   and true or nil,
+            missing_source     = not event.source and true or nil,
+        })
+        return
+    end
+
+    -- Apply canonical defaults for optional tracking fields.
+    if event.confidence == nil then event.confidence = "confirmed" end
+    -- T010: Default chronology to "realtime" for all observed events.
+    -- Callers must explicitly set chronology = "summary" for DM-derived rows.
+    if event.chronology == nil then event.chronology = "realtime" end
+    if event.guid       == nil then event.guid       = nil end  -- explicit nil for schema clarity
+    if event.ownerGUID  == nil then event.ownerGUID  = nil end
+
     session.timelineEvents[#session.timelineEvents + 1] = event
 end
 
@@ -26,177 +46,23 @@ function TimelineProducer:GetCurrentSession()
 end
 
 -- ---------------------------------------------------------------------------
--- Spell classification helper
--- ---------------------------------------------------------------------------
-
---- Look up spell category from Constants.SPELL_CATEGORIES and
---- ns.StaticPvpData.SPELL_INTELLIGENCE (the enriched seed catalogue).
---- Returns a table with isOffensive, isDefensive, isCrowdControl,
---- isMobility, isUtility booleans.
-local function classifySpell(spellID)
-    local category = Constants.SPELL_CATEGORIES and Constants.SPELL_CATEGORIES[spellID] or nil
-
-    -- Fallback: consult the enriched seed data if present.
-    if not category then
-        local staticPvp = ns.StaticPvpData
-        if staticPvp and staticPvp.GetSpellInfo then
-            local seedInfo = staticPvp.GetSpellInfo(spellID)
-            if seedInfo and seedInfo.category then
-                category = seedInfo.category
-            end
-        end
-    end
-
-    if not category then
-        return {
-            isOffensive = false,
-            isDefensive = false,
-            isCrowdControl = false,
-            isMobility = false,
-            isUtility = false,
-            category = nil,
-        }
-    end
-
-    return {
-        isOffensive = category == "offensive",
-        isDefensive = category == "defensive",
-        isCrowdControl = category == "crowd_control",
-        isMobility = category == "mobility",
-        isUtility = category == "utility",
-        category = category,
-    }
-end
-
--- ---------------------------------------------------------------------------
--- T020: PlayerCastProducer
--- Handles UNIT_SPELLCAST_SUCCEEDED for player and pet units.
+-- T016: PlayerCastProducer — forwarding shim
+-- Actual logic lives in VisibleCastProducer (extracted by T016).
 -- ---------------------------------------------------------------------------
 
 function TimelineProducer:HandleUnitSpellcastSucceeded(unitTarget, castGUID, spellID)
-    if unitTarget ~= "player" and unitTarget ~= "pet" then return end
-
-    local session = self:GetCurrentSession()
-    if not session then return end
-
-    local now = Helpers.Now()
-    local t = now - (session.startedAt or now)
-
-    -- Resolve spell name via pcall-wrapped C_Spell API.
-    local spellName = nil
-    local okName, nameResult = pcall(function()
-        return ApiCompat.GetSpellName(spellID)
-    end)
-    if okName then
-        spellName = nameResult
-    end
-
-    local classification = classifySpell(spellID)
-
-    self:AppendTimelineEvent(session, {
-        t = t,
-        lane = Constants.TIMELINE_LANE.PLAYER_CAST,
-        type = "cast",
-        source = Constants.PROVENANCE_SOURCE.STATE,
-        confidence = "confirmed",
-        spellId = spellID,
-        spellName = spellName,
-        unitToken = unitTarget,
-        guid = ApiCompat.GetPlayerGUID(),
-        castGUID = castGUID,
-        meta = {
-            isOffensive = classification.isOffensive,
-            isDefensive = classification.isDefensive,
-            isCrowdControl = classification.isCrowdControl,
-            isMobility = classification.isMobility,
-            isUtility = classification.isUtility,
-            category = classification.category,
-        },
-    })
+    local vcp = ns.Addon:GetModule("VisibleCastProducer")
+    if vcp then vcp:HandleUnitSpellcastSucceeded(unitTarget, castGUID, spellID) end
 end
 
 -- ---------------------------------------------------------------------------
--- T021: VisibleAuraProducer
--- Handles UNIT_AURA for tracked units. Records aura applied/removed events.
+-- T015: VisibleAuraProducer — forwarding shim
+-- Actual logic lives in AuraReconciliationService (extracted by T015).
 -- ---------------------------------------------------------------------------
 
 function TimelineProducer:HandleUnitAura(unitTarget, updateInfo)
-    if not unitTarget or not Constants.TRACKED_UNITS[unitTarget] then return end
-
-    local session = self:GetCurrentSession()
-    if not session then return end
-
-    local now = Helpers.Now()
-    local t = now - (session.startedAt or now)
-
-    if not updateInfo then return end
-
-    -- Process added auras.
-    if updateInfo.addedAuras then
-        for _, auraData in ipairs(updateInfo.addedAuras) do
-            -- Guard against secret values on arena opponent auras.
-            local okAura, auraEvent = pcall(function()
-                local auraSpellId = auraData.spellId
-                local auraName = auraData.name
-                local auraInstanceID = auraData.auraInstanceID
-                local isHelpful = auraData.isHelpful
-                local sourceUnit = auraData.sourceUnit
-                local duration = auraData.duration
-                local expirationTime = auraData.expirationTime
-
-                -- Sanitize values that may be secret in Midnight arena.
-                auraSpellId = ApiCompat.SanitizeNumber(auraSpellId)
-                auraName = ApiCompat.SanitizeString(auraName)
-                auraInstanceID = ApiCompat.SanitizeNumber(auraInstanceID)
-
-                return {
-                    t = t,
-                    lane = Constants.TIMELINE_LANE.VISIBLE_AURA,
-                    type = "applied",
-                    source = Constants.PROVENANCE_SOURCE.VISIBLE_UNIT,
-                    confidence = "confirmed",
-                    spellId = auraSpellId ~= 0 and auraSpellId or nil,
-                    spellName = auraName,
-                    unitToken = unitTarget,
-                    meta = {
-                        auraInstanceID = auraInstanceID ~= 0 and auraInstanceID or nil,
-                        isHelpful = isHelpful and true or false,
-                        sourceUnit = ApiCompat.SanitizeString(sourceUnit),
-                        duration = ApiCompat.SanitizeNumber(duration),
-                        expirationTime = ApiCompat.SanitizeNumber(expirationTime),
-                    },
-                }
-            end)
-
-            if okAura and auraEvent then
-                self:AppendTimelineEvent(session, auraEvent)
-            end
-        end
-    end
-
-    -- Process removed auras.
-    if updateInfo.removedAuraInstanceIDs then
-        for _, instanceID in ipairs(updateInfo.removedAuraInstanceIDs) do
-            local okRemoved, removedEvent = pcall(function()
-                local sanitizedId = ApiCompat.SanitizeNumber(instanceID)
-                return {
-                    t = t,
-                    lane = Constants.TIMELINE_LANE.VISIBLE_AURA,
-                    type = "removed",
-                    source = Constants.PROVENANCE_SOURCE.VISIBLE_UNIT,
-                    confidence = "confirmed",
-                    unitToken = unitTarget,
-                    meta = {
-                        auraInstanceID = sanitizedId ~= 0 and sanitizedId or nil,
-                    },
-                }
-            end)
-
-            if okRemoved and removedEvent then
-                self:AppendTimelineEvent(session, removedEvent)
-            end
-        end
-    end
+    local ars = ns.Addon:GetModule("AuraReconciliationService")
+    if ars then ars:HandleUnitAura(unitTarget, updateInfo) end
 end
 
 -- ---------------------------------------------------------------------------

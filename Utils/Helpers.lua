@@ -216,6 +216,21 @@ function Helpers.GetResultBucket(result)
     return "other"
 end
 
+function Helpers.IsStrictPvpContext(context)
+    local ctx = ns.Constants.CONTEXT
+    return context == ctx.ARENA
+        or context == ctx.BATTLEGROUND
+        or context == ctx.DUEL
+        or context == ctx.WORLD_PVP
+end
+
+-- Training dummy sessions stay tagged as training_dummy so benchmark flows
+-- remain intact, but we still let them exercise PvP analytics surfaces.
+function Helpers.IsPvpAnalyticsContext(context)
+    return Helpers.IsStrictPvpContext(context)
+        or context == ns.Constants.CONTEXT.TRAINING_DUMMY
+end
+
 -- Resolve the best available opponent display name from a session.
 -- Walks through primary opponent fields, arena slots, post-match
 -- scoreboard, actor table, and duel metadata to find a non-nil
