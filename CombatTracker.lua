@@ -2112,6 +2112,15 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         end
     end
 
+    -- Reset DM baseline after finalization so the next session (or Solo Shuffle
+    -- round) can match the combined arena DM session again.  The combined arena
+    -- session accumulates across rounds and its ID doesn't change, so leaving
+    -- the baseline at the old value would cause FindSessionsForImport to skip it.
+    local dmService = ns.Addon:GetModule("DamageMeterService")
+    if dmService then
+        dmService.activeSessionBaselineId = nil
+    end
+
     self:SetCurrentSession(nil)
 
     if ns.Addon:GetSetting("showSummaryAfterCombat") then
@@ -2601,6 +2610,17 @@ function CombatTracker:HandlePlayerJoinedPvpMatch()
     if classifier then
         subcontext = context == Constants.CONTEXT.ARENA and classifier:ResolveArenaSubcontext() or classifier:ResolveBattlegroundSubcontext()
     end
+
+    -- Capture DM baseline EARLY — before the prep/loading phase creates the
+    -- combined arena DM session (DamageMeterCombineSessionType.Arena). If we
+    -- wait until PLAYER_REGEN_DISABLED (MarkSessionStart), the arena session
+    -- ID is already at or below the baseline and FindSessionsForImport skips it.
+    local damageMeterService = ns.Addon:GetModule("DamageMeterService")
+    if damageMeterService then
+        damageMeterService.activeSessionBaselineId = nil  -- force fresh baseline
+        damageMeterService:MarkSessionStart()
+    end
+
     self:CreateOrRefreshMatch(context, subcontext)
 
     -- Begin tracking arena round identity. ArenaRoundTracker owns match state
