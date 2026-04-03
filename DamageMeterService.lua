@@ -736,9 +736,12 @@ function DamageMeterService:FindSessionsForImport()
         addCandidate(sessionInfo)
     end
 
-    -- Fallback: if no candidates found above baseline, include the session AT
-    -- the baseline. Training dummy and short PvE encounters may update an
-    -- existing C_DamageMeter session in-place rather than creating a new one.
+    -- Fallback 1: include the session AT the baseline. Training dummy and
+    -- short PvE encounters may update an existing C_DamageMeter session
+    -- in-place rather than creating a new one. Arena matches use
+    -- DamageMeterCombineSessionType.Arena which creates the combined session
+    -- during the prep/loading phase — BEFORE MarkSessionStart fires — so the
+    -- arena session ID equals the baseline and gets filtered out above.
     if #candidates == 0 and baseline > 0 then
         for _, sessionInfo in ipairs(sessions) do
             local sessionId = sessionInfo and sessionInfo.sessionID or 0
@@ -749,9 +752,27 @@ function DamageMeterService:FindSessionsForImport()
         end
     end
 
+    -- Fallback 2: for arena/BG matches, also include the session immediately
+    -- below baseline (baseline - 1). The combined arena DM session may have
+    -- been created during the queue pop or loading screen, giving it an ID
+    -- lower than the baseline captured at the first PLAYER_REGEN_DISABLED.
+    if #candidates == 0 and baseline > 1 then
+        for _, sessionInfo in ipairs(sessions) do
+            local sessionId = sessionInfo and sessionInfo.sessionID or 0
+            if sessionId == (baseline - 1) and not seen[sessionId] then
+                seen[sessionId] = true
+                candidates[#candidates + 1] = sessionInfo
+            end
+        end
+    end
+
+    -- Fallback 3: if still no candidates, take the latest available session
+    -- regardless of baseline. This catches edge cases where the DM session
+    -- was created significantly before combat started (long prep phases,
+    -- Solo Shuffle round transitions).
     if #candidates == 0 and #sessions > 0 then
         local latest = sessions[#sessions]
-        if (latest.sessionID or 0) > (self.lastSeenSessionId or 0) then
+        if not seen[latest.sessionID or 0] then
             candidates[#candidates + 1] = latest
         end
     end
