@@ -345,14 +345,38 @@ local function collectOpenerCooldownSpellIds(session, openerStart, openerEnd, li
     return result
 end
 
--- Task 7.5: Compute per-CC-family diminishing-returns state from ccTimeline.
+-- Build a normalized CC windows list from session.timelineEvents CC_RECEIVED lane.
+-- Returns entries shaped as: { spellId, spellName, duration, startOffset, sourceName }
+-- Entries are sorted ascending by startOffset.
+local function getCCWindows(session)
+    local events = session.timelineEvents
+    if not events or #events == 0 then return {} end
+    local windows = {}
+    for _, ev in ipairs(events) do
+        if ev.lane == Constants.TIMELINE_LANE.CC_RECEIVED and ev.type == "start" then
+            local meta = ev.meta or {}
+            windows[#windows + 1] = {
+                spellId     = meta.spellID or ev.spellId,
+                spellName   = meta.displayText,
+                duration    = meta.duration or 0,
+                startOffset = ev.t or 0,
+                sourceName  = nil,
+            }
+        end
+    end
+    table.sort(windows, function(a, b) return a.startOffset < b.startOffset end)
+    return windows
+end
+
+-- Task 7.5: Compute per-CC-family diminishing-returns state from CC_RECEIVED timeline lane.
 -- DR tiers: full (100%) → half (50%) → quarter (25%) → immune (0%).
 -- DR resets after an 18-second gap with no CC of the same family.
 local DR_RESET_SECONDS = 18
 local DR_TIERS = { "full", "half", "quarter", "immune" }
 
 local function computeCCDRState(session)
-    if not session.ccTimeline or #session.ccTimeline == 0 then
+    local ccWindows = getCCWindows(session)
+    if #ccWindows == 0 then
         return nil
     end
 
@@ -361,9 +385,9 @@ local function computeCCDRState(session)
         return nil
     end
 
-    -- ccTimeline is already sorted by startOffset
+    -- ccWindows is already sorted by startOffset
     local families = {}
-    for _, cc in ipairs(session.ccTimeline) do
+    for _, cc in ipairs(ccWindows) do
         local family = GetCCFamily(cc.spellId)
         if family then
             local state = families[family]
@@ -449,8 +473,9 @@ end
 -- Task 2.5: Cooldown Sequencing vs Enemy Offense
 -- Compares player defensive cooldown usage against CC windows.
 function Metrics.DeriveCoordination(session)
-    if not session or not session.cooldowns or not session.ccTimeline then return end
-    if #session.ccTimeline == 0 then return end
+    if not session or not session.cooldowns then return end
+    local ccWindows = getCCWindows(session)
+    if #ccWindows == 0 then return end
 
     local cdSequence = {}
 
@@ -459,7 +484,7 @@ function Metrics.DeriveCoordination(session)
             -- Find the nearest CC window to this defensive usage
             local bestCCDist = math.huge
             local bestCC = nil
-            for _, cc in ipairs(session.ccTimeline) do
+            for _, cc in ipairs(ccWindows) do
                 local ccStart = cc.startOffset or 0
                 local ccEnd = ccStart + (cc.duration or 0)
                 local dist = cd.firstUsedAt - ccStart
@@ -579,7 +604,7 @@ function Metrics.ComputeDerivedMetrics(session)
     local burstScore = limitedTimeline and Helpers.Clamp(concentrationProxy + sustainedBurstProxy + procBurstProxy, 0, 100) or Helpers.Clamp((burstDamage / math.max(outgoing, 1)) * 100, 0, 100)
     -- Task 2.2: Time-under-CC metrics
     local timeUnderCC = 0
-    for _, cc in ipairs(session.ccTimeline or {}) do
+    for _, cc in ipairs(getCCWindows(session)) do
         timeUnderCC = timeUnderCC + (cc.duration or 0)
     end
     local ccUptimePct = timeUnderCC / duration

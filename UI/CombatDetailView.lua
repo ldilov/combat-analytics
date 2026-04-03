@@ -1,6 +1,7 @@
 local _, ns = ...
 
 local Constants = ns.Constants
+local Helpers = ns.Helpers
 local Theme = ns.Widgets.THEME
 
 local CombatDetailView = {
@@ -136,9 +137,7 @@ local function GetDamageDisplayState(session)
         local hasRealSignals = session and (
             (session.primaryOpponent ~= nil)
             or (session.duration or 0) >= 5
-            or ctx == "arena"
-            or ctx == "battleground"
-            or ctx == "duel"
+            or Helpers.IsPvpAnalyticsContext(ctx)
         )
         if hasRealSignals then
             local diag = importedTotals.importDiagnostics or {}
@@ -201,6 +200,8 @@ local function buildSpellRows(session, limit)
                 casts = aggregate.castCount or 0,
                 hits = aggregate.hitCount or 0,
                 share = amount / totalOutput,
+                estimated = aggregate.estimated or false,
+                syntheticKind = aggregate.syntheticKind,
             }
         end
     end
@@ -588,9 +589,28 @@ function CombatDetailView:Build(parent)
         self.deathFrames[index] = row
     end
 
-    -- Raw Timeline section (text dump), now anchored below the death analysis section
+    -- Death Sequence section (DM recap — silently absent when session has no recap)
     local deathLastAnchor = self.deathFrames[#self.deathFrames]
-    self.rawTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Raw Timeline", "TOPLEFT", deathLastAnchor, "BOTTOMLEFT", 0, -22)
+    self.deathRecapTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Death Sequence", "TOPLEFT", deathLastAnchor, "BOTTOMLEFT", 0, -22)
+    self.deathRecapCaption = ns.Widgets.CreateCaption(self.canvas, "Hit sequence from the game's death recap for this session.", "TOPLEFT", self.deathRecapTitle, "BOTTOMLEFT", 0, -4)
+    self.deathRecapLines = {}
+    for index = 1, 8 do
+        local line = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        if index == 1 then
+            line:SetPoint("TOPLEFT", self.deathRecapCaption, "BOTTOMLEFT", 0, -10)
+        else
+            line:SetPoint("TOPLEFT", self.deathRecapLines[index - 1], "BOTTOMLEFT", 0, -5)
+        end
+        line:SetJustifyH("LEFT")
+        line:SetWidth(740)
+        line:SetWordWrap(true)
+        line:SetTextColor(unpack(Theme.text))
+        self.deathRecapLines[index] = line
+    end
+    local deathRecapLastAnchor = self.deathRecapLines[#self.deathRecapLines]
+
+    -- Raw Timeline section (text dump), now anchored below the death sequence section
+    self.rawTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Raw Timeline", "TOPLEFT", deathRecapLastAnchor, "BOTTOMLEFT", 0, -22)
     self.rawCaption = ns.Widgets.CreateCaption(self.canvas, "Filtered raw events stay available here, but they are now the support layer instead of the whole screen.", "TOPLEFT", self.rawTitle, "BOTTOMLEFT", 0, -4)
     self.rawMeta = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.rawMeta:SetPoint("TOPLEFT", self.rawCaption, "BOTTOMLEFT", 0, -10)
@@ -767,7 +787,17 @@ function CombatDetailView:BuildTimeline(session)
     end
 
     -- 1) Render CC windows (below everything, BACKGROUND layer)
-    local ccTimeline = session.ccTimeline or {}
+    local ccTimeline = {}
+    for _, ev in ipairs(session.timelineEvents or {}) do
+        if ev.lane == Constants.TIMELINE_LANE.CC_RECEIVED and ev.type == "start" then
+            local meta = ev.meta or {}
+            ccTimeline[#ccTimeline + 1] = {
+                spellId     = meta.spellID or ev.spellId,
+                duration    = meta.duration or 0,
+                startOffset = ev.t or 0,
+            }
+        end
+    end
     for _, cc in ipairs(ccTimeline) do
         local startOffset = cc.startOffset or 0
         local ccDuration = cc.duration or 0
@@ -1007,6 +1037,9 @@ function CombatDetailView:Refresh(payload)
         self.deathTitle:Hide()
         self.deathCaption:Hide()
         for _, row in ipairs(self.deathFrames) do row:Hide() end
+        if self.deathRecapTitle then self.deathRecapTitle:Hide() end
+        if self.deathRecapCaption then self.deathRecapCaption:Hide() end
+        for _, line in ipairs(self.deathRecapLines or {}) do line:Hide() end
         self.rawTitle:Hide()
         self.rawCaption:Hide()
         self.rawMeta:Hide()
@@ -1137,16 +1170,24 @@ function CombatDetailView:Refresh(payload)
     for index, row in ipairs(self.spellRows) do
         local spellRow = spellRows[index]
         if spellRow then
+            local detail = string.format(
+                "Damage %s  |  Healing %s  |  Casts %d  |  Hits %d",
+                ns.Helpers.FormatNumber(spellRow.damage),
+                ns.Helpers.FormatNumber(spellRow.healing),
+                spellRow.casts,
+                spellRow.hits
+            )
+            if spellRow.syntheticKind == "unattributed_damage" then
+                detail = string.format("Damage %s  |  Damage Meter total with no spell row", ns.Helpers.FormatNumber(spellRow.damage))
+            elseif spellRow.syntheticKind == "environmental" or spellRow.spellId == 0 then
+                detail = string.format("Damage %s  |  Environmental / map hazard", ns.Helpers.FormatNumber(spellRow.damage))
+            elseif spellRow.estimated then
+                detail = string.format("Damage %s  |  Casts %d  |  Estimated from Damage Meter total", ns.Helpers.FormatNumber(spellRow.damage), spellRow.casts)
+            end
             row:SetData(
                 spellRow.icon,
                 spellRow.name,
-                string.format(
-                    "Damage %s  |  Healing %s  |  Casts %d  |  Hits %d",
-                    ns.Helpers.FormatNumber(spellRow.damage),
-                    ns.Helpers.FormatNumber(spellRow.healing),
-                    spellRow.casts,
-                    spellRow.hits
-                ),
+                detail,
                 ns.Helpers.FormatNumber(spellRow.amount),
                 spellRow.share,
                 Theme.accent
@@ -1161,16 +1202,22 @@ function CombatDetailView:Refresh(payload)
 
     -- Multi-lane timeline from session.timelineEvents.
     local LANE_COLORS = {
+        -- T037: VISIBLE_CAST is the current lane (v7+); player_cast is the legacy alias.
+        visible_cast  = { 0.35, 0.78, 0.90, 1.0 },
         player_cast   = { 0.35, 0.78, 0.90, 1.0 },
+        visibility    = { 0.80, 0.65, 0.92, 1.0 },
         visible_aura  = { 0.60, 0.82, 0.44, 1.0 },
         cc_received   = { 0.96, 0.74, 0.38, 1.0 },
         kill_window   = { 0.90, 0.30, 0.25, 1.0 },
         death         = { 1.0, 0.0, 0.0, 1.0 },
         match_state   = { 0.60, 0.69, 0.78, 1.0 },
     }
-    local LANE_ORDER = { "player_cast", "visible_aura", "cc_received", "kill_window", "death", "match_state" }
+    -- T037: VISIBLE_CAST replaces player_cast; both are included for cross-version compat.
+    local LANE_ORDER = { "visible_cast", "player_cast", "visibility", "visible_aura", "cc_received", "kill_window", "death", "match_state" }
     local LANE_LABELS = {
+        visible_cast = "Casts (Observed)",
         player_cast  = "Player Casts",
+        visibility   = "Visibility",
         visible_aura = "Visible Auras",
         cc_received  = "CC Received",
         kill_window  = "Kill Windows",
@@ -1196,11 +1243,45 @@ function CombatDetailView:Refresh(payload)
                 laneGroups[lane] = {}
             end
             local laneEvts = laneGroups[lane]
+            -- T037: Visually distinguish DM summary rows from realtime observed events.
+            -- Summary rows get a dimmed color and a "(sum)" tooltip prefix so users
+            -- can identify DM-derived post-match data vs directly observed events.
+            local isSummary = evt.chronology == "summary"
+            local baseColor = LANE_COLORS[lane] or Theme.accent
+            local evtColor
+            if isSummary then
+                -- Dim to ~40% brightness with reduced alpha for "greyed out" appearance.
+                evtColor = { baseColor[1] * 0.55, baseColor[2] * 0.55, baseColor[3] * 0.55, 0.55 }
+            else
+                evtColor = baseColor
+            end
+            -- T039: For VISIBLE_CAST lane rows, apply confidence-based color tinting.
+            -- confirmed    → full lane color (green-blue)
+            -- inferred     → slightly warmer / yellow shift
+            -- summary_derived / unknown → already handled by isSummary dimming above
+            if not isSummary
+                    and (lane == "visible_cast" or lane == "player_cast") then
+                local conf = evt.confidence
+                if conf == "inferred" or conf == "slot_confirmed" then
+                    -- Slightly desaturate toward yellow to indicate inferred identity.
+                    evtColor = { baseColor[1] * 0.90 + 0.10, baseColor[2] * 0.85, baseColor[3] * 0.55, (baseColor[4] or 1.0) }
+                elseif conf == "summary_derived" or conf == "unknown" then
+                    evtColor = { baseColor[1] * 0.55, baseColor[2] * 0.55, baseColor[3] * 0.55, 0.55 }
+                end
+            end
+            local baseLabel = evt.label or evt.spellName or lane
+            local evtTooltip = isSummary and ("(sum) " .. baseLabel) or baseLabel
+            -- T039: Append confidence tag to cast event tooltips for non-confirmed rows.
+            if not isSummary
+                    and (lane == "visible_cast" or lane == "player_cast")
+                    and evt.confidence and evt.confidence ~= "confirmed" then
+                evtTooltip = evtTooltip .. " [" .. evt.confidence .. "]"
+            end
             laneEvts[#laneEvts + 1] = {
-                t = evt.offset or evt.timestampOffset or 0,
-                color = LANE_COLORS[lane] or Theme.accent,
+                t        = evt.t or evt.offset or evt.timestampOffset or 0,
+                color    = evtColor,
                 duration = evt.duration,
-                tooltip = evt.label or evt.spellName or lane,
+                tooltip  = evtTooltip,
             }
         end
 
@@ -1384,6 +1465,61 @@ function CombatDetailView:Refresh(payload)
         for _, frame in ipairs(self.deathFrames) do frame:Hide() end
     end
 
+    -- Death Sequence section (DM recap)
+    local deathRecap = session.deathRecap
+    if deathRecap and deathRecap.recapID and deathRecap.recapID ~= 0 then
+        if self.deathRecapTitle then self.deathRecapTitle:Show() end
+        if self.deathRecapCaption then self.deathRecapCaption:Show() end
+
+        local lineIndex = 0
+        local function showRecapLine(text, r, g, b)
+            lineIndex = lineIndex + 1
+            local line = self.deathRecapLines and self.deathRecapLines[lineIndex]
+            if line then
+                line:SetText(text)
+                if r then line:SetTextColor(r, g, b, 1.0) end
+                line:Show()
+            end
+        end
+
+        local deathSecs = deathRecap.timeSeconds or 0
+        local mins = math.floor(deathSecs / 60)
+        local secs = math.floor(deathSecs % 60)
+        showRecapLine(string.format("Died at %d:%02d into the fight.", mins, secs))
+
+        if deathRecap.maxHealth and deathRecap.maxHealth > 0 then
+            showRecapLine(string.format("Max health at time of death: %s.", ns.Helpers.FormatNumber(deathRecap.maxHealth)))
+        end
+
+        if deathRecap.events and #deathRecap.events > 0 then
+            for _, event in ipairs(deathRecap.events) do
+                if lineIndex >= 8 then break end
+                local spellId   = event.spellID or event.spellId or 0
+                local spellName = spellId > 0 and ns.ApiCompat.GetSpellName(spellId) or (event.spellName or "Unknown")
+                local amount    = event.amount or event.totalAmount or 0
+                local healthPct = event.healthPercent or event.healthPct
+                local eventLine
+                if healthPct then
+                    eventLine = string.format("  %s — %s dmg (%.0f%% HP remaining)",
+                        spellName, ns.Helpers.FormatNumber(amount), healthPct * 100)
+                else
+                    eventLine = string.format("  %s — %s dmg", spellName, ns.Helpers.FormatNumber(amount))
+                end
+                showRecapLine(eventLine, 0.90, 0.30, 0.25)
+            end
+        else
+            showRecapLine("Detailed hit sequence unavailable for this session.", 0.55, 0.55, 0.55)
+        end
+
+        for i = lineIndex + 1, #(self.deathRecapLines or {}) do
+            self.deathRecapLines[i]:Hide()
+        end
+    else
+        if self.deathRecapTitle then self.deathRecapTitle:Hide() end
+        if self.deathRecapCaption then self.deathRecapCaption:Hide() end
+        for _, line in ipairs(self.deathRecapLines or {}) do line:Hide() end
+    end
+
     -- Show raw events only if there are rawEvents
     local hasRawEvents = session.rawEvents and #session.rawEvents > 0
     if hasRawEvents then
@@ -1429,7 +1565,8 @@ function CombatDetailView:Refresh(payload)
     end
     -- T059: explicit bottom padding via LAYOUT token so last row is never clipped
     local L = ns.Widgets.LAYOUT
-    ns.Widgets.SetCanvasHeight(self.canvas, 2240 + multiLaneHeight + tradeLedgerHeight + L.ROW_GAP * 2)
+    local deathRecapHeight = (deathRecap and deathRecap.recapID and deathRecap.recapID ~= 0) and 180 or 0
+    ns.Widgets.SetCanvasHeight(self.canvas, 2240 + multiLaneHeight + tradeLedgerHeight + deathRecapHeight + L.ROW_GAP * 2)
 end
 
 ns.Addon:RegisterModule("CombatDetailView", CombatDetailView)

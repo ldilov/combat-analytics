@@ -75,10 +75,6 @@ local function getOrInitState(session)
             bySourceSpell    = {},
             -- [sourceGuid][targetKey][spellId] = aggregate
             bySourceTargetSpell = {},
-            -- [petGuid] = ownerGuid — pet ownership is now derived from
-            -- UNIT_SPELLCAST_SUCCEEDED events (visible player pet casts via
-            -- TimelineProducer). Populated externally; used by query helpers.
-            summons          = {},
             reconciliation   = {
                 localDamage    = 0,
                 importedDamage = 0,
@@ -161,12 +157,37 @@ function SpellAttributionPipeline:MergeDamageMeterSource(session, combatSource, 
 
     local src = ensureSource(state, srcKey)
     src.guid      = src.guid      or srcGuid
-    src.name      = src.name      or combatSource.name
-    src.classFile = src.classFile or combatSource.classFilename
-    src.specIconId = src.specIconId or combatSource.specIconID
     src.source    = Constants.PROVENANCE_SOURCE.DAMAGE_METER
     -- Use max to deduplicate overlapping DM snapshots.
     src.totalAmount = math.max(src.totalAmount or 0, tonumber(combatSource.totalAmount) or 0)
+
+    -- T026: When a GUID is available, enrich identity fields via UnitGraphService
+    -- (which may carry higher-confidence data than the DM summary rows).
+    if srcGuid then
+        local ugs = ns.Addon:GetModule("UnitGraphService")
+        if ugs then
+            local okUgs = pcall(function()
+                local identity = ugs:GetBestDisplayIdentity(srcGuid)
+                if identity then
+                    src.name      = src.name      or identity.name
+                    src.classFile = src.classFile or identity.classFile
+                    src.specId    = src.specId    or identity.specId
+                    src.arenaSlot = src.arenaSlot or identity.arenaSlot
+                    -- Carry forward the UGS confidence when it outranks "summary_derived".
+                    if not src.confidence or src.confidence == "summary_derived" then
+                        src.confidence = identity.confidence
+                    end
+                end
+            end)
+            if not okUgs then
+                -- Non-fatal; fall back to DM-supplied values below.
+            end
+        end
+    end
+    -- Fallback to DM-supplied identity fields when UGS could not enrich.
+    src.name      = src.name      or combatSource.name
+    src.classFile = src.classFile or combatSource.classFilename
+    src.specIconId = src.specIconId or combatSource.specIconID
 
     -- Merge per-spell details from this source.
     for _, combatSpell in ipairs(combatSourceDetail and combatSourceDetail.combatSpells or {}) do
