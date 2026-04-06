@@ -1,65 +1,77 @@
 {
-  "255": {
-    "specId": 255,
-    "specName": "Survival",
-    "className": "Hunter",
-    "classId": 3,
-    "classFile": "HUNTER",
+  "259": {
+    "specId": 259,
+    "specName": "Assassination",
+    "className": "Rogue",
+    "classId": 4,
+    "classFile": "ROGUE",
     "role": "DAMAGE",
-    "iconFileDataId": 461113,
+    "iconFileDataId": 236270,
     "pvpTalentRefs": [
       {
-        "talentId": 661,
-        "talentName": "Hunting Pack",
-        "description": "Aspect of the Cheetah has 50% reduced cooldown and grants its effects to allies within 15 yds.",
+        "talentId": 141,
+        "talentName": "Creeping Venom",
+        "description": "Your Envenom applies Creeping Venom, reducing the target's movement speed by 5% for 4 sec.  Creeping Venom is reapplied when the target moves. Max 18 stacks.",
         "castTime": "Passive"
       },
       {
-        "talentId": 662,
-        "talentName": "Mending Bandage",
-        "description": "Instantly clears all bleeds, poisons, and diseases from the target, and heals for 18% damage over 6 sec.\r\n\r\nBeing attacked will stop you from using Mending Bandage.",
-        "castTime": "Channeled"
-      },
-      {
-        "talentId": 664,
-        "talentName": "Sticky Tar Bomb",
-        "description": "Throw a Sticky Tar Bomb that coats your target's weapons with tar, disarming them for 4 sec. \r\n\r\nAfter 4 sec, Sticky Tar Bomb explodes onto nearby enemies. Other enemies that are hit by the explosion are affected by Sticky Tar Bomb but this effect cannot spread further.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 665,
-        "talentName": "Tracker's Net",
-        "description": "Hurl a net at your enemy, rooting them for 6 sec. While within the net, the target's chance to hit is reduced by 80%. Any damage will break the net.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 686,
-        "talentName": "Diamond Ice",
-        "description": "Victims of Freezing Trap can no longer be damaged or healed.  Freezing Trap is now undispellable, but has a 4 sec duration.",
+        "talentId": 147,
+        "talentName": "System Shock",
+        "description": "Casting Envenom with at least 5 combo points on a target afflicted by your Garrote, Rupture, and lethal poison deals 200 Nature damage, and reduces their movement speed by 90% for 2 sec.",
         "castTime": "Passive"
       },
       {
-        "talentId": 3607,
-        "talentName": "Survival Tactics",
-        "description": "Feign Death reduces damage taken by 90% for 2 sec.",
+        "talentId": 830,
+        "talentName": "Hemotoxin",
+        "description": "Shiv also reduces the target's healing received by 30% for 8 sec.",
         "castTime": "Passive"
       },
       {
-        "talentId": 3609,
-        "talentName": "Chimaeral Sting",
-        "description": "Stings the target, dealing 592 Nature damage and initiating a series of venoms. Each lasts 3 sec and applies the next effect after the previous one ends.\r\n\r\n Scorpid Venom:\r\n90% reduced movement speed.\r\n\r\n Spider Venom:\r\nSilenced.\r\n\r\n Viper Venom:\r\n20% reduced damage and healing.",
+        "talentId": 3448,
+        "talentName": "Maneuverability",
+        "description": "Sprint has 50% reduced cooldown and 50% reduced duration.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 3479,
+        "talentName": "Death from Above",
+        "description": "Finishing move that empowers your weapons with energy to perform a deadly attack.\r\n\r\nYou leap into the air and Envenom your target on the way back down, with such force that it has a 15% stronger effect.",
         "castTime": "Instant"
       },
       {
-        "talentId": 5443,
-        "talentName": "Wild Kingdom",
-        "description": "Call in help from one of your dismissed Cunning pets for 10 sec. Your current pet is dismissed to rest and heal 30% of maximum health.",
+        "talentId": 3480,
+        "talentName": "Smoke Bomb",
+        "description": "Creates a cloud of thick smoke in an 8 yard radius around the Rogue for 5 sec. Enemies are unable to target into or out of the smoke cloud. ",
         "castTime": "Instant"
       },
       {
-        "talentId": 5532,
-        "talentName": "Interlope",
-        "description": "Misdirection now causes the next 3 hostile spells cast on your target within 10 sec to be redirected to your pet, but its cooldown is increased by 15 sec.\r\n\r\nYour pet must be within 20 yards of the target for spells to be redirected.\r\n",
+        "talentId": 5405,
+        "talentName": "Dismantle",
+        "description": "Disarm the enemy, preventing the use of any weapons or shield for 5 sec.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5408,
+        "talentName": "Thick as Thieves",
+        "description": "Tricks of the Trade now increases the friendly target's damage by 15% for 6 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5530,
+        "talentName": "Control is King",
+        "description": "Cheap Shot grants Slice and Dice for 15 sec and Kidney Shot restores 10 Energy per combo point spent.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5550,
+        "talentName": "Dagger in the Dark",
+        "description": "Each second while Stealth is active, nearby enemies within 12 yards take an additional 2% damage from you for 10 sec. Stacks up to 6 times.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5697,
+        "talentName": "Preemptive Maneuver",
+        "description": "Feint decreases your damage taken by an additional 40% while stunned and its energy cost is reduced by 30%.",
         "castTime": "Passive"
       }
     ]
@@ -82,7 +94,7 @@
       {
         "talentId": 714,
         "talentName": "Electrocute",
-        "description": "When you successfully Purge a beneficial effect, the enemy suffers 1,575 Nature damage over 3 sec.",
+        "description": "When you successfully Purge a beneficial effect, the enemy suffers 2,126 Nature damage over 3 sec.",
         "castTime": "Passive"
       },
       {
@@ -136,156 +148,8 @@
       {
         "talentId": 5723,
         "talentName": "Lightning Lasso",
-        "description": "Grips the target in lightning, stunning and dealing 2,625 Nature damage over 5 sec while the target is lassoed. Can move while channeling.",
+        "description": "Grips the target in lightning, stunning and dealing 14,437 Nature damage over 5 sec while the target is lassoed. Can move while channeling.",
         "castTime": "Instant"
-      }
-    ]
-  },
-  "256": {
-    "specId": 256,
-    "specName": "Discipline",
-    "className": "Priest",
-    "classId": 5,
-    "classFile": "PRIEST",
-    "role": "HEALER",
-    "iconFileDataId": 135940,
-    "pvpTalentRefs": [
-      {
-        "talentId": 100,
-        "talentName": "Purification",
-        "description": "Purify now has a maximum of 2 charges.\r\n\r\nRemoving harmful effects with Purify grants your target an absorption shield equal to 5% of their maximum health. Lasts 8 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 109,
-        "talentName": "Trinity",
-        "description": "Atonement duration increased by 10 sec.\r\n\r\nSmite, Penance, Mind Blast, and Void Blast have 10% reduced cast time when you have Atonement on 3 or more allies.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 111,
-        "talentName": "Strength of Soul",
-        "description": "Your Power Word: Shield reduces all Physical damage taken by 15% while the shield persists.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 114,
-        "talentName": "Ultimate Radiance",
-        "description": "Evangelism cooldown is reduced by 45 sec and Power Word: Radiance healing is increased by 15%.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 123,
-        "talentName": "Inner Light",
-        "description": " Inner Light: Healing spells cost 10% less mana.\r\n\r\nInner Shadow: Spell damage and Atonement healing increased by 10%.\r\n\r\nActivate to swap from one effect to the other, incurring a 6 sec cooldown.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 126,
-        "talentName": "Dark Archangel",
-        "description": "Casting Evangelism increases your damage, and the damage of all allies with your Atonement by 10% for 12 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5480,
-        "talentName": "Absolute Faith",
-        "description": "Leap of Faith also pulls the spirit of the 3 furthest allies within 40 yards and shields you and the affected allies for 2,969.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5570,
-        "talentName": "Phase Shift",
-        "description": "Step into the shadows when you cast Fade, avoiding all attacks and spells for 1 sec.\r\n\r\nInterrupt effects are not affected by Phase Shift.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5635,
-        "talentName": "Improved Mass Dispel",
-        "description": "Reduces the cooldown of Mass Dispel by 60 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5640,
-        "talentName": "Mindgames",
-        "description": "Assault an enemy's mind, dealing 1,881 Shadow damage and briefly reversing their perception of reality.\r\n\r\nFor 7 sec, the next 4,155 damage they deal will heal their target, and the next 4,155 healing they deal will damage their target.",
-        "castTime": "1.5 sec cast"
-      },
-      {
-        "talentId": 5721,
-        "talentName": "Psychic Shroud",
-        "description": "When your Psychic Scream affects 1 or more players, the next crowd control effect against you is prevented. Lasts 6 sec.",
-        "castTime": "Passive"
-      }
-    ]
-  },
-  "268": {
-    "specId": 268,
-    "specName": "Brewmaster",
-    "className": "Monk",
-    "classId": 10,
-    "classFile": "MONK",
-    "role": "TANK",
-    "iconFileDataId": 608951,
-    "pvpTalentRefs": [
-      {
-        "talentId": 666,
-        "talentName": "Microbrew",
-        "description": "Reduces the cooldown of Fortifying Brew by 50%.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 667,
-        "talentName": "Hot Trub",
-        "description": "Purifying Brew deals 20% of cleared damage split among nearby enemies. After clearing 100% of your maximum health in Stagger damage, your next Breath of Fire incapacitates targets for 4 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 669,
-        "talentName": "Avert Harm",
-        "description": "Guard the 4 closest players within 15 yards for 15 sec, allowing you to Stagger 20% of damage they take.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 670,
-        "talentName": "Nimble Brew",
-        "description": "Douse allies in the targeted area with Nimble Brew, preventing the next full loss of control effect within 8 sec.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 672,
-        "talentName": "Double Barrel",
-        "description": "Your next Keg Smash deals 50% additional damage, and stuns all targets it hits for 3 sec.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 673,
-        "talentName": "Mighty Ox Kick",
-        "description": "You perform a Mighty Ox Kick, hurling your enemy a distance behind you.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 765,
-        "talentName": "Eerie Fermentation",
-        "description": "You gain up to 30% movement speed  and 15% magical damage reduction based on your current level of Stagger.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 843,
-        "talentName": "Admonishment",
-        "description": "You focus the assault on this target, increasing their damage taken by 3% for 6 sec. Each unique player that attacks the target increases the damage taken by an additional 3%, stacking up to 5 times.\r\n\r\nYour melee attacks refresh the duration of Focused Assault.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 1958,
-        "talentName": "Niuzao's Essence",
-        "description": "Drinking a Purifying Brew, Celestial Brew, Fortifying Brew, or casting Roll will dispel all snares affecting you.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5541,
-        "talentName": "Dematerialize",
-        "description": "Demateralize into mist while stunned, reducing damage taken by 30%. Each second you remain stunned reduces this bonus by 10%.",
-        "castTime": "Passive"
       }
     ]
   },
@@ -420,214 +284,13 @@
       {
         "talentId": 5678,
         "talentName": "Dragon Charge",
-        "description": "Run at high speed at a distance in front of you. All enemies in your path will take 315 Physical damage and be knocked back.",
+        "description": "Run at high speed at a distance in front of you. All enemies in your path will take 314 Physical damage and be knocked back.",
         "castTime": "Instant"
       },
       {
         "talentId": 5702,
         "talentName": "Berserker Roar",
         "description": "Berserker Shout also reduces the duration of the next crowd control effect within 10 sec by 50% on group members within 12 yds.\r\n",
-        "castTime": "Passive"
-      }
-    ]
-  },
-  "259": {
-    "specId": 259,
-    "specName": "Assassination",
-    "className": "Rogue",
-    "classId": 4,
-    "classFile": "ROGUE",
-    "role": "DAMAGE",
-    "iconFileDataId": 236270,
-    "pvpTalentRefs": [
-      {
-        "talentId": 141,
-        "talentName": "Creeping Venom",
-        "description": "Your Envenom applies Creeping Venom, reducing the target's movement speed by 5% for 4 sec.  Creeping Venom is reapplied when the target moves. Max 18 stacks.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 147,
-        "talentName": "System Shock",
-        "description": "Casting Envenom with at least 5 combo points on a target afflicted by your Garrote, Rupture, and lethal poison deals 197 Nature damage, and reduces their movement speed by 90% for 2 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 830,
-        "talentName": "Hemotoxin",
-        "description": "Shiv also reduces the target's healing received by 30% for 8 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 3448,
-        "talentName": "Maneuverability",
-        "description": "Sprint has 50% reduced cooldown and 50% reduced duration.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 3479,
-        "talentName": "Death from Above",
-        "description": "Finishing move that empowers your weapons with energy to perform a deadly attack.\r\n\r\nYou leap into the air and Envenom your target on the way back down, with such force that it has a 15% stronger effect.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 3480,
-        "talentName": "Smoke Bomb",
-        "description": "Creates a cloud of thick smoke in an 8 yard radius around the Rogue for 5 sec. Enemies are unable to target into or out of the smoke cloud. ",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5405,
-        "talentName": "Dismantle",
-        "description": "Disarm the enemy, preventing the use of any weapons or shield for 5 sec.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5408,
-        "talentName": "Thick as Thieves",
-        "description": "Tricks of the Trade now increases the friendly target's damage by 15% for 6 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5530,
-        "talentName": "Control is King",
-        "description": "Cheap Shot grants Slice and Dice for 15 sec and Kidney Shot restores 10 Energy per combo point spent.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5550,
-        "talentName": "Dagger in the Dark",
-        "description": "Each second while Stealth is active, nearby enemies within 12 yards take an additional 2% damage from you for 10 sec. Stacks up to 6 times.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5697,
-        "talentName": "Preemptive Maneuver",
-        "description": "Feint decreases your damage taken by an additional 40% while stunned and its energy cost is reduced by 30%.",
-        "castTime": "Passive"
-      }
-    ]
-  },
-  "263": {
-    "specId": 263,
-    "specName": "Enhancement",
-    "className": "Shaman",
-    "classId": 7,
-    "classFile": "SHAMAN",
-    "role": "DAMAGE",
-    "iconFileDataId": 237581,
-    "pvpTalentRefs": [
-      {
-        "talentId": 722,
-        "talentName": "Shamanism",
-        "description": "Your Bloodlust spell now has a 60 sec cooldown, but increases Haste by 20%, and only affects you and your friendly target when cast for 10 sec.\r\n\r\nIn addition, Bloodlust is no longer affected by Sated.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 3487,
-        "talentName": "Totem of Wrath",
-        "description": "Sundering summons a totem at your feet for 15 sec that increases the critical effect of damage and healing spells of all nearby allies within 40 yards by 15% for 15 sec.\r\n",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 3489,
-        "talentName": "Counterstrike Totem",
-        "description": "Summons a totem at your feet for 15 sec.\r\n\r\nWhenever enemies within 20 yards of the totem deal direct damage, the totem will deal 100% of the damage dealt back to attacker. ",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 3622,
-        "talentName": "Grounding Totem",
-        "description": "Summons a totem at your feet that will redirect all harmful spells cast within 30 yards on a nearby party or raid member to itself. Will not redirect area of effect spells. Lasts 3 sec.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5438,
-        "talentName": "Static Field Totem",
-        "description": "Summons a totem with 4% of your health at the target location for 6 sec that forms a circuit of electricity that enemies cannot pass through.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5575,
-        "talentName": "Burrow",
-        "description": "Burrow beneath the ground, becoming unattackable, removing movement impairing effects, and increasing your movement speed by 50% for 5 sec.\r\n\r\nWhen the effect ends, enemies within 6 yards are knocked in the air and take 2,171 Physical damage.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5658,
-        "talentName": "Electrocute",
-        "description": "When you successfully Purge a beneficial effect, the enemy suffers 1,382 Nature damage over 3 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5722,
-        "talentName": "Lightning Lasso",
-        "description": "Grips the target in lightning, stunning and dealing 3,139 Nature damage over 5 sec while the target is lassoed. Can move while channeling.",
-        "castTime": "Instant"
-      }
-    ]
-  },
-  "270": {
-    "specId": 270,
-    "specName": "Mistweaver",
-    "className": "Monk",
-    "classId": 10,
-    "classFile": "MONK",
-    "role": "HEALER",
-    "iconFileDataId": 608952,
-    "pvpTalentRefs": [
-      {
-        "talentId": 70,
-        "talentName": "Eminence",
-        "description": "Transcendence: Transfer can now be cast if you are stunned. Cooldown reduced by 15 sec if you are not.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 679,
-        "talentName": "Counteract Magic",
-        "description": "Removing hostile magic effects from a target increases the healing they receive from you by 10% for 10 sec, stacking up to 3 times.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 683,
-        "talentName": "Healing Spheres",
-        "description": "Your healing has a chance to coalesces a Healing Sphere out of the mists at your target's location after 1.5 sec. If allies walk through it, they consume the sphere, healing themselves for 1,276 and dispelling all harmful periodic magic effects.\r\n\r\nMaximum of 3 Healing Spheres can be active by the Monk at any given time.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 1928,
-        "talentName": "Zen Focus Tea",
-        "description": "Thunder Focus Tea provides immunity to Silence and Interrupt effects for 5 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5395,
-        "talentName": "Peaceweaver",
-        "description": "Revival's cooldown is reduced by 16%, and provides immunity to magical damage and harmful effects for 2 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5398,
-        "talentName": "Dematerialize",
-        "description": "Demateralize into mist while stunned, reducing damage taken by 30%. Each second you remain stunned reduces this bonus by 10%.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5539,
-        "talentName": "Mighty Ox Kick",
-        "description": "You perform a Mighty Ox Kick, hurling your enemy a distance behind you.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5603,
-        "talentName": "Zen Spheres",
-        "description": "Soothing Mist and Crackling Jade Lightning form a sphere of Hope or Despair above their targets. Only one of each sphere can be active at a time.\r\n\r\n Sphere of Hope: Increases your healing done to the target by 10%.\r\n Sphere of Despair: Target deals 3% less damage and takes 10% increased damage from all sources.\r\n",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5642,
-        "talentName": "Absolute Serenity",
-        "description": "Celestial Conduit now prevents all crowd control for its duration.",
         "castTime": "Passive"
       }
     ]
@@ -721,6 +384,343 @@
       }
     ]
   },
+  "270": {
+    "specId": 270,
+    "specName": "Mistweaver",
+    "className": "Monk",
+    "classId": 10,
+    "classFile": "MONK",
+    "role": "HEALER",
+    "iconFileDataId": 608952,
+    "pvpTalentRefs": [
+      {
+        "talentId": 70,
+        "talentName": "Eminence",
+        "description": "Transcendence: Transfer can now be cast if you are stunned. Cooldown reduced by 15 sec if you are not.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 679,
+        "talentName": "Counteract Magic",
+        "description": "Removing hostile magic effects from a target increases the healing they receive from you by 10% for 10 sec, stacking up to 3 times.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 683,
+        "talentName": "Healing Spheres",
+        "description": "Your healing has a chance to coalesces a Healing Sphere out of the mists at your target's location after 1.5 sec. If allies walk through it, they consume the sphere, healing themselves for 1,273 and dispelling all harmful periodic magic effects.\r\n\r\nMaximum of 3 Healing Spheres can be active by the Monk at any given time.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 1928,
+        "talentName": "Zen Focus Tea",
+        "description": "Thunder Focus Tea provides immunity to Silence and Interrupt effects for 5 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5395,
+        "talentName": "Peaceweaver",
+        "description": "Revival's cooldown is reduced by 16%, and provides immunity to magical damage and harmful effects for 2 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5398,
+        "talentName": "Dematerialize",
+        "description": "Demateralize into mist while stunned, reducing damage taken by 30%. Each second you remain stunned reduces this bonus by 10%.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5539,
+        "talentName": "Mighty Ox Kick",
+        "description": "You perform a Mighty Ox Kick, hurling your enemy a distance behind you.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5603,
+        "talentName": "Zen Spheres",
+        "description": "Soothing Mist and Crackling Jade Lightning form a sphere of Hope or Despair above their targets. Only one of each sphere can be active at a time.\r\n\r\n Sphere of Hope: Increases your healing done to the target by 10%.\r\n Sphere of Despair: Target deals 3% less damage and takes 10% increased damage from all sources.\r\n",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5642,
+        "talentName": "Absolute Serenity",
+        "description": "Celestial Conduit now prevents all crowd control for its duration.",
+        "castTime": "Passive"
+      }
+    ]
+  },
+  "255": {
+    "specId": 255,
+    "specName": "Survival",
+    "className": "Hunter",
+    "classId": 3,
+    "classFile": "HUNTER",
+    "role": "DAMAGE",
+    "iconFileDataId": 461113,
+    "pvpTalentRefs": [
+      {
+        "talentId": 661,
+        "talentName": "Hunting Pack",
+        "description": "Aspect of the Cheetah has 50% reduced cooldown and grants its effects to allies within 15 yds.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 662,
+        "talentName": "Mending Bandage",
+        "description": "Instantly clears all bleeds, poisons, and diseases from the target, and heals for 18% damage over 6 sec.\r\n\r\nBeing attacked will stop you from using Mending Bandage.",
+        "castTime": "Channeled"
+      },
+      {
+        "talentId": 664,
+        "talentName": "Sticky Tar Bomb",
+        "description": "Throw a Sticky Tar Bomb that coats your target's weapons with tar, disarming them for 4 sec. \r\n\r\nAfter 4 sec, Sticky Tar Bomb explodes onto nearby enemies. Other enemies that are hit by the explosion are affected by Sticky Tar Bomb but this effect cannot spread further.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 665,
+        "talentName": "Tracker's Net",
+        "description": "Hurl a net at your enemy, rooting them for 6 sec. While within the net, the target's chance to hit is reduced by 80%. Any damage will break the net.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 686,
+        "talentName": "Diamond Ice",
+        "description": "Victims of Freezing Trap can no longer be damaged or healed.  Freezing Trap is now undispellable, but has a 4 sec duration.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 3607,
+        "talentName": "Survival Tactics",
+        "description": "Feign Death reduces damage taken by 90% for 2 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 3609,
+        "talentName": "Chimaeral Sting",
+        "description": "Stings the target, dealing 584 Nature damage and initiating a series of venoms. Each lasts 3 sec and applies the next effect after the previous one ends.\r\n\r\n Scorpid Venom:\r\n90% reduced movement speed.\r\n\r\n Spider Venom:\r\nSilenced.\r\n\r\n Viper Venom:\r\n20% reduced damage and healing.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5443,
+        "talentName": "Wild Kingdom",
+        "description": "Call in help from one of your dismissed Cunning pets for 10 sec. Your current pet is dismissed to rest and heal 30% of maximum health.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5532,
+        "talentName": "Interlope",
+        "description": "Misdirection now causes the next 3 hostile spells cast on your target within 10 sec to be redirected to your pet, but its cooldown is increased by 15 sec.\r\n\r\nYour pet must be within 20 yards of the target for spells to be redirected.\r\n",
+        "castTime": "Passive"
+      }
+    ]
+  },
+  "263": {
+    "specId": 263,
+    "specName": "Enhancement",
+    "className": "Shaman",
+    "classId": 7,
+    "classFile": "SHAMAN",
+    "role": "DAMAGE",
+    "iconFileDataId": 237581,
+    "pvpTalentRefs": [
+      {
+        "talentId": 722,
+        "talentName": "Shamanism",
+        "description": "Your Bloodlust spell now has a 60 sec cooldown, but increases Haste by 20%, and only affects you and your friendly target when cast for 10 sec.\r\n\r\nIn addition, Bloodlust is no longer affected by Sated.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 3487,
+        "talentName": "Totem of Wrath",
+        "description": "Sundering summons a totem at your feet for 15 sec that increases the critical effect of damage and healing spells of all nearby allies within 40 yards by 15% for 15 sec.\r\n",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 3489,
+        "talentName": "Counterstrike Totem",
+        "description": "Summons a totem at your feet for 15 sec.\r\n\r\nWhenever enemies within 20 yards of the totem deal direct damage, the totem will deal 100% of the damage dealt back to attacker. ",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 3622,
+        "talentName": "Grounding Totem",
+        "description": "Summons a totem at your feet that will redirect all harmful spells cast within 30 yards on a nearby party or raid member to itself. Will not redirect area of effect spells. Lasts 3 sec.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5438,
+        "talentName": "Static Field Totem",
+        "description": "Summons a totem with 4% of your health at the target location for 6 sec that forms a circuit of electricity that enemies cannot pass through.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5575,
+        "talentName": "Burrow",
+        "description": "Burrow beneath the ground, becoming unattackable, removing movement impairing effects, and increasing your movement speed by 50% for 5 sec.\r\n\r\nWhen the effect ends, enemies within 6 yards are knocked in the air and take 2,171 Physical damage.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5658,
+        "talentName": "Electrocute",
+        "description": "When you successfully Purge a beneficial effect, the enemy suffers 1,866 Nature damage over 3 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5722,
+        "talentName": "Lightning Lasso",
+        "description": "Grips the target in lightning, stunning and dealing 17,268 Nature damage over 5 sec while the target is lassoed. Can move while channeling.",
+        "castTime": "Instant"
+      }
+    ]
+  },
+  "256": {
+    "specId": 256,
+    "specName": "Discipline",
+    "className": "Priest",
+    "classId": 5,
+    "classFile": "PRIEST",
+    "role": "HEALER",
+    "iconFileDataId": 135940,
+    "pvpTalentRefs": [
+      {
+        "talentId": 100,
+        "talentName": "Purification",
+        "description": "Purify now has a maximum of 2 charges.\r\n\r\nRemoving harmful effects with Purify grants your target an absorption shield equal to 5% of their maximum health. Lasts 8 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 109,
+        "talentName": "Trinity",
+        "description": "Atonement duration increased by 10 sec.\r\n\r\nSmite, Penance, Mind Blast, and Void Blast have 10% reduced cast time when you have Atonement on 3 or more allies.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 111,
+        "talentName": "Strength of Soul",
+        "description": "Your Power Word: Shield reduces all Physical damage taken by 15% while the shield persists.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 114,
+        "talentName": "Ultimate Radiance",
+        "description": "Evangelism cooldown is reduced by 45 sec and Power Word: Radiance healing is increased by 15%.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 123,
+        "talentName": "Inner Light",
+        "description": " Inner Light: Healing spells cost 10% less mana.\r\n\r\nInner Shadow: Spell damage and Atonement healing increased by 10%.\r\n\r\nActivate to swap from one effect to the other, incurring a 6 sec cooldown.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 126,
+        "talentName": "Dark Archangel",
+        "description": "Casting Evangelism increases your damage, and the damage of all allies with your Atonement by 10% for 12 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5480,
+        "talentName": "Absolute Faith",
+        "description": "Leap of Faith also pulls the spirit of the 3 furthest allies within 40 yards and shields you and the affected allies for 2,969.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5570,
+        "talentName": "Phase Shift",
+        "description": "Step into the shadows when you cast Fade, avoiding all attacks and spells for 1 sec.\r\n\r\nInterrupt effects are not affected by Phase Shift.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5635,
+        "talentName": "Improved Mass Dispel",
+        "description": "Reduces the cooldown of Mass Dispel by 60 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5640,
+        "talentName": "Mindgames",
+        "description": "Assault an enemy's mind, dealing 1,878 Shadow damage and briefly reversing their perception of reality.\r\n\r\nFor 7 sec, the next 4,155 damage they deal will heal their target, and the next 4,155 healing they deal will damage their target.",
+        "castTime": "1.5 sec cast"
+      },
+      {
+        "talentId": 5721,
+        "talentName": "Psychic Shroud",
+        "description": "When your Psychic Scream affects 1 or more players, the next crowd control effect against you is prevented. Lasts 6 sec.",
+        "castTime": "Passive"
+      }
+    ]
+  },
+  "268": {
+    "specId": 268,
+    "specName": "Brewmaster",
+    "className": "Monk",
+    "classId": 10,
+    "classFile": "MONK",
+    "role": "TANK",
+    "iconFileDataId": 608951,
+    "pvpTalentRefs": [
+      {
+        "talentId": 666,
+        "talentName": "Microbrew",
+        "description": "Reduces the cooldown of Fortifying Brew by 50%.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 667,
+        "talentName": "Hot Trub",
+        "description": "Purifying Brew deals 20% of cleared damage split among nearby enemies. After clearing 100% of your maximum health in Stagger damage, your next Breath of Fire incapacitates targets for 4 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 669,
+        "talentName": "Avert Harm",
+        "description": "Guard the 4 closest players within 15 yards for 15 sec, allowing you to Stagger 20% of damage they take.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 670,
+        "talentName": "Nimble Brew",
+        "description": "Douse allies in the targeted area with Nimble Brew, preventing the next full loss of control effect within 8 sec.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 672,
+        "talentName": "Double Barrel",
+        "description": "Your next Keg Smash deals 50% additional damage, and stuns all targets it hits for 3 sec.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 673,
+        "talentName": "Mighty Ox Kick",
+        "description": "You perform a Mighty Ox Kick, hurling your enemy a distance behind you.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 765,
+        "talentName": "Eerie Fermentation",
+        "description": "You gain up to 30% movement speed  and 15% magical damage reduction based on your current level of Stagger.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 843,
+        "talentName": "Admonishment",
+        "description": "You focus the assault on this target, increasing their damage taken by 3% for 6 sec. Each unique player that attacks the target increases the damage taken by an additional 3%, stacking up to 5 times.\r\n\r\nYour melee attacks refresh the duration of Focused Assault.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 1958,
+        "talentName": "Niuzao's Essence",
+        "description": "Drinking a Purifying Brew, Celestial Brew, Fortifying Brew, or casting Roll will dispel all snares affecting you.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5541,
+        "talentName": "Dematerialize",
+        "description": "Demateralize into mist while stunned, reducing damage taken by 30%. Each second you remain stunned reduces this bonus by 10%.",
+        "castTime": "Passive"
+      }
+    ]
+  },
   "64": {
     "specId": 64,
     "specName": "Frost",
@@ -757,7 +757,7 @@
       {
         "talentId": 5496,
         "talentName": "Frost Bomb",
-        "description": "Places a Frost Bomb on the target. After 5 sec, the bomb explodes, dealing 3,709 Frost damage to the target and 1,842 Frost damage to all other enemies within 10 yards. All affected targets are slowed by 50% for 8 sec. \r\n\r\nIf Frost Bomb is dispelled before it explodes, gain a charge of Brain Freeze.",
+        "description": "Places a Frost Bomb on the target. After 5 sec, the bomb explodes, dealing 3,776 Frost damage to the target and 1,851 Frost damage to all other enemies within 10 yards. All affected targets are slowed by 50% for 8 sec. \r\n\r\nIf Frost Bomb is dispelled before it explodes, gain a charge of Brain Freeze.",
         "castTime": "1.5 sec cast"
       },
       {
@@ -788,6 +788,213 @@
         "talentId": 5708,
         "talentName": "Overpowered Barrier",
         "description": "Your barriers absorb 80% more damage and have an additional effect, but last 4 sec.\r\n\r\n Ice Barrier\r\nIf the barrier is fully absorbed, enemies within 10 yds suffer 2,593 Frost damage and are slowed by 70% for 4 sec.",
+        "castTime": "Passive"
+      }
+    ]
+  },
+  "261": {
+    "specId": 261,
+    "specName": "Subtlety",
+    "className": "Rogue",
+    "classId": 4,
+    "classFile": "ROGUE",
+    "role": "DAMAGE",
+    "iconFileDataId": 132320,
+    "pvpTalentRefs": [
+      {
+        "talentId": 146,
+        "talentName": "Thief's Bargain",
+        "description": "The cooldowns of Shadow Blades, Vanish, and Feint are reduced by 20%, but using one reduces your damage by 10% for 6 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 846,
+        "talentName": "Dagger in the Dark",
+        "description": "Each second while Stealth is active, nearby enemies within 12 yards take an additional 2% damage from you for 10 sec. Stacks up to 6 times.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 856,
+        "talentName": "Silhouette",
+        "description": "Shadowstep's cooldown is reduced by 67% when cast on a friendly target.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 1209,
+        "talentName": "Smoke Bomb",
+        "description": "Creates a cloud of thick smoke in an 8 yard radius around the Rogue for 5 sec. Enemies are unable to target into or out of the smoke cloud. ",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 3447,
+        "talentName": "Maneuverability",
+        "description": "Sprint has 50% reduced cooldown and 50% reduced duration.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 3462,
+        "talentName": "Death from Above",
+        "description": "Finishing move that empowers your weapons with energy to perform a deadly attack.\r\n\r\nYou leap into the air and Eviscerate your target on the way back down, with such force that it has a 15% stronger effect.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5406,
+        "talentName": "Dismantle",
+        "description": "Disarm the enemy, preventing the use of any weapons or shield for 5 sec.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5409,
+        "talentName": "Thick as Thieves",
+        "description": "Tricks of the Trade now increases the friendly target's damage by 15% for 6 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5411,
+        "talentName": "Distracting Mirage",
+        "description": "Distract slows affected enemies by 60% and creates a Mirage that follows an enemy for 8 sec. Reactivate Distract to teleport to your Mirage's location. ",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5529,
+        "talentName": "Control is King",
+        "description": "Cheap Shot grants Slice and Dice for 15 sec and Kidney Shot restores 10 Energy per combo point spent.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5698,
+        "talentName": "Preemptive Maneuver",
+        "description": "Feint decreases your damage taken by an additional 40% while stunned and its energy cost is reduced by 30%.",
+        "castTime": "Passive"
+      }
+    ]
+  },
+  "258": {
+    "specId": 258,
+    "specName": "Shadow",
+    "className": "Priest",
+    "classId": 5,
+    "classFile": "PRIEST",
+    "role": "DAMAGE",
+    "iconFileDataId": 136207,
+    "pvpTalentRefs": [
+      {
+        "talentId": 106,
+        "talentName": "Driven to Madness",
+        "description": "While Voidform is not active, being attacked will reduce the cooldown of Voidform by 3 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 113,
+        "talentName": "Mind Trauma",
+        "description": "Siphon haste from enemies, stealing 2% haste per stack of Mind Trauma, stacking up to 9 times. Fully channeled Mind Flays grant 1 stack of Mind Trauma and fully channeled Void Torrents grant 3 stacks of Mind Trauma. Lasts 15 sec.\r\n\r\nYou can only gain 3 stacks of Mind Trauma from a single enemy.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 763,
+        "talentName": "Psyfiend",
+        "description": "Summons a Psyfiend with 1,223 health for 12 sec beside you to attack the target at range with Psyflay.\r\n\r\n Psyflay\r\nDeals up to 1% of the target's total health in Shadow damage every 0.9 sec. Also slows their movement speed by 50% and reduces healing received by 50%.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5447,
+        "talentName": "Cascading Horrors",
+        "description": "Void Eruption sends out slow-moving bolts of Shadow energy at random locations every 0.5 sec for 3 sec, dealing 257 Shadow damage to all targets within 8 yds, and causing them to flee in Horror for 2 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5481,
+        "talentName": "Absolute Faith",
+        "description": "Leap of Faith also pulls the spirit of the 3 furthest allies within 40 yards and shields you and the affected allies for 2,969.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5568,
+        "talentName": "Phase Shift",
+        "description": "Step into the shadows when you cast Fade, avoiding all attacks and spells for 1 sec.\r\n\r\nInterrupt effects are not affected by Phase Shift.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5636,
+        "talentName": "Improved Mass Dispel",
+        "description": "Reduces the cooldown of Mass Dispel by 60 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5638,
+        "talentName": "Mindgames",
+        "description": "Assault an enemy's mind, dealing 1,024 Shadow damage and briefly reversing their perception of reality.\r\n\r\nFor 7 sec, the next 4,155 damage they deal will heal their target, and the next 4,155 healing they deal will damage their target.\r\n\r\nGenerates 10 Insanity.",
+        "castTime": "1.5 sec cast"
+      },
+      {
+        "talentId": 5720,
+        "talentName": "Psychic Shroud",
+        "description": "When your Psychic Scream affects 1 or more players, the next crowd control effect against you is prevented. Lasts 6 sec.",
+        "castTime": "Passive"
+      }
+    ]
+  },
+  "62": {
+    "specId": 62,
+    "specName": "Arcane",
+    "className": "Mage",
+    "classId": 8,
+    "classFile": "MAGE",
+    "role": "DAMAGE",
+    "iconFileDataId": 135932,
+    "pvpTalentRefs": [
+      {
+        "talentId": 637,
+        "talentName": "Improved Mass Invisibility",
+        "description": "The cooldown of Mass Invisibility is reduced by 4 min and can affect allies in combat.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 3529,
+        "talentName": "Kleptomania",
+        "description": "Unleash a flurry of disruptive magic onto your target, stealing a beneficial magic effect every 0.4 sec for 3.6 sec.\r\n\r\nCastable while moving, but movement speed is reduced by 40% while channeling.",
+        "castTime": "Channeled"
+      },
+      {
+        "talentId": 5397,
+        "talentName": "Arcanosphere",
+        "description": "Builds a sphere of Arcane energy, gaining power over 4 sec. Upon release, the sphere passes through any barriers, knocking enemies back and dealing up to 13,495 Arcane damage.",
+        "castTime": "Channeled"
+      },
+      {
+        "talentId": 5488,
+        "talentName": "Ice Wall",
+        "description": "Conjures an Ice Wall 30 yards long that obstructs line of sight. The wall has 30% of your maximum health and lasts up to 15 sec.",
+        "castTime": "1.5 sec cast"
+      },
+      {
+        "talentId": 5491,
+        "talentName": "Ring of Fire",
+        "description": "Summons a Ring of Fire for 8 sec at the target location. Enemies entering the ring are disoriented and burn for 3% of their total health over 3 sec.",
+        "castTime": "2 sec cast"
+      },
+      {
+        "talentId": 5589,
+        "talentName": "Master Shepherd",
+        "description": "While an enemy player is affected by your Polymorph or Mass Polymorph, your movement speed is increased by 25% and your Versatility is increased by 12%. \r\n\r\nAdditionally, Polymorph and Mass Polymorph no longer heal enemies.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5601,
+        "talentName": "Ethereal Blink",
+        "description": "Blink and Shimmer apply Slow at 100% effectiveness to all enemies you Blink through. For each enemy you Blink through, the cooldown of Blink and Shimmer are reduced by 1 sec, up to 5 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5661,
+        "talentName": "Chrono Shift",
+        "description": "Arcane Barrage slows enemies by 50% and increases your movement speed by 10% for 5 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5707,
+        "talentName": "Overpowered Barrier",
+        "description": "Your barriers absorb 100% more damage and have an additional effect, but last 4 sec.\r\n\r\n Prismatic Barrier\r\nIf the barrier is fully absorbed, your next Blink or Shimmer within 15 sec grants Invisibility and immunity to damage for 3 sec. The damage reduction is lost if Invisibility ends.",
         "castTime": "Passive"
       }
     ]
@@ -859,71 +1066,6 @@
         "talentId": 5701,
         "talentName": "Berserker Roar",
         "description": "Berserker Shout also reduces the duration of the next crowd control effect within 10 sec by 50% on group members within 12 yds.\r\n",
-        "castTime": "Passive"
-      }
-    ]
-  },
-  "62": {
-    "specId": 62,
-    "specName": "Arcane",
-    "className": "Mage",
-    "classId": 8,
-    "classFile": "MAGE",
-    "role": "DAMAGE",
-    "iconFileDataId": 135932,
-    "pvpTalentRefs": [
-      {
-        "talentId": 637,
-        "talentName": "Improved Mass Invisibility",
-        "description": "The cooldown of Mass Invisibility is reduced by 4 min and can affect allies in combat.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 3529,
-        "talentName": "Kleptomania",
-        "description": "Unleash a flurry of disruptive magic onto your target, stealing a beneficial magic effect every 0.4 sec for 3.6 sec.\r\n\r\nCastable while moving, but movement speed is reduced by 40% while channeling.",
-        "castTime": "Channeled"
-      },
-      {
-        "talentId": 5397,
-        "talentName": "Arcanosphere",
-        "description": "Builds a sphere of Arcane energy, gaining power over 4 sec. Upon release, the sphere passes through any barriers, knocking enemies back and dealing up to 3,900 Arcane damage.",
-        "castTime": "Channeled"
-      },
-      {
-        "talentId": 5488,
-        "talentName": "Ice Wall",
-        "description": "Conjures an Ice Wall 30 yards long that obstructs line of sight. The wall has 30% of your maximum health and lasts up to 15 sec.",
-        "castTime": "1.5 sec cast"
-      },
-      {
-        "talentId": 5491,
-        "talentName": "Ring of Fire",
-        "description": "Summons a Ring of Fire for 8 sec at the target location. Enemies entering the ring are disoriented and burn for 3% of their total health over 3 sec.",
-        "castTime": "2 sec cast"
-      },
-      {
-        "talentId": 5589,
-        "talentName": "Master Shepherd",
-        "description": "While an enemy player is affected by your Polymorph or Mass Polymorph, your movement speed is increased by 25% and your Versatility is increased by 12%. \r\n\r\nAdditionally, Polymorph and Mass Polymorph no longer heal enemies.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5601,
-        "talentName": "Ethereal Blink",
-        "description": "Blink and Shimmer apply Slow at 100% effectiveness to all enemies you Blink through. For each enemy you Blink through, the cooldown of Blink and Shimmer are reduced by 1 sec, up to 5 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5661,
-        "talentName": "Chrono Shift",
-        "description": "Arcane Barrage slows enemies by 50% and increases your movement speed by 10% for 5 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5707,
-        "talentName": "Overpowered Barrier",
-        "description": "Your barriers absorb 100% more damage and have an additional effect, but last 4 sec.\r\n\r\n Prismatic Barrier\r\nIf the barrier is fully absorbed, your next Blink or Shimmer within 15 sec grants Invisibility and immunity to damage for 3 sec. The damage reduction is lost if Invisibility ends.",
         "castTime": "Passive"
       }
     ]
@@ -1017,6 +1159,71 @@
       }
     ]
   },
+  "253": {
+    "specId": 253,
+    "specName": "Beast Mastery",
+    "className": "Hunter",
+    "classId": 3,
+    "classFile": "HUNTER",
+    "role": "DAMAGE",
+    "iconFileDataId": 461112,
+    "pvpTalentRefs": [
+      {
+        "talentId": 693,
+        "talentName": "The Beast Within",
+        "description": "Bestial Wrath now provides immunity to Fear and Horror effects for you and your pets for 8 sec. Nearby allied pets are also inspired, increasing their attack speed by 10%.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 824,
+        "talentName": "Dire Beast: Hawk",
+        "description": "Summons a hawk to circle the target area, attacking all targets within 10 yards over the next 10 sec.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 1214,
+        "talentName": "Interlope",
+        "description": "Misdirection now causes the next 3 hostile spells cast on your target within 10 sec to be redirected to your pet, but its cooldown is increased by 15 sec.\r\n\r\nYour pet must be within 20 yards of the target for spells to be redirected.\r\n",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 3599,
+        "talentName": "Survival Tactics",
+        "description": "Feign Death reduces damage taken by 90% for 2 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 3604,
+        "talentName": "Chimaeral Sting",
+        "description": "Stings the target, dealing 594 Nature damage and initiating a series of venoms. Each lasts 3 sec and applies the next effect after the previous one ends.\r\n\r\n Scorpid Venom:\r\n90% reduced movement speed.\r\n\r\n Spider Venom:\r\nSilenced.\r\n\r\n Viper Venom:\r\n20% reduced damage and healing.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 3730,
+        "talentName": "Hunting Pack",
+        "description": "Aspect of the Cheetah has 50% reduced cooldown and grants its effects to allies within 15 yds.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5441,
+        "talentName": "Wild Kingdom",
+        "description": "Call in help from one of your dismissed Cunning pets for 10 sec. Your current pet is dismissed to rest and heal 30% of maximum health.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5444,
+        "talentName": "Kindred Beasts",
+        "description": "Command Pet's unique ability cooldown reduced by 50%, and gains additional effects.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5534,
+        "talentName": "Diamond Ice",
+        "description": "Victims of Freezing Trap can no longer be damaged or healed.  Freezing Trap is now undispellable, but has a 4 sec duration.",
+        "castTime": "Passive"
+      }
+    ]
+  },
   "254": {
     "specId": 254,
     "specName": "Marksmanship",
@@ -1035,7 +1242,7 @@
       {
         "talentId": 653,
         "talentName": "Chimaeral Sting",
-        "description": "Stings the target, dealing 587 Nature damage and initiating a series of venoms. Each lasts 3 sec and applies the next effect after the previous one ends.\r\n\r\n Scorpid Venom:\r\n90% reduced movement speed.\r\n\r\n Spider Venom:\r\nSilenced.\r\n\r\n Viper Venom:\r\n20% reduced damage and healing.",
+        "description": "Stings the target, dealing 581 Nature damage and initiating a series of venoms. Each lasts 3 sec and applies the next effect after the previous one ends.\r\n\r\n Scorpid Venom:\r\n90% reduced movement speed.\r\n\r\n Spider Venom:\r\nSilenced.\r\n\r\n Viper Venom:\r\n20% reduced damage and healing.",
         "castTime": "Instant"
       },
       {
@@ -1072,6 +1279,71 @@
         "talentId": 5700,
         "talentName": "Aspect of the Fox",
         "description": "Aimed Shot may be cast while moving during Aspect of the Cheetah and Aspect of the Cheetah's delayed effect is increased by 4 sec.",
+        "castTime": "Passive"
+      }
+    ]
+  },
+  "70": {
+    "specId": 70,
+    "specName": "Retribution",
+    "className": "Paladin",
+    "classId": 2,
+    "classFile": "PALADIN",
+    "role": "DAMAGE",
+    "iconFileDataId": 135873,
+    "pvpTalentRefs": [
+      {
+        "talentId": 81,
+        "talentName": "Luminescence",
+        "description": "Lightbearer's healing transfer is increased by up to 150% based on your current health. Lower health heals allies for more.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 752,
+        "talentName": "Blessing of Sanctuary",
+        "description": "Instantly removes all stun, silence, fear and horror effects from the friendly target and reduces the duration of future such effects by 60% for 5 sec.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 753,
+        "talentName": "Ultimate Retribution",
+        "description": "Mark an enemy player for retribution after they kill an ally within your active Aura. If the marked enemy is slain within 12 sec, cast Redemption on the fallen ally.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5535,
+        "talentName": "Hallowed Ground",
+        "description": "Your Consecration clears and suppresses all snare effects on allies within its area of effect.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5572,
+        "talentName": "Spreading the Word",
+        "description": "Your allies affected by your Aura gain an effect after you cast Blessing of Protection or Blessing of Freedom.\r\n\r\n Blessing of Protection\r\nPhysical damage reduced by 30% for 6 sec.\r\n\r\n Blessing of Freedom\r\nCleared of all movement impairing effects.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5573,
+        "talentName": "Blessing of Spellwarding",
+        "description": "Blesses a party or raid member, granting immunity to magical damage and harmful effects for 10 sec.\r\n\r\nCannot be used on a target with Forbearance. Causes Forbearance for 30 sec.\r\n\r\nShares a cooldown with Blessing of Protection.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5584,
+        "talentName": "Searing Glare",
+        "description": "Call upon the light to blind enemy players in a 25 yd cone, causing enemies to miss their spells and attacks for 4 sec.",
+        "castTime": "1.3 sec cast"
+      },
+      {
+        "talentId": 5666,
+        "talentName": "Spellbreaker",
+        "description": "Eye for an Eye can now also trigger at 100% effectiveness from direct Magic damage.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5675,
+        "talentName": "Shining Revelation",
+        "description": "The light reveals all enemies in stealth or invisible to you while under the effects of Divine Shield. This effect lingers for 20 sec after Divine Shield fades.",
         "castTime": "Passive"
       }
     ]
@@ -1159,278 +1431,6 @@
       }
     ]
   },
-  "70": {
-    "specId": 70,
-    "specName": "Retribution",
-    "className": "Paladin",
-    "classId": 2,
-    "classFile": "PALADIN",
-    "role": "DAMAGE",
-    "iconFileDataId": 135873,
-    "pvpTalentRefs": [
-      {
-        "talentId": 81,
-        "talentName": "Luminescence",
-        "description": "Lightbearer's healing transfer is increased by up to 150% based on your current health. Lower health heals allies for more.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 752,
-        "talentName": "Blessing of Sanctuary",
-        "description": "Instantly removes all stun, silence, fear and horror effects from the friendly target and reduces the duration of future such effects by 60% for 5 sec.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 753,
-        "talentName": "Ultimate Retribution",
-        "description": "Mark an enemy player for retribution after they kill an ally within your active Aura. If the marked enemy is slain within 12 sec, cast Redemption on the fallen ally.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5535,
-        "talentName": "Hallowed Ground",
-        "description": "Your Consecration clears and suppresses all snare effects on allies within its area of effect.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5572,
-        "talentName": "Spreading the Word",
-        "description": "Your allies affected by your Aura gain an effect after you cast Blessing of Protection or Blessing of Freedom.\r\n\r\n Blessing of Protection\r\nPhysical damage reduced by 30% for 6 sec.\r\n\r\n Blessing of Freedom\r\nCleared of all movement impairing effects.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5573,
-        "talentName": "Blessing of Spellwarding",
-        "description": "Blesses a party or raid member, granting immunity to magical damage and harmful effects for 10 sec.\r\n\r\nCannot be used on a target with Forbearance. Causes Forbearance for 30 sec.\r\n\r\nShares a cooldown with Blessing of Protection.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5584,
-        "talentName": "Searing Glare",
-        "description": "Call upon the light to blind enemy players in a 25 yd cone, causing enemies to miss their spells and attacks for 4 sec.",
-        "castTime": "1.3 sec cast"
-      },
-      {
-        "talentId": 5666,
-        "talentName": "Spellbreaker",
-        "description": "Eye for an Eye can now also trigger at 100% effectiveness from direct Magic damage.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5675,
-        "talentName": "Shining Revelation",
-        "description": "The light reveals all enemies in stealth or invisible to you while under the effects of Divine Shield. This effect lingers for 20 sec after Divine Shield fades.",
-        "castTime": "Passive"
-      }
-    ]
-  },
-  "253": {
-    "specId": 253,
-    "specName": "Beast Mastery",
-    "className": "Hunter",
-    "classId": 3,
-    "classFile": "HUNTER",
-    "role": "DAMAGE",
-    "iconFileDataId": 461112,
-    "pvpTalentRefs": [
-      {
-        "talentId": 693,
-        "talentName": "The Beast Within",
-        "description": "Bestial Wrath now provides immunity to Fear and Horror effects for you and your pets for 8 sec. Nearby allied pets are also inspired, increasing their attack speed by 10%.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 824,
-        "talentName": "Dire Beast: Hawk",
-        "description": "Summons a hawk to circle the target area, attacking all targets within 10 yards over the next 10 sec.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 1214,
-        "talentName": "Interlope",
-        "description": "Misdirection now causes the next 3 hostile spells cast on your target within 10 sec to be redirected to your pet, but its cooldown is increased by 15 sec.\r\n\r\nYour pet must be within 20 yards of the target for spells to be redirected.\r\n",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 3599,
-        "talentName": "Survival Tactics",
-        "description": "Feign Death reduces damage taken by 90% for 2 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 3604,
-        "talentName": "Chimaeral Sting",
-        "description": "Stings the target, dealing 587 Nature damage and initiating a series of venoms. Each lasts 3 sec and applies the next effect after the previous one ends.\r\n\r\n Scorpid Venom:\r\n90% reduced movement speed.\r\n\r\n Spider Venom:\r\nSilenced.\r\n\r\n Viper Venom:\r\n20% reduced damage and healing.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 3730,
-        "talentName": "Hunting Pack",
-        "description": "Aspect of the Cheetah has 50% reduced cooldown and grants its effects to allies within 15 yds.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5441,
-        "talentName": "Wild Kingdom",
-        "description": "Call in help from one of your dismissed Cunning pets for 10 sec. Your current pet is dismissed to rest and heal 30% of maximum health.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5444,
-        "talentName": "Kindred Beasts",
-        "description": "Command Pet's unique ability cooldown reduced by 50%, and gains additional effects.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5534,
-        "talentName": "Diamond Ice",
-        "description": "Victims of Freezing Trap can no longer be damaged or healed.  Freezing Trap is now undispellable, but has a 4 sec duration.",
-        "castTime": "Passive"
-      }
-    ]
-  },
-  "258": {
-    "specId": 258,
-    "specName": "Shadow",
-    "className": "Priest",
-    "classId": 5,
-    "classFile": "PRIEST",
-    "role": "DAMAGE",
-    "iconFileDataId": 136207,
-    "pvpTalentRefs": [
-      {
-        "talentId": 106,
-        "talentName": "Driven to Madness",
-        "description": "While Voidform is not active, being attacked will reduce the cooldown of Voidform by 3 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 113,
-        "talentName": "Mind Trauma",
-        "description": "Siphon haste from enemies, stealing 2% haste per stack of Mind Trauma, stacking up to 9 times. Fully channeled Mind Flays grant 1 stack of Mind Trauma and fully channeled Void Torrents grant 3 stacks of Mind Trauma. Lasts 15 sec.\r\n\r\nYou can only gain 3 stacks of Mind Trauma from a single enemy.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 763,
-        "talentName": "Psyfiend",
-        "description": "Summons a Psyfiend with 1,223 health for 12 sec beside you to attack the target at range with Psyflay.\r\n\r\n Psyflay\r\nDeals up to 1% of the target's total health in Shadow damage every 0.9 sec. Also slows their movement speed by 50% and reduces healing received by 50%.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5447,
-        "talentName": "Cascading Horrors",
-        "description": "Void Eruption sends out slow-moving bolts of Shadow energy at random locations every 0.5 sec for 3 sec, dealing 262 Shadow damage to all targets within 8 yds, and causing them to flee in Horror for 2 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5481,
-        "talentName": "Absolute Faith",
-        "description": "Leap of Faith also pulls the spirit of the 3 furthest allies within 40 yards and shields you and the affected allies for 2,969.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5568,
-        "talentName": "Phase Shift",
-        "description": "Step into the shadows when you cast Fade, avoiding all attacks and spells for 1 sec.\r\n\r\nInterrupt effects are not affected by Phase Shift.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5636,
-        "talentName": "Improved Mass Dispel",
-        "description": "Reduces the cooldown of Mass Dispel by 60 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5638,
-        "talentName": "Mindgames",
-        "description": "Assault an enemy's mind, dealing 1,018 Shadow damage and briefly reversing their perception of reality.\r\n\r\nFor 7 sec, the next 4,155 damage they deal will heal their target, and the next 4,155 healing they deal will damage their target.\r\n\r\nGenerates 10 Insanity.",
-        "castTime": "1.5 sec cast"
-      },
-      {
-        "talentId": 5720,
-        "talentName": "Psychic Shroud",
-        "description": "When your Psychic Scream affects 1 or more players, the next crowd control effect against you is prevented. Lasts 6 sec.",
-        "castTime": "Passive"
-      }
-    ]
-  },
-  "261": {
-    "specId": 261,
-    "specName": "Subtlety",
-    "className": "Rogue",
-    "classId": 4,
-    "classFile": "ROGUE",
-    "role": "DAMAGE",
-    "iconFileDataId": 132320,
-    "pvpTalentRefs": [
-      {
-        "talentId": 146,
-        "talentName": "Thief's Bargain",
-        "description": "The cooldowns of Shadow Blades, Vanish, and Feint are reduced by 20%, but using one reduces your damage by 10% for 6 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 846,
-        "talentName": "Dagger in the Dark",
-        "description": "Each second while Stealth is active, nearby enemies within 12 yards take an additional 2% damage from you for 10 sec. Stacks up to 6 times.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 856,
-        "talentName": "Silhouette",
-        "description": "Shadowstep's cooldown is reduced by 67% when cast on a friendly target.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 1209,
-        "talentName": "Smoke Bomb",
-        "description": "Creates a cloud of thick smoke in an 8 yard radius around the Rogue for 5 sec. Enemies are unable to target into or out of the smoke cloud. ",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 3447,
-        "talentName": "Maneuverability",
-        "description": "Sprint has 50% reduced cooldown and 50% reduced duration.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 3462,
-        "talentName": "Death from Above",
-        "description": "Finishing move that empowers your weapons with energy to perform a deadly attack.\r\n\r\nYou leap into the air and Eviscerate your target on the way back down, with such force that it has a 15% stronger effect.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5406,
-        "talentName": "Dismantle",
-        "description": "Disarm the enemy, preventing the use of any weapons or shield for 5 sec.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5409,
-        "talentName": "Thick as Thieves",
-        "description": "Tricks of the Trade now increases the friendly target's damage by 15% for 6 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5411,
-        "talentName": "Distracting Mirage",
-        "description": "Distract slows affected enemies by 60% and creates a Mirage that follows an enemy for 8 sec. Reactivate Distract to teleport to your Mirage's location. ",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5529,
-        "talentName": "Control is King",
-        "description": "Cheap Shot grants Slice and Dice for 15 sec and Kidney Shot restores 10 Energy per combo point spent.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5698,
-        "talentName": "Preemptive Maneuver",
-        "description": "Feint decreases your damage taken by an additional 40% while stunned and its energy cost is reduced by 30%.",
-        "castTime": "Passive"
-      }
-    ]
-  },
   "103": {
     "specId": 103,
     "specName": "Feral",
@@ -1443,7 +1443,7 @@
       {
         "talentId": 201,
         "talentName": "Thorns",
-        "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 364 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
+        "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 366 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
         "castTime": "Passive"
       },
       {
@@ -1504,71 +1504,6 @@
         "talentId": 5647,
         "talentName": "Tireless Pursuit",
         "description": "For 3 sec after leaving Cat Form or Travel Form, you retain up to 25% movement speed.",
-        "castTime": "Passive"
-      }
-    ]
-  },
-  "267": {
-    "specId": 267,
-    "specName": "Destruction",
-    "className": "Warlock",
-    "classId": 9,
-    "classFile": "WARLOCK",
-    "role": "DAMAGE",
-    "iconFileDataId": 136186,
-    "pvpTalentRefs": [
-      {
-        "talentId": 157,
-        "talentName": "Fel Fissure",
-        "description": "Chaos Bolt creates a 5 yd wide eruption of Felfire under the target, reducing movement speed by 50% and reducing all healing received by 25% on all enemies within the fissure. Lasts 6 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 164,
-        "talentName": "Bane of Havoc",
-        "description": "Curses the ground with a demonic bane, causing all of your single target spells to also strike targets marked with the bane for  60% of the damage dealt. Lasts 10 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 3508,
-        "talentName": "Nether Ward",
-        "description": "Surrounds the caster with a shield that lasts 3 sec, reflecting all harmful spells cast on you.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5382,
-        "talentName": "Gateway Mastery",
-        "description": "Increases the range of your Demonic Gateway by 20 yards, and reduces the cast time by 30%. Reduces the time between how often players can take your Demonic Gateway by 30 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5393,
-        "talentName": "Shadow Rift",
-        "description": "Conjure a Shadow Rift at the target location lasting 2 sec. Enemy players within the rift when it expires are teleported to your Demonic Circle.\r\n\r\nMust be within 40 yds of your Demonic Circle to cast.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5401,
-        "talentName": "Bonds of Fel",
-        "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 8 yd radius they explode, dealing 2,734 Fire damage split amongst all nearby enemies.",
-        "castTime": "1.5 sec cast"
-      },
-      {
-        "talentId": 5580,
-        "talentName": "Impish Instincts",
-        "description": "Taking direct Physical damage reduces the cooldown of Demonic Circle by 3 sec.\r\n\r\nCannot occur more than once every 5 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5607,
-        "talentName": "Soul Rip",
-        "description": "Fracture the soul of up to 3 target players within 20 yds into the shadows, reducing their damage done by 25% and healing received by 25% for 8 sec. Souls are fractured up to 20 yds from the player's location.\r\n\r\nPlayers can retrieve their souls to remove this effect.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5696,
-        "talentName": "Bloodstones",
-        "description": "Your Healthstones are replaced with Bloodstones which increase their user's haste by 20% for 12 sec instead of healing.",
         "castTime": "Passive"
       }
     ]
@@ -1656,73 +1591,67 @@
       }
     ]
   },
-  "105": {
-    "specId": 105,
-    "specName": "Restoration",
-    "className": "Druid",
-    "classId": 11,
-    "classFile": "DRUID",
-    "role": "HEALER",
-    "iconFileDataId": 136041,
+  "267": {
+    "specId": 267,
+    "specName": "Destruction",
+    "className": "Warlock",
+    "classId": 9,
+    "classFile": "WARLOCK",
+    "role": "DAMAGE",
+    "iconFileDataId": 136186,
     "pvpTalentRefs": [
       {
-        "talentId": 59,
-        "talentName": "Disentanglement",
-        "description": "Efflorescence removes all snare effects from friendly targets when it heals and its Mana cost is reduced by 40%.",
+        "talentId": 157,
+        "talentName": "Fel Fissure",
+        "description": "Chaos Bolt creates a 5 yd wide eruption of Felfire under the target, reducing movement speed by 50% and reducing all healing received by 25% on all enemies within the fissure. Lasts 6 sec.",
         "castTime": "Passive"
       },
       {
-        "talentId": 692,
-        "talentName": "Entangling Bark",
-        "description": "Ironbark now also grants the target Nature's Grasp, rooting the first 3 melee attackers for 6 sec.",
+        "talentId": 164,
+        "talentName": "Bane of Havoc",
+        "description": "Curses the ground with a demonic bane, causing all of your single target spells to also strike targets marked with the bane for  60% of the damage dealt. Lasts 10 sec.",
         "castTime": "Passive"
       },
       {
-        "talentId": 697,
-        "talentName": "Thorns",
-        "description": "Casting Barkskin or Ironbark sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 430 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
+        "talentId": 3508,
+        "talentName": "Nether Ward",
+        "description": "Surrounds the caster with a shield that lasts 3 sec, reflecting all harmful spells cast on you.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5382,
+        "talentName": "Gateway Mastery",
+        "description": "Increases the range of your Demonic Gateway by 20 yards, and reduces the cast time by 30%. Reduces the time between how often players can take your Demonic Gateway by 30 sec.",
         "castTime": "Passive"
       },
       {
-        "talentId": 700,
-        "talentName": "Deep Roots",
-        "description": "Increases the amount of damage required to cancel your Entangling Roots by 75%.",
+        "talentId": 5393,
+        "talentName": "Shadow Rift",
+        "description": "Conjure a Shadow Rift at the target location lasting 2 sec. Enemy players within the rift when it expires are teleported to your Demonic Circle.\r\n\r\nMust be within 40 yds of your Demonic Circle to cast.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5401,
+        "talentName": "Bonds of Fel",
+        "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 8 yd radius they explode, dealing 2,736 Fire damage split amongst all nearby enemies.",
+        "castTime": "1.5 sec cast"
+      },
+      {
+        "talentId": 5580,
+        "talentName": "Impish Instincts",
+        "description": "Taking direct Physical damage reduces the cooldown of Demonic Circle by 3 sec.\r\n\r\nCannot occur more than once every 5 sec.",
         "castTime": "Passive"
       },
       {
-        "talentId": 838,
-        "talentName": "High Winds",
-        "description": "Increases the range of Cyclone, Typhoon, and Entangling Roots by 5 yds.",
-        "castTime": "Passive"
+        "talentId": 5607,
+        "talentName": "Soul Rip",
+        "description": "Fracture the soul of up to 3 target players within 20 yds into the shadows, reducing their damage done by 25% and healing received by 25% for 8 sec. Souls are fractured up to 20 yds from the player's location.\r\n\r\nPlayers can retrieve their souls to remove this effect.",
+        "castTime": "Instant"
       },
       {
-        "talentId": 1215,
-        "talentName": "Early Spring",
-        "description": "Wild Growth is now instant cast, and when you heal 6 allies with Wild Growth you gain Full Bloom. This effect has a 30 sec cooldown.\r\n\r\nFull Bloom\r\nYour next Wild Growth applies Lifebloom to all targets at 100% effectiveness. Lasts for 30 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5514,
-        "talentName": "Malorne's Swiftness",
-        "description": "Your Travel Form movement speed while within a Battleground or Arena is increased by 20% and you always move at 100% movement speed while in Travel Form.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5649,
-        "talentName": "Tireless Pursuit",
-        "description": "For 3 sec after leaving Cat Form or Travel Form, you retain up to 25% movement speed.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5668,
-        "talentName": "Call of Ohn'ahra",
-        "description": "Nature's Swiftness now also affects Cyclone, but its cooldown is increased by 10 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5687,
-        "talentName": "Forest Guardian",
-        "description": "Wrath, Starfire, Cyclone, and Combo-Point generating abilities extend the duration of your active heal over time effects by 1.0 sec on up to 3 allies.\r\n\r\nStarsurge and Combo-Point spending abilities increase the rate of your heal over time spells by 20% for 4 sec.\r\n\r\n",
+        "talentId": 5696,
+        "talentName": "Bloodstones",
+        "description": "Your Healthstones are replaced with Bloodstones which increase their user's haste by 20% for 12 sec instead of healing.",
         "castTime": "Passive"
       }
     ]
@@ -1857,71 +1786,6 @@
       }
     ]
   },
-  "63": {
-    "specId": 63,
-    "specName": "Fire",
-    "className": "Mage",
-    "classId": 8,
-    "classFile": "MAGE",
-    "role": "DAMAGE",
-    "iconFileDataId": 135810,
-    "pvpTalentRefs": [
-      {
-        "talentId": 644,
-        "talentName": "World in Flames",
-        "description": "Empower Flamestrike, dealing up to 50% more damage based on enemies' distance to the center of Flamestrike.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 648,
-        "talentName": "Greater Pyroblast",
-        "description": "Hurls an immense fiery boulder that deals up to 30% of the target's total health in Fire damage.",
-        "castTime": "4 sec cast"
-      },
-      {
-        "talentId": 5389,
-        "talentName": "Ring of Fire",
-        "description": "Summons a Ring of Fire for 8 sec at the target location. Enemies entering the ring are disoriented and burn for 3% of their total health over 3 sec.",
-        "castTime": "2 sec cast"
-      },
-      {
-        "talentId": 5489,
-        "talentName": "Ice Wall",
-        "description": "Conjures an Ice Wall 30 yards long that obstructs line of sight. The wall has 30% of your maximum health and lasts up to 15 sec.",
-        "castTime": "1.5 sec cast"
-      },
-      {
-        "talentId": 5495,
-        "talentName": "Glass Cannon",
-        "description": "Increases damage of Fireball, Scorch, and Ignite by 20% but decreases your maximum health by 30%.\r\n",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5588,
-        "talentName": "Master Shepherd",
-        "description": "While an enemy player is affected by your Polymorph or Mass Polymorph, your movement speed is increased by 25% and your Versatility is increased by 12%. \r\n\r\nAdditionally, Polymorph and Mass Polymorph no longer heal enemies.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5602,
-        "talentName": "Ethereal Blink",
-        "description": "Blink and Shimmer apply Slow at 100% effectiveness to all enemies you Blink through. For each enemy you Blink through, the cooldown of Blink and Shimmer are reduced by 1 sec, up to 5 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5621,
-        "talentName": "Improved Mass Invisibility",
-        "description": "The cooldown of Mass Invisibility is reduced by 4 min and can affect allies in combat.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5706,
-        "talentName": "Overpowered Barrier",
-        "description": "Your barriers absorb 100% more damage and have an additional effect, but last 4 sec.\r\n\r\n Blazing Barrier\r\nReflects 40% of damage absorbed.",
-        "castTime": "Passive"
-      }
-    ]
-  },
   "250": {
     "specId": 250,
     "specName": "Blood",
@@ -1952,7 +1816,7 @@
       {
         "talentId": 609,
         "talentName": "Death Chain",
-        "description": "Chains 3 enemies together, dealing 134.1 Shadow damage and causing 20% of all damage taken to also be received by the others in the chain. Lasts for 10 sec.",
+        "description": "Chains 3 enemies together, dealing 133.2 Shadow damage and causing 20% of all damage taken to also be received by the others in the chain. Lasts for 10 sec.",
         "castTime": "Instant"
       },
       {
@@ -1990,6 +1854,77 @@
         "talentName": "Price of Progress",
         "description": "You sacrifice 1% of your health every 1 sec and in exchange you cannot be slowed below 90% of normal speed, and you are immune to forced movement effects and knockbacks. Lasts until canceled.",
         "castTime": "Instant"
+      }
+    ]
+  },
+  "105": {
+    "specId": 105,
+    "specName": "Restoration",
+    "className": "Druid",
+    "classId": 11,
+    "classFile": "DRUID",
+    "role": "HEALER",
+    "iconFileDataId": 136041,
+    "pvpTalentRefs": [
+      {
+        "talentId": 59,
+        "talentName": "Disentanglement",
+        "description": "Efflorescence removes all snare effects from friendly targets when it heals and its Mana cost is reduced by 40%.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 692,
+        "talentName": "Entangling Bark",
+        "description": "Ironbark now also grants the target Nature's Grasp, rooting the first 3 melee attackers for 6 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 697,
+        "talentName": "Thorns",
+        "description": "Casting Barkskin or Ironbark sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 427 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 700,
+        "talentName": "Deep Roots",
+        "description": "Increases the amount of damage required to cancel your Entangling Roots by 75%.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 838,
+        "talentName": "High Winds",
+        "description": "Increases the range of Cyclone, Typhoon, and Entangling Roots by 5 yds.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 1215,
+        "talentName": "Early Spring",
+        "description": "Wild Growth is now instant cast, and when you heal 6 allies with Wild Growth you gain Full Bloom. This effect has a 30 sec cooldown.\r\n\r\nFull Bloom\r\nYour next Wild Growth applies Lifebloom to all targets at 100% effectiveness. Lasts for 30 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5514,
+        "talentName": "Malorne's Swiftness",
+        "description": "Your Travel Form movement speed while within a Battleground or Arena is increased by 20% and you always move at 100% movement speed while in Travel Form.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5649,
+        "talentName": "Tireless Pursuit",
+        "description": "For 3 sec after leaving Cat Form or Travel Form, you retain up to 25% movement speed.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5668,
+        "talentName": "Call of Ohn'ahra",
+        "description": "Nature's Swiftness now also affects Cyclone, but its cooldown is increased by 10 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5687,
+        "talentName": "Forest Guardian",
+        "description": "Wrath, Starfire, Cyclone, and Combo-Point generating abilities extend the duration of your active heal over time effects by 1.0 sec on up to 3 allies.\r\n\r\nStarsurge and Combo-Point spending abilities increase the rate of your heal over time spells by 20% for 4 sec.\r\n\r\n",
+        "castTime": "Passive"
       }
     ]
   },
@@ -2070,6 +2005,71 @@
       }
     ]
   },
+  "63": {
+    "specId": 63,
+    "specName": "Fire",
+    "className": "Mage",
+    "classId": 8,
+    "classFile": "MAGE",
+    "role": "DAMAGE",
+    "iconFileDataId": 135810,
+    "pvpTalentRefs": [
+      {
+        "talentId": 644,
+        "talentName": "World in Flames",
+        "description": "Empower Flamestrike, dealing up to 50% more damage based on enemies' distance to the center of Flamestrike.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 648,
+        "talentName": "Greater Pyroblast",
+        "description": "Hurls an immense fiery boulder that deals up to 30% of the target's total health in Fire damage.",
+        "castTime": "4 sec cast"
+      },
+      {
+        "talentId": 5389,
+        "talentName": "Ring of Fire",
+        "description": "Summons a Ring of Fire for 8 sec at the target location. Enemies entering the ring are disoriented and burn for 3% of their total health over 3 sec.",
+        "castTime": "2 sec cast"
+      },
+      {
+        "talentId": 5489,
+        "talentName": "Ice Wall",
+        "description": "Conjures an Ice Wall 30 yards long that obstructs line of sight. The wall has 30% of your maximum health and lasts up to 15 sec.",
+        "castTime": "1.5 sec cast"
+      },
+      {
+        "talentId": 5495,
+        "talentName": "Glass Cannon",
+        "description": "Increases damage of Fireball, Scorch, and Ignite by 20% but decreases your maximum health by 30%.\r\n",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5588,
+        "talentName": "Master Shepherd",
+        "description": "While an enemy player is affected by your Polymorph or Mass Polymorph, your movement speed is increased by 25% and your Versatility is increased by 12%. \r\n\r\nAdditionally, Polymorph and Mass Polymorph no longer heal enemies.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5602,
+        "talentName": "Ethereal Blink",
+        "description": "Blink and Shimmer apply Slow at 100% effectiveness to all enemies you Blink through. For each enemy you Blink through, the cooldown of Blink and Shimmer are reduced by 1 sec, up to 5 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5621,
+        "talentName": "Improved Mass Invisibility",
+        "description": "The cooldown of Mass Invisibility is reduced by 4 min and can affect allies in combat.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5706,
+        "talentName": "Overpowered Barrier",
+        "description": "Your barriers absorb 100% more damage and have an additional effect, but last 4 sec.\r\n\r\n Blazing Barrier\r\nReflects 40% of damage absorbed.",
+        "castTime": "Passive"
+      }
+    ]
+  },
   "262": {
     "specId": 262,
     "specName": "Elemental",
@@ -2112,7 +2112,7 @@
       {
         "talentId": 5659,
         "talentName": "Electrocute",
-        "description": "When you successfully Purge a beneficial effect, the enemy suffers 1,575 Nature damage over 3 sec.",
+        "description": "When you successfully Purge a beneficial effect, the enemy suffers 2,126 Nature damage over 3 sec.",
         "castTime": "Passive"
       },
       {
@@ -2130,7 +2130,7 @@
       {
         "talentId": 5724,
         "talentName": "Lightning Lasso",
-        "description": "Grips the target in lightning, stunning and dealing 2,625 Nature damage over 5 sec while the target is lassoed. Can move while channeling.",
+        "description": "Grips the target in lightning, stunning and dealing 14,437 Nature damage over 5 sec while the target is lassoed. Can move while channeling.",
         "castTime": "Instant"
       }
     ]
@@ -2183,7 +2183,7 @@
       {
         "talentId": 5546,
         "talentName": "Bonds of Fel",
-        "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 8 yd radius they explode, dealing 2,709 Fire damage split amongst all nearby enemies.",
+        "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 8 yd radius they explode, dealing 2,718 Fire damage split amongst all nearby enemies.",
         "castTime": "1.5 sec cast"
       },
       {
@@ -2307,7 +2307,7 @@
       {
         "talentId": 5545,
         "talentName": "Bonds of Fel",
-        "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 8 yd radius they explode, dealing 2,602 Fire damage split amongst all nearby enemies.",
+        "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 8 yd radius they explode, dealing 2,631 Fire damage split amongst all nearby enemies.",
         "castTime": "1.5 sec cast"
       },
       {
@@ -2326,6 +2326,243 @@
         "talentId": 5694,
         "talentName": "Bloodstones",
         "description": "Your Healthstones are replaced with Bloodstones which increase their user's haste by 20% for 12 sec instead of healing.",
+        "castTime": "Passive"
+      }
+    ]
+  },
+  "577": {
+    "specId": 577,
+    "specName": "Havoc",
+    "className": "Demon Hunter",
+    "classId": 12,
+    "classFile": "DEMONHUNTER",
+    "role": "DAMAGE",
+    "iconFileDataId": 1247264,
+    "pvpTalentRefs": [
+      {
+        "talentId": 805,
+        "talentName": "Cleansed by Flame",
+        "description": "Immolation Aura dispels a magical effect on you when cast.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 806,
+        "talentName": "Reverse Magic",
+        "description": "Removes all harmful magical effects from yourself and all nearby allies within 10 yards, and sends them back to their original caster if possible.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 811,
+        "talentName": "Rain from Above",
+        "description": "You fly into the air out of harm's way. While floating, you gain access to Fel Lance allowing you to deal damage to enemies below. ",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 812,
+        "talentName": "Detainment",
+        "description": "Imprison's PvP duration is increased by 1 sec, and targets become immune to damage and healing while imprisoned.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 813,
+        "talentName": "Glimpse",
+        "description": "Vengeful Retreat provides immunity to loss of control effects, and reduces damage taken by 35% until you land.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 1206,
+        "talentName": "Cover of Darkness",
+        "description": "The radius of Darkness is increased by 4 yds, and its duration by 2 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 1218,
+        "talentName": "Unending Hatred",
+        "description": "Taking damage causes you to gain Fury based on the damage dealt.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5433,
+        "talentName": "Blood Moon",
+        "description": "Consume Magic now affects all enemies within 8 yards of the target and generates a Lesser Soul Fragment. Each effect consumed has a 5% chance to upgrade to a Greater Soul.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5523,
+        "talentName": "Sigil Mastery",
+        "description": "Reduces the cooldown of your Sigils by an additional 25%.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5691,
+        "talentName": "Illidan's Grasp",
+        "description": "You strangle the target with demonic magic, stunning them in place and dealing 4,200 Shadow damage over 5 sec while the target is grasped. Can move while channeling.\r\n\r\nUse Illidan's Grasp again to toss the target to a location within 20 yards.",
+        "castTime": "Channeled"
+      }
+    ]
+  },
+  "1467": {
+    "specId": 1467,
+    "specName": "Devastation",
+    "className": "Evoker",
+    "classId": 13,
+    "classFile": "EVOKER",
+    "role": "DAMAGE",
+    "iconFileDataId": 4511811,
+    "pvpTalentRefs": [
+      {
+        "talentId": 5456,
+        "talentName": "Chrono Loop",
+        "description": "Trap the enemy in a time loop for 5 sec. Afterwards, they are returned to their previous location and health. Cannot reduce an enemy's health below 20%.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5460,
+        "talentName": "Obsidian Mettle",
+        "description": "While Obsidian Scales is active you gain immunity to interrupt, silence, and pushback effects.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5462,
+        "talentName": "Scouring Flame",
+        "description": "Fire Breath burns away 2 beneficial Magic effects from all targets.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5464,
+        "talentName": "Time Stop",
+        "description": "Freeze an ally's timestream for 5 sec. While frozen in time they are invulnerable, cannot act, and auras do not progress.\r\n\r\nYou may reactivate Time Stop to end this effect early.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5466,
+        "talentName": "Swoop Up",
+        "description": "Grab an enemy and fly with them to the target location.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5467,
+        "talentName": "Nullifying Shroud",
+        "description": "Verdant Embrace wreathes you in arcane energy, preventing the next full loss of control effect against you. Lasts 4 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5469,
+        "talentName": "Unburdened Flight",
+        "description": "Hover makes you immune to movement speed reduction effects.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5556,
+        "talentName": "Divide and Conquer",
+        "description": "Deep Breath forms curtains of fire, preventing line of sight to enemies outside its walls and burning enemies who walk through them for 2,741 Fire damage. Lasts 6 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5617,
+        "talentName": "Dreamwalker's Embrace",
+        "description": "Verdant Embrace tethers you to an ally, increasing movement speed by 40% and slowing and siphoning 475 life from enemies who come in contact with the tether.\r\n\r\nThe tether lasts up to 10 sec or until you move more than 30 yards away from your ally.",
+        "castTime": "Passive"
+      }
+    ]
+  },
+  "581": {
+    "specId": 581,
+    "specName": "Vengeance",
+    "className": "Demon Hunter",
+    "classId": 12,
+    "classFile": "DEMONHUNTER",
+    "role": "TANK",
+    "iconFileDataId": 1247265,
+    "pvpTalentRefs": [
+      {
+        "talentId": 814,
+        "talentName": "Cleansed by Flame",
+        "description": "Immolation Aura dispels a magical effect on you when cast.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 815,
+        "talentName": "Everlasting Hunt",
+        "description": "Dealing damage increases your movement speed by 15% for 3 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 816,
+        "talentName": "Jagged Spikes",
+        "description": "While Demon Spikes is active, melee attacks against you cause Physical damage equal to 30% of the damage taken back to the attacker.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 819,
+        "talentName": "Illidan's Grasp",
+        "description": "You strangle the target with demonic magic, stunning them in place and dealing 4,614 Shadow damage over 5 sec while the target is grasped. Can move while channeling.\r\n\r\nUse Illidan's Grasp again to toss the target to a location within 20 yards.",
+        "castTime": "Channeled"
+      },
+      {
+        "talentId": 1220,
+        "talentName": "Tormentor",
+        "description": "You focus the assault on this target, increasing their damage taken by 3% for 6 sec. Each unique player that attacks the target increases the damage taken by an additional 3%, stacking up to 5 times.\r\n\r\nYour melee attacks refresh the duration of Focused Assault.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 1948,
+        "talentName": "Sigil Mastery",
+        "description": "Reduces the cooldown of your Sigils by an additional 25%.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 3423,
+        "talentName": "Demonic Trample",
+        "description": "Transform to demon form, moving at 175% increased speed for 3 sec, knocking down all enemies in your path and dealing 70.9 Physical damage.\r\n\r\nDuring Demonic Trample you are unaffected by snares but cannot cast spells or use your normal attacks. Shares charges with Infernal Strike.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 3429,
+        "talentName": "Reverse Magic",
+        "description": "Removes all harmful magical effects from yourself and all nearby allies within 10 yards, and sends them back to their original caster if possible.",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 3430,
+        "talentName": "Detainment",
+        "description": "Imprison's PvP duration is increased by 1 sec, and targets become immune to damage and healing while imprisoned.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 3727,
+        "talentName": "Unending Hatred",
+        "description": "Taking damage causes you to gain Fury based on the damage dealt.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5434,
+        "talentName": "Blood Moon",
+        "description": "Consume Magic now affects all enemies within 8 yards of the target and generates a Lesser Soul Fragment. Each effect consumed has a 5% chance to upgrade to a Greater Soul.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5520,
+        "talentName": "Cover of Darkness",
+        "description": "The radius of Darkness is increased by 4 yds, and its duration by 2 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5521,
+        "talentName": "Rain from Above",
+        "description": "You fly into the air out of harm's way. While floating, you gain access to Fel Lance allowing you to deal damage to enemies below. ",
+        "castTime": "Instant"
+      },
+      {
+        "talentId": 5522,
+        "talentName": "Glimpse",
+        "description": "Vengeful Retreat provides immunity to loss of control effects, and reduces damage taken by 35% until you land.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5716,
+        "talentName": "Lay In Wait",
+        "description": "Sigil of Misery has 2 charges and now lays in wait for up to 90 sec at your selected location until an enemy approaches.",
         "castTime": "Passive"
       }
     ]
@@ -2396,7 +2633,7 @@
       {
         "talentId": 3731,
         "talentName": "Thorns",
-        "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 565 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
+        "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 568 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
         "castTime": "Passive"
       },
       {
@@ -2427,71 +2664,6 @@
         "talentId": 5646,
         "talentName": "Tireless Pursuit",
         "description": "For 3 sec after leaving Cat Form or Travel Form, you retain up to 25% movement speed.",
-        "castTime": "Passive"
-      }
-    ]
-  },
-  "1467": {
-    "specId": 1467,
-    "specName": "Devastation",
-    "className": "Evoker",
-    "classId": 13,
-    "classFile": "EVOKER",
-    "role": "DAMAGE",
-    "iconFileDataId": 4511811,
-    "pvpTalentRefs": [
-      {
-        "talentId": 5456,
-        "talentName": "Chrono Loop",
-        "description": "Trap the enemy in a time loop for 5 sec. Afterwards, they are returned to their previous location and health. Cannot reduce an enemy's health below 20%.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5460,
-        "talentName": "Obsidian Mettle",
-        "description": "While Obsidian Scales is active you gain immunity to interrupt, silence, and pushback effects.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5462,
-        "talentName": "Scouring Flame",
-        "description": "Fire Breath burns away 2 beneficial Magic effects from all targets.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5464,
-        "talentName": "Time Stop",
-        "description": "Freeze an ally's timestream for 5 sec. While frozen in time they are invulnerable, cannot act, and auras do not progress.\r\n\r\nYou may reactivate Time Stop to end this effect early.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5466,
-        "talentName": "Swoop Up",
-        "description": "Grab an enemy and fly with them to the target location.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5467,
-        "talentName": "Nullifying Shroud",
-        "description": "Verdant Embrace wreathes you in arcane energy, preventing the next full loss of control effect against you. Lasts 4 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5469,
-        "talentName": "Unburdened Flight",
-        "description": "Hover makes you immune to movement speed reduction effects.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5556,
-        "talentName": "Divide and Conquer",
-        "description": "Deep Breath forms curtains of fire, preventing line of sight to enemies outside its walls and burning enemies who walk through them for 2,741 Fire damage. Lasts 6 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5617,
-        "talentName": "Dreamwalker's Embrace",
-        "description": "Verdant Embrace tethers you to an ally, increasing movement speed by 40% and slowing and siphoning 475 life from enemies who come in contact with the tether.\r\n\r\nThe tether lasts up to 10 sec or until you move more than 30 yards away from your ally.",
         "castTime": "Passive"
       }
     ]
@@ -2573,243 +2745,6 @@
       }
     ]
   },
-  "577": {
-    "specId": 577,
-    "specName": "Havoc",
-    "className": "Demon Hunter",
-    "classId": 12,
-    "classFile": "DEMONHUNTER",
-    "role": "DAMAGE",
-    "iconFileDataId": 1247264,
-    "pvpTalentRefs": [
-      {
-        "talentId": 805,
-        "talentName": "Cleansed by Flame",
-        "description": "Immolation Aura dispels a magical effect on you when cast.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 806,
-        "talentName": "Reverse Magic",
-        "description": "Removes all harmful magical effects from yourself and all nearby allies within 10 yards, and sends them back to their original caster if possible.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 811,
-        "talentName": "Rain from Above",
-        "description": "You fly into the air out of harm's way. While floating, you gain access to Fel Lance allowing you to deal damage to enemies below. ",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 812,
-        "talentName": "Detainment",
-        "description": "Imprison's PvP duration is increased by 1 sec, and targets become immune to damage and healing while imprisoned.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 813,
-        "talentName": "Glimpse",
-        "description": "Vengeful Retreat provides immunity to loss of control effects, and reduces damage taken by 35% until you land.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 1206,
-        "talentName": "Cover of Darkness",
-        "description": "The radius of Darkness is increased by 4 yds, and its duration by 2 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 1218,
-        "talentName": "Unending Hatred",
-        "description": "Taking damage causes you to gain Fury based on the damage dealt.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5433,
-        "talentName": "Blood Moon",
-        "description": "Consume Magic now affects all enemies within 8 yards of the target and generates a Lesser Soul Fragment. Each effect consumed has a 5% chance to upgrade to a Greater Soul.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5523,
-        "talentName": "Sigil Mastery",
-        "description": "Reduces the cooldown of your Sigils by an additional 25%.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5691,
-        "talentName": "Illidan's Grasp",
-        "description": "You strangle the target with demonic magic, stunning them in place and dealing 4,200 Shadow damage over 5 sec while the target is grasped. Can move while channeling.\r\n\r\nUse Illidan's Grasp again to toss the target to a location within 20 yards.",
-        "castTime": "Channeled"
-      }
-    ]
-  },
-  "1480": {
-    "specId": 1480,
-    "specName": "Devourer",
-    "className": "Demon Hunter",
-    "classId": 12,
-    "classFile": "DEMONHUNTER",
-    "role": "DAMAGE",
-    "iconFileDataId": 7455385,
-    "pvpTalentRefs": [
-      {
-        "talentId": 5728,
-        "talentName": "Inevitable End",
-        "description": "Collapsing Star can no longer be interrupted and its cast time is reduced by 25%.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5729,
-        "talentName": "Armor of Souls",
-        "description": "Your Armor is increased by 50%. Taking damage has a 12% chance to generate a soul fragment.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5730,
-        "talentName": "Surrender to the Void",
-        "description": "Void Metamorphosis requires 50 additional souls.\r\n\r\nWhile in Void Metamorphosis, your damage is increased by 10% and effects that grant you Fury grant 100% additional Fury.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5731,
-        "talentName": "Cleansed by Flame",
-        "description": "Immolation Aura dispels a magical effect on you when cast.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5732,
-        "talentName": "Cover of Darkness",
-        "description": "The radius of Darkness is increased by 4 yds, and its duration by 2 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5733,
-        "talentName": "Detainment",
-        "description": "Imprison's PvP duration is increased by 1 sec, and targets become immune to damage and healing while imprisoned.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5734,
-        "talentName": "Glimpse",
-        "description": "Vengeful Retreat provides immunity to loss of control effects, and reduces damage taken by 35% until you land.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5735,
-        "talentName": "Beckon",
-        "description": "Reap reduces the cast time of your next Consume by 100% and causes it to generate 1 additional Soul Fragment.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5738,
-        "talentName": "Reverse Magic",
-        "description": "Removes all harmful magical effects from yourself and all nearby allies within 10 yards, and sends them back to their original caster if possible.",
-        "castTime": "Instant"
-      }
-    ]
-  },
-  "581": {
-    "specId": 581,
-    "specName": "Vengeance",
-    "className": "Demon Hunter",
-    "classId": 12,
-    "classFile": "DEMONHUNTER",
-    "role": "TANK",
-    "iconFileDataId": 1247265,
-    "pvpTalentRefs": [
-      {
-        "talentId": 814,
-        "talentName": "Cleansed by Flame",
-        "description": "Immolation Aura dispels a magical effect on you when cast.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 815,
-        "talentName": "Everlasting Hunt",
-        "description": "Dealing damage increases your movement speed by 15% for 3 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 816,
-        "talentName": "Jagged Spikes",
-        "description": "While Demon Spikes is active, melee attacks against you cause Physical damage equal to 30% of the damage taken back to the attacker.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 819,
-        "talentName": "Illidan's Grasp",
-        "description": "You strangle the target with demonic magic, stunning them in place and dealing 4,614 Shadow damage over 5 sec while the target is grasped. Can move while channeling.\r\n\r\nUse Illidan's Grasp again to toss the target to a location within 20 yards.",
-        "castTime": "Channeled"
-      },
-      {
-        "talentId": 1220,
-        "talentName": "Tormentor",
-        "description": "You focus the assault on this target, increasing their damage taken by 3% for 6 sec. Each unique player that attacks the target increases the damage taken by an additional 3%, stacking up to 5 times.\r\n\r\nYour melee attacks refresh the duration of Focused Assault.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 1948,
-        "talentName": "Sigil Mastery",
-        "description": "Reduces the cooldown of your Sigils by an additional 25%.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 3423,
-        "talentName": "Demonic Trample",
-        "description": "Transform to demon form, moving at 175% increased speed for 3 sec, knocking down all enemies in your path and dealing 74.2 Physical damage.\r\n\r\nDuring Demonic Trample you are unaffected by snares but cannot cast spells or use your normal attacks. Shares charges with Infernal Strike.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 3429,
-        "talentName": "Reverse Magic",
-        "description": "Removes all harmful magical effects from yourself and all nearby allies within 10 yards, and sends them back to their original caster if possible.",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 3430,
-        "talentName": "Detainment",
-        "description": "Imprison's PvP duration is increased by 1 sec, and targets become immune to damage and healing while imprisoned.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 3727,
-        "talentName": "Unending Hatred",
-        "description": "Taking damage causes you to gain Fury based on the damage dealt.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5434,
-        "talentName": "Blood Moon",
-        "description": "Consume Magic now affects all enemies within 8 yards of the target and generates a Lesser Soul Fragment. Each effect consumed has a 5% chance to upgrade to a Greater Soul.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5520,
-        "talentName": "Cover of Darkness",
-        "description": "The radius of Darkness is increased by 4 yds, and its duration by 2 sec.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5521,
-        "talentName": "Rain from Above",
-        "description": "You fly into the air out of harm's way. While floating, you gain access to Fel Lance allowing you to deal damage to enemies below. ",
-        "castTime": "Instant"
-      },
-      {
-        "talentId": 5522,
-        "talentName": "Glimpse",
-        "description": "Vengeful Retreat provides immunity to loss of control effects, and reduces damage taken by 35% until you land.",
-        "castTime": "Passive"
-      },
-      {
-        "talentId": 5716,
-        "talentName": "Lay In Wait",
-        "description": "Sigil of Misery has 2 charges and now lays in wait for up to 90 sec at your selected location until an enemy approaches.",
-        "castTime": "Passive"
-      }
-    ]
-  },
   "1468": {
     "specId": 1468,
     "specName": "Preservation",
@@ -2876,7 +2811,7 @@
       {
         "talentId": 5711,
         "talentName": "Dream Projection",
-        "description": "Summon a flying projection of yourself that heals allies you pass through for 646. Detonating your projection dispels all nearby allies of Magical effects, and heals for 3,105 over 20 sec.",
+        "description": "Summon a flying projection of yourself that heals allies you pass through for 629. Detonating your projection dispels all nearby allies of Magical effects, and heals for 3,122 over 20 sec.",
         "castTime": "0.5 sec cast"
       },
       {
@@ -2884,6 +2819,71 @@
         "talentName": "Emerald Communion",
         "description": "Commune with the Emerald Dream, restoring 20% health and 2% mana every 0.9 sec for 4.3 sec. Overhealing is transferred to an injured ally within 40 yds.\r\n\r\nCastable while stunned, disoriented, incapacitated, or silenced.",
         "castTime": "Channeled"
+      }
+    ]
+  },
+  "1480": {
+    "specId": 1480,
+    "specName": "Devourer",
+    "className": "Demon Hunter",
+    "classId": 12,
+    "classFile": "DEMONHUNTER",
+    "role": "DAMAGE",
+    "iconFileDataId": 7455386,
+    "pvpTalentRefs": [
+      {
+        "talentId": 5728,
+        "talentName": "Inevitable End",
+        "description": "Collapsing Star can no longer be interrupted and its cast time is reduced by 25%.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5729,
+        "talentName": "Armor of Souls",
+        "description": "Your Armor is increased by 50%. Taking damage has a 12% chance to generate a soul fragment.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5730,
+        "talentName": "Surrender to the Void",
+        "description": "Void Metamorphosis requires 50 additional souls.\r\n\r\nWhile in Void Metamorphosis, your damage is increased by 10% and effects that grant you Fury grant 100% additional Fury.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5731,
+        "talentName": "Cleansed by Flame",
+        "description": "Immolation Aura dispels a magical effect on you when cast.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5732,
+        "talentName": "Cover of Darkness",
+        "description": "The radius of Darkness is increased by 4 yds, and its duration by 2 sec.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5733,
+        "talentName": "Detainment",
+        "description": "Imprison's PvP duration is increased by 1 sec, and targets become immune to damage and healing while imprisoned.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5734,
+        "talentName": "Glimpse",
+        "description": "Vengeful Retreat provides immunity to loss of control effects, and reduces damage taken by 35% until you land.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5735,
+        "talentName": "Beckon",
+        "description": "Reap reduces the cast time of your next Consume by 100% and causes it to generate 1 additional Soul Fragment.",
+        "castTime": "Passive"
+      },
+      {
+        "talentId": 5738,
+        "talentName": "Reverse Magic",
+        "description": "Removes all harmful magical effects from yourself and all nearby allies within 10 yards, and sends them back to their original caster if possible.",
+        "castTime": "Instant"
       }
     ]
   }

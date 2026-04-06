@@ -1,10 +1,142 @@
 {
+  "252": [
+    {
+      "talentId": 40,
+      "spellId": 288855,
+      "name": "Life and Death",
+      "description": "When the target afflicted with your Dread Plague is healed, you are also healed for 10% of the amount.\r\n\r\nAdditionally, Dread Plague deals 200% of its remaining damage to the target when dispelled.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 41,
+      "spellId": 77606,
+      "name": "Dark Simulacrum",
+      "description": "Places a dark ward on an enemy player that persists for 12 sec, triggering when the enemy next spends mana on a spell, and allowing the Death Knight to unleash an exact duplicate of that spell.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 149,
+      "spellId": 356520,
+      "name": "Necrotic Wounds",
+      "description": "Putrefy has 1 additional charge and applies a Necrotic Wound to the enemy when it deals damage, absorbing 8% of all healing received for 15 sec.\r\n\r\nMax 3 stacks. Adding a stack does not refresh the duration.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 152,
+      "spellId": 210128,
+      "name": "Zombify",
+      "description": "Reanimates a nearby corpse, summoning a zombie for 20 sec that slowly moves towards your target. \r\n\r\nIf your zombie reaches its target, it explodes after 3.0 sec. The explosion stuns all enemies within 8 yards for 3 sec and deals 10% of their health in Shadow damage.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 3746,
+      "spellId": 1281529,
+      "name": "Stitchmaster",
+      "description": "When a Lesser Ghoul dies, you gather the remains to heal for 2% of its maximum health.\r\n\r\nDeath Strike sacrifices all Lesser Ghouls under your command.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5430,
+      "spellId": 47476,
+      "name": "Strangulate",
+      "description": "Shadowy tendrils constrict an enemy's throat, silencing them for 4 sec.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5436,
+      "spellId": 356512,
+      "name": "Doomburst",
+      "description": "Sudden Doom also causes your next Death Coil to deal the damage of your plagues an additional time at 25% effectiveness and reduce the target's movement speed by 45% for 3 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5511,
+      "spellId": 202727,
+      "name": "Rot and Wither",
+      "description": "Your Death and Decay rots enemies each time it deals damage, absorbing healing equal to 100% of damage dealt.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5585,
+      "spellId": 410301,
+      "name": "Bloodforged Armor",
+      "description": "Death Strike reduces all Physical damage taken by 25% for 4 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5590,
+      "spellId": 410320,
+      "name": "Spellwarden",
+      "description": "Anti-Magic Shell is now usable on allies and its cooldown is reduced by 10 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
   "103": [
     {
       "talentId": 201,
       "spellId": 1217017,
       "name": "Thorns",
-      "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 432 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
+      "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 441 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -144,100 +276,9 @@
       ]
     }
   ],
-  "252": [
+  "250": [
     {
-      "talentId": 40,
-      "spellId": 288855,
-      "name": "Life and Death",
-      "description": "When the target afflicted with your Dread Plague is healed, you are also healed for 10% of the amount.\r\n\r\nAdditionally, Dread Plague deals 200% of its remaining damage to the target when dispelled.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 41,
-      "spellId": 77606,
-      "name": "Dark Simulacrum",
-      "description": "Places a dark ward on an enemy player that persists for 12 sec, triggering when the enemy next spends mana on a spell, and allowing the Death Knight to unleash an exact duplicate of that spell.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 149,
-      "spellId": 356520,
-      "name": "Necrotic Wounds",
-      "description": "Putrefy has 1 additional charge and applies a Necrotic Wound to the enemy when it deals damage, absorbing 8% of all healing received for 15 sec.\r\n\r\nMax 3 stacks. Adding a stack does not refresh the duration.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 152,
-      "spellId": 210128,
-      "name": "Zombify",
-      "description": "Reanimates a nearby corpse, summoning a zombie for 20 sec that slowly moves towards your target. \r\n\r\nIf your zombie reaches its target, it explodes after 3.0 sec. The explosion stuns all enemies within 8 yards for 3 sec and deals 10% of their health in Shadow damage.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 3746,
-      "spellId": 1281529,
-      "name": "Stitchmaster",
-      "description": "When a Lesser Ghoul dies, you gather the remains to heal for 2% of its maximum health.\r\n\r\nDeath Strike sacrifices all Lesser Ghouls under your command.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5430,
-      "spellId": 47476,
-      "name": "Strangulate",
-      "description": "Shadowy tendrils constrict an enemy's throat, silencing them for 4 sec.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5436,
-      "spellId": 356512,
-      "name": "Doomburst",
-      "description": "Sudden Doom also causes your next Death Coil to deal the damage of your plagues an additional time at 25% effectiveness and reduce the target's movement speed by 45% for 3 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5511,
+      "talentId": 204,
       "spellId": 202727,
       "name": "Rot and Wither",
       "description": "Your Death and Decay rots enemies each time it deals damage, absorbing healing equal to 100% of damage dealt.",
@@ -250,7 +291,85 @@
       ]
     },
     {
-      "talentId": 5585,
+      "talentId": 206,
+      "spellId": 47476,
+      "name": "Strangulate",
+      "description": "Shadowy tendrils constrict an enemy's throat, silencing them for 4 sec.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 608,
+      "spellId": 233412,
+      "name": "Last Dance",
+      "description": "Reduces the cooldown of Dancing Rune Weapon by 50% and its duration by 25%.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 609,
+      "spellId": 203173,
+      "name": "Death Chain",
+      "description": "Chains 3 enemies together, dealing 10.6 Shadow damage and causing 20% of all damage taken to also be received by the others in the chain. Lasts for 10 sec.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 841,
+      "spellId": 207018,
+      "name": "Murderous Intent",
+      "description": "You focus the assault on this target, increasing their damage taken by 3% for 6 sec. Each unique player that attacks the target increases the damage taken by an additional 3%, stacking up to 5 times.\r\n\r\nYour melee attacks refresh the duration of Focused Assault.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 3441,
+      "spellId": 199720,
+      "name": "Decomposing Aura",
+      "description": "All enemies within 8 yards slowly decay, losing up to 3% of their max health every 2 sec. Max 5 stacks. Lasts 6 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 3511,
+      "spellId": 77606,
+      "name": "Dark Simulacrum",
+      "description": "Places a dark ward on an enemy player that persists for 12 sec, triggering when the enemy next spends mana on a spell, and allowing the Death Knight to unleash an exact duplicate of that spell.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5587,
       "spellId": 410301,
       "name": "Bloodforged Armor",
       "description": "Death Strike reduces all Physical damage taken by 25% for 4 sec.",
@@ -263,11 +382,24 @@
       ]
     },
     {
-      "talentId": 5590,
+      "talentId": 5592,
       "spellId": 410320,
       "name": "Spellwarden",
       "description": "Anti-Magic Shell is now usable on allies and its cooldown is reduced by 10 sec.",
       "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5712,
+      "spellId": 1233429,
+      "name": "Price of Progress",
+      "description": "You sacrifice 1% of your health every 1 sec and in exchange you cannot be slowed below 90% of normal speed, and you are immune to forced movement effects and knockbacks. Lasts until canceled.",
+      "castTime": "Instant",
       "compatibleSlots": [
         1,
         2,
@@ -553,138 +685,6 @@
       ]
     }
   ],
-  "250": [
-    {
-      "talentId": 204,
-      "spellId": 202727,
-      "name": "Rot and Wither",
-      "description": "Your Death and Decay rots enemies each time it deals damage, absorbing healing equal to 100% of damage dealt.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 206,
-      "spellId": 47476,
-      "name": "Strangulate",
-      "description": "Shadowy tendrils constrict an enemy's throat, silencing them for 4 sec.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 608,
-      "spellId": 233412,
-      "name": "Last Dance",
-      "description": "Reduces the cooldown of Dancing Rune Weapon by 50% and its duration by 25%.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 609,
-      "spellId": 203173,
-      "name": "Death Chain",
-      "description": "Chains 3 enemies together, dealing 10.4 Shadow damage and causing 20% of all damage taken to also be received by the others in the chain. Lasts for 10 sec.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 841,
-      "spellId": 207018,
-      "name": "Murderous Intent",
-      "description": "You focus the assault on this target, increasing their damage taken by 3% for 6 sec. Each unique player that attacks the target increases the damage taken by an additional 3%, stacking up to 5 times.\r\n\r\nYour melee attacks refresh the duration of Focused Assault.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 3441,
-      "spellId": 199720,
-      "name": "Decomposing Aura",
-      "description": "All enemies within 8 yards slowly decay, losing up to 3% of their max health every 2 sec. Max 5 stacks. Lasts 6 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 3511,
-      "spellId": 77606,
-      "name": "Dark Simulacrum",
-      "description": "Places a dark ward on an enemy player that persists for 12 sec, triggering when the enemy next spends mana on a spell, and allowing the Death Knight to unleash an exact duplicate of that spell.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5587,
-      "spellId": 410301,
-      "name": "Bloodforged Armor",
-      "description": "Death Strike reduces all Physical damage taken by 25% for 4 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5592,
-      "spellId": 410320,
-      "name": "Spellwarden",
-      "description": "Anti-Magic Shell is now usable on allies and its cooldown is reduced by 10 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5712,
-      "spellId": 1233429,
-      "name": "Price of Progress",
-      "description": "You sacrifice 1% of your health every 1 sec and in exchange you cannot be slowed below 90% of normal speed, and you are immune to forced movement effects and knockbacks. Lasts until canceled.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    }
-  ],
   "64": [
     {
       "talentId": 66,
@@ -742,7 +742,7 @@
       "talentId": 5496,
       "spellId": 390612,
       "name": "Frost Bomb",
-      "description": "Places a Frost Bomb on the target. After 5 sec, the bomb explodes, dealing 3,554 Frost damage to the target and 1,758 Frost damage to all other enemies within 10 yards. All affected targets are slowed by 50% for 8 sec. \r\n\r\nIf Frost Bomb is dispelled before it explodes, gain a charge of Brain Freeze.",
+      "description": "Places a Frost Bomb on the target. After 5 sec, the bomb explodes, dealing 3,491 Frost damage to the target and 1,779 Frost damage to all other enemies within 10 yards. All affected targets are slowed by 50% for 8 sec. \r\n\r\nIf Frost Bomb is dispelled before it explodes, gain a charge of Brain Freeze.",
       "castTime": "1.5 sec cast",
       "compatibleSlots": [
         1,
@@ -755,7 +755,7 @@
       "talentId": 5497,
       "spellId": 389794,
       "name": "Snowdrift",
-      "description": "Summon a strong Blizzard that surrounds you for 6 sec that slows enemies by 70% and deals 76 Frost damage every 1 sec. \r\n\r\nEnemies that are caught in Snowdrift for 2 sec consecutively become Frozen in ice, stunned for 4 sec.",
+      "description": "Summon a strong Blizzard that surrounds you for 6 sec that slows enemies by 70% and deals 74 Frost damage every 1 sec. \r\n\r\nEnemies that are caught in Snowdrift for 2 sec consecutively become Frozen in ice, stunned for 4 sec.",
       "castTime": "Instant",
       "compatibleSlots": [
         1,
@@ -848,7 +848,7 @@
       "talentId": 5397,
       "spellId": 353128,
       "name": "Arcanosphere",
-      "description": "Builds a sphere of Arcane energy, gaining power over 4 sec. Upon release, the sphere passes through any barriers, knocking enemies back and dealing up to 3,845 Arcane damage.",
+      "description": "Builds a sphere of Arcane energy, gaining power over 4 sec. Upon release, the sphere passes through any barriers, knocking enemies back and dealing up to 13,765 Arcane damage.",
       "castTime": "Channeled",
       "compatibleSlots": [
         1,
@@ -1033,322 +1033,6 @@
       "spellId": 426438,
       "name": "Improved Mass Dispel",
       "description": "Reduces the cooldown of Mass Dispel by 60 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    }
-  ],
-  "265": [
-    {
-      "talentId": 15,
-      "spellId": 248855,
-      "name": "Gateway Mastery",
-      "description": "Increases the range of your Demonic Gateway by 20 yards, and reduces the cast time by 30%. Reduces the time between how often players can take your Demonic Gateway by 30 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 16,
-      "spellId": 212371,
-      "name": "Rot and Decay",
-      "description": "Shadow Bolt damage increases the duration of your Corruption and Agony on the target by 2.0 sec.\r\n\r\nDrain Life and Drain Soul damage increases the duration of your Corruption and Agony on the target by 1.0 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 18,
-      "spellId": 212295,
-      "name": "Nether Ward",
-      "description": "Surrounds the caster with a shield that lasts 3 sec, reflecting all harmful spells cast on you.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 19,
-      "spellId": 221711,
-      "name": "Essence Drain",
-      "description": "Whenever you heal yourself with Drain Life, the enemy target deals 9% reduced damage to you for 10 sec. Stacks up to 4 times.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5386,
-      "spellId": 426352,
-      "name": "Jinx",
-      "description": "Casting a curse now applies Corruption and Agony to your target, but curses now costs 1 Soul Shard.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5392,
-      "spellId": 353294,
-      "name": "Shadow Rift",
-      "description": "Conjure a Shadow Rift at the target location lasting 2 sec. Enemy players within the rift when it expires are teleported to your Demonic Circle.\r\n\r\nMust be within 40 yds of your Demonic Circle to cast.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5546,
-      "spellId": 353753,
-      "name": "Bonds of Fel",
-      "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 8 yd radius they explode, dealing 2,781 Fire damage split amongst all nearby enemies.",
-      "castTime": "1.5 sec cast",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5579,
-      "spellId": 409835,
-      "name": "Impish Instincts",
-      "description": "Taking direct Physical damage reduces the cooldown of Demonic Circle by 3 sec.\r\n\r\nCannot occur more than once every 5 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5608,
-      "spellId": 410598,
-      "name": "Soul Rip",
-      "description": "Fracture the soul of up to 3 target players within 20 yds into the shadows, reducing their damage done by 25% and healing received by 25% for 8 sec. Souls are fractured up to 20 yds from the player's location.\r\n\r\nPlayers can retrieve their souls to remove this effect.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5662,
-      "spellId": 386951,
-      "name": "Soul Swap",
-      "description": "Copies your damage over time effects and Haunt from the target, preserving their duration.\r\n\r\nYour next use of Soul Swap within until canceled will exhale a copy damage of the effects onto a new target.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5695,
-      "spellId": 1218692,
-      "name": "Bloodstones",
-      "description": "Your Healthstones are replaced with Bloodstones which increase their user's haste by 20% for 12 sec instead of healing.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    }
-  ],
-  "73": [
-    {
-      "talentId": 24,
-      "spellId": 236077,
-      "name": "Disarm",
-      "description": "Disarm the enemy's weapons and shield for 5 sec. Disarmed creatures deal significantly reduced damage.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 168,
-      "spellId": 213871,
-      "name": "Bodyguard",
-      "description": "Protect an ally, causing 40% of all Physical damage they take to be transfered to you. When the target takes Physical damage, your Shield Slam cooldown has a 30% chance to be reset. Bodyguard is cancelled if the target is further than 20 yards from you. Lasts 1 min.\r\n\r\nOnly one target can be Bodyguarded at a time.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 171,
-      "spellId": 199023,
-      "name": "Morale Killer",
-      "description": "Reduces the cooldown of Demoralizing Shout by 15 sec, and Demoralizing Shout now reduces the damage enemies deal to all targets, not just you.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 173,
-      "spellId": 198912,
-      "name": "Shield Bash",
-      "description": "When Shield Slam is used on targets that are casting, it reduces their damage done by 15% for 8 sec and the cooldown is instantly reset.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 175,
-      "spellId": 199045,
-      "name": "Thunderstruck",
-      "description": "After casting Avatar, Shockwave, or Stormbolt, your next Thunder Clap roots all targets it damages for 4 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 831,
-      "spellId": 206572,
-      "name": "Dragon Charge",
-      "description": "Run at high speed at a distance in front of you. All enemies in your path will take 24 Physical damage and be knocked back.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 833,
-      "spellId": 213915,
-      "name": "Rebound",
-      "description": "Spell Reflection reflects the next 2 incoming spells cast on you and reflected spells deal 100% extra damage to the attacker.\r\n\r\nSpell Reflection's cooldown is increased by 10 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 845,
-      "spellId": 205800,
-      "name": "Oppressor",
-      "description": "You focus the assault on this target, increasing their damage taken by 3% for 6 sec. Each unique player that attacks the target increases the damage taken by an additional 3%, stacking up to 5 times.\r\n\r\nYour melee attacks refresh the duration of Focused Assault.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5374,
-      "spellId": 329033,
-      "name": "Demolition",
-      "description": "Reduces the cooldown of your Shattering Throw or Wrecking Throw by 50% and increases its damage to absorb shields by an additional 250%.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5626,
-      "spellId": 424654,
-      "name": "Safeguard",
-      "description": "Intervene now has 2 charges and reduces the ally's damage taken by 20% for 5 sec.\r\n\r\nIntervene's cooldown is increased by 10 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5627,
-      "spellId": 236308,
-      "name": "Storm of Destruction",
-      "description": "Bladestorm, Ravager, and Demolish now snare all targets you hit by 60% for 6 sec and decrease their healing taken by 50% for 10 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5703,
-      "spellId": 1227751,
-      "name": "Berserker Roar",
-      "description": "Berserker Shout also reduces the duration of the next crowd control effect within 10 sec by 50% on group members within 12 yds.\r\n",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5715,
-      "spellId": 1234791,
-      "name": "Power Through Adversity",
-      "description": "Second Wind reduces damage taken by 10% to 40%, with larger attacks being reduced by more.\r\n\r\nWhile Shield Wall or Last Stand are active, healing reductions do not apply to you.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -1555,6 +1239,322 @@
       ]
     }
   ],
+  "73": [
+    {
+      "talentId": 24,
+      "spellId": 236077,
+      "name": "Disarm",
+      "description": "Disarm the enemy's weapons and shield for 5 sec. Disarmed creatures deal significantly reduced damage.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 168,
+      "spellId": 213871,
+      "name": "Bodyguard",
+      "description": "Protect an ally, causing 40% of all Physical damage they take to be transfered to you. When the target takes Physical damage, your Shield Slam cooldown has a 30% chance to be reset. Bodyguard is cancelled if the target is further than 20 yards from you. Lasts 1 min.\r\n\r\nOnly one target can be Bodyguarded at a time.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 171,
+      "spellId": 199023,
+      "name": "Morale Killer",
+      "description": "Reduces the cooldown of Demoralizing Shout by 15 sec, and Demoralizing Shout now reduces the damage enemies deal to all targets, not just you.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 173,
+      "spellId": 198912,
+      "name": "Shield Bash",
+      "description": "When Shield Slam is used on targets that are casting, it reduces their damage done by 15% for 8 sec and the cooldown is instantly reset.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 175,
+      "spellId": 199045,
+      "name": "Thunderstruck",
+      "description": "After casting Avatar, Shockwave, or Stormbolt, your next Thunder Clap roots all targets it damages for 4 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 831,
+      "spellId": 206572,
+      "name": "Dragon Charge",
+      "description": "Run at high speed at a distance in front of you. All enemies in your path will take 24 Physical damage and be knocked back.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 833,
+      "spellId": 213915,
+      "name": "Rebound",
+      "description": "Spell Reflection reflects the next 2 incoming spells cast on you and reflected spells deal 100% extra damage to the attacker.\r\n\r\nSpell Reflection's cooldown is increased by 10 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 845,
+      "spellId": 205800,
+      "name": "Oppressor",
+      "description": "You focus the assault on this target, increasing their damage taken by 3% for 6 sec. Each unique player that attacks the target increases the damage taken by an additional 3%, stacking up to 5 times.\r\n\r\nYour melee attacks refresh the duration of Focused Assault.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5374,
+      "spellId": 329033,
+      "name": "Demolition",
+      "description": "Reduces the cooldown of your Shattering Throw or Wrecking Throw by 50% and increases its damage to absorb shields by an additional 250%.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5626,
+      "spellId": 424654,
+      "name": "Safeguard",
+      "description": "Intervene now has 2 charges and reduces the ally's damage taken by 20% for 5 sec.\r\n\r\nIntervene's cooldown is increased by 10 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5627,
+      "spellId": 236308,
+      "name": "Storm of Destruction",
+      "description": "Bladestorm, Ravager, and Demolish now snare all targets you hit by 60% for 6 sec and decrease their healing taken by 50% for 10 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5703,
+      "spellId": 1227751,
+      "name": "Berserker Roar",
+      "description": "Berserker Shout also reduces the duration of the next crowd control effect within 10 sec by 50% on group members within 12 yds.\r\n",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5715,
+      "spellId": 1234791,
+      "name": "Power Through Adversity",
+      "description": "Second Wind reduces damage taken by 10% to 40%, with larger attacks being reduced by more.\r\n\r\nWhile Shield Wall or Last Stand are active, healing reductions do not apply to you.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
+  "265": [
+    {
+      "talentId": 15,
+      "spellId": 248855,
+      "name": "Gateway Mastery",
+      "description": "Increases the range of your Demonic Gateway by 20 yards, and reduces the cast time by 30%. Reduces the time between how often players can take your Demonic Gateway by 30 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 16,
+      "spellId": 212371,
+      "name": "Rot and Decay",
+      "description": "Shadow Bolt damage increases the duration of your Corruption and Agony on the target by 2.0 sec.\r\n\r\nDrain Life and Drain Soul damage increases the duration of your Corruption and Agony on the target by 1.0 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 18,
+      "spellId": 212295,
+      "name": "Nether Ward",
+      "description": "Surrounds the caster with a shield that lasts 3 sec, reflecting all harmful spells cast on you.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 19,
+      "spellId": 221711,
+      "name": "Essence Drain",
+      "description": "Whenever you heal yourself with Drain Life, the enemy target deals 9% reduced damage to you for 10 sec. Stacks up to 4 times.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5386,
+      "spellId": 426352,
+      "name": "Jinx",
+      "description": "Casting a curse now applies Corruption and Agony to your target, but curses now costs 1 Soul Shard.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5392,
+      "spellId": 353294,
+      "name": "Shadow Rift",
+      "description": "Conjure a Shadow Rift at the target location lasting 2 sec. Enemy players within the rift when it expires are teleported to your Demonic Circle.\r\n\r\nMust be within 40 yds of your Demonic Circle to cast.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5546,
+      "spellId": 353753,
+      "name": "Bonds of Fel",
+      "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 8 yd radius they explode, dealing 2,798 Fire damage split amongst all nearby enemies.",
+      "castTime": "1.5 sec cast",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5579,
+      "spellId": 409835,
+      "name": "Impish Instincts",
+      "description": "Taking direct Physical damage reduces the cooldown of Demonic Circle by 3 sec.\r\n\r\nCannot occur more than once every 5 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5608,
+      "spellId": 410598,
+      "name": "Soul Rip",
+      "description": "Fracture the soul of up to 3 target players within 20 yds into the shadows, reducing their damage done by 25% and healing received by 25% for 8 sec. Souls are fractured up to 20 yds from the player's location.\r\n\r\nPlayers can retrieve their souls to remove this effect.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5662,
+      "spellId": 386951,
+      "name": "Soul Swap",
+      "description": "Copies your damage over time effects and Haunt from the target, preserving their duration.\r\n\r\nYour next use of Soul Swap within until canceled will exhale a copy damage of the effects onto a new target.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5695,
+      "spellId": 1218692,
+      "name": "Bloodstones",
+      "description": "Your Healthstones are replaced with Bloodstones which increase their user's haste by 20% for 12 sec instead of healing.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
   "71": [
     {
       "talentId": 28,
@@ -1679,125 +1679,6 @@
       "name": "Berserker Roar",
       "description": "Berserker Shout also reduces the duration of the next crowd control effect within 10 sec by 50% on group members within 12 yds.\r\n",
       "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    }
-  ],
-  "262": [
-    {
-      "talentId": 727,
-      "spellId": 355580,
-      "name": "Static Field Totem",
-      "description": "Summons a totem with 4% of your health at the target location for 6 sec that forms a circuit of electricity that enemies cannot pass through.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 3488,
-      "spellId": 460697,
-      "name": "Totem of Wrath",
-      "description": "Stormkeeper summons a totem at your feet for 15 sec that increases the critical effect of damage and healing spells of all nearby allies within 40 yards by 15% for 15 sec.\r\n",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 3490,
-      "spellId": 204331,
-      "name": "Counterstrike Totem",
-      "description": "Summons a totem at your feet for 15 sec.\r\n\r\nWhenever enemies within 20 yards of the totem deal direct damage, the totem will deal 100% of the damage dealt back to attacker. ",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 3620,
-      "spellId": 204336,
-      "name": "Grounding Totem",
-      "description": "Summons a totem at your feet that will redirect all harmful spells cast within 30 yards on a nearby party or raid member to itself. Will not redirect area of effect spells. Lasts 3 sec.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5574,
-      "spellId": 409293,
-      "name": "Burrow",
-      "description": "Burrow beneath the ground, becoming unattackable, removing movement impairing effects, and increasing your movement speed by 50% for 5 sec.\r\n\r\nWhen the effect ends, enemies within 6 yards are knocked in the air and take 2,508 Physical damage.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5659,
-      "spellId": 206642,
-      "name": "Electrocute",
-      "description": "When you successfully Purge a beneficial effect, the enemy suffers 1,596 Nature damage over 3 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5660,
-      "spellId": 193876,
-      "name": "Shamanism",
-      "description": "Your Heroism spell now has a 60 sec cooldown, but increases Haste by 20%, and only affects you and your friendly target when cast for 10 sec.\r\n\r\nIn addition, Heroism is no longer affected by Exhaustion.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5681,
-      "spellId": 1217092,
-      "name": "Storm Conduit",
-      "description": "Casting Lightning Bolt or Chain Lightning reduces the cooldown of Astral Shift, Gust of Wind, Wind Shear, and Nature Totems by 1.0 sec.\r\n\r\nInterrupt duration reduced by 65% on Lightning Bolt and Chain Lightning casts.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5724,
-      "spellId": 305483,
-      "name": "Lightning Lasso",
-      "description": "Grips the target in lightning, stunning and dealing 2,660 Nature damage over 5 sec while the target is lassoed. Can move while channeling.",
-      "castTime": "Instant",
       "compatibleSlots": [
         1,
         2,
@@ -1938,6 +1819,125 @@
       ]
     }
   ],
+  "262": [
+    {
+      "talentId": 727,
+      "spellId": 355580,
+      "name": "Static Field Totem",
+      "description": "Summons a totem with 4% of your health at the target location for 6 sec that forms a circuit of electricity that enemies cannot pass through.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 3488,
+      "spellId": 460697,
+      "name": "Totem of Wrath",
+      "description": "Stormkeeper summons a totem at your feet for 15 sec that increases the critical effect of damage and healing spells of all nearby allies within 40 yards by 15% for 15 sec.\r\n",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 3490,
+      "spellId": 204331,
+      "name": "Counterstrike Totem",
+      "description": "Summons a totem at your feet for 15 sec.\r\n\r\nWhenever enemies within 20 yards of the totem deal direct damage, the totem will deal 100% of the damage dealt back to attacker. ",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 3620,
+      "spellId": 204336,
+      "name": "Grounding Totem",
+      "description": "Summons a totem at your feet that will redirect all harmful spells cast within 30 yards on a nearby party or raid member to itself. Will not redirect area of effect spells. Lasts 3 sec.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5574,
+      "spellId": 409293,
+      "name": "Burrow",
+      "description": "Burrow beneath the ground, becoming unattackable, removing movement impairing effects, and increasing your movement speed by 50% for 5 sec.\r\n\r\nWhen the effect ends, enemies within 6 yards are knocked in the air and take 2,508 Physical damage.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5659,
+      "spellId": 206642,
+      "name": "Electrocute",
+      "description": "When you successfully Purge a beneficial effect, the enemy suffers 2,154 Nature damage over 3 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5660,
+      "spellId": 193876,
+      "name": "Shamanism",
+      "description": "Your Heroism spell now has a 60 sec cooldown, but increases Haste by 20%, and only affects you and your friendly target when cast for 10 sec.\r\n\r\nIn addition, Heroism is no longer affected by Exhaustion.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5681,
+      "spellId": 1217092,
+      "name": "Storm Conduit",
+      "description": "Casting Lightning Bolt or Chain Lightning reduces the cooldown of Astral Shift, Gust of Wind, Wind Shear, and Nature Totems by 1.0 sec.\r\n\r\nInterrupt duration reduced by 65% on Lightning Bolt and Chain Lightning casts.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5724,
+      "spellId": 305483,
+      "name": "Lightning Lasso",
+      "description": "Grips the target in lightning, stunning and dealing 14,630 Nature damage over 5 sec while the target is lassoed. Can move while channeling.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
   "102": [
     {
       "talentId": 180,
@@ -2060,7 +2060,7 @@
       "talentId": 3731,
       "spellId": 1217017,
       "name": "Thorns",
-      "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 434 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
+      "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 438 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -2588,7 +2588,7 @@
       "talentId": 683,
       "spellId": 1243418,
       "name": "Healing Spheres",
-      "description": "Your healing has a chance to coalesces a Healing Sphere out of the mists at your target's location after 1.5 sec. If allies walk through it, they consume the sphere, healing themselves for 1,688 and dispelling all harmful periodic magic effects.\r\n\r\nMaximum of 3 Healing Spheres can be active by the Monk at any given time.",
+      "description": "Your healing has a chance to coalesces a Healing Sphere out of the mists at your target's location after 1.5 sec. If allies walk through it, they consume the sphere, healing themselves for 1,683 and dispelling all harmful periodic magic effects.\r\n\r\nMaximum of 3 Healing Spheres can be active by the Monk at any given time.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -2919,7 +2919,7 @@
       "talentId": 714,
       "spellId": 206642,
       "name": "Electrocute",
-      "description": "When you successfully Purge a beneficial effect, the enemy suffers 1,596 Nature damage over 3 sec.",
+      "description": "When you successfully Purge a beneficial effect, the enemy suffers 2,154 Nature damage over 3 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -3036,7 +3036,7 @@
       "talentId": 5723,
       "spellId": 305483,
       "name": "Lightning Lasso",
-      "description": "Grips the target in lightning, stunning and dealing 2,660 Nature damage over 5 sec while the target is lassoed. Can move while channeling.",
+      "description": "Grips the target in lightning, stunning and dealing 14,630 Nature damage over 5 sec while the target is lassoed. Can move while channeling.",
       "castTime": "Instant",
       "compatibleSlots": [
         1,
@@ -3077,7 +3077,7 @@
       "talentId": 697,
       "spellId": 1217017,
       "name": "Thorns",
-      "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 434 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
+      "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 428 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -3564,7 +3564,7 @@
       "talentId": 5658,
       "spellId": 206642,
       "name": "Electrocute",
-      "description": "When you successfully Purge a beneficial effect, the enemy suffers 1,596 Nature damage over 3 sec.",
+      "description": "When you successfully Purge a beneficial effect, the enemy suffers 2,154 Nature damage over 3 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -3577,7 +3577,7 @@
       "talentId": 5722,
       "spellId": 305483,
       "name": "Lightning Lasso",
-      "description": "Grips the target in lightning, stunning and dealing 2,660 Nature damage over 5 sec while the target is lassoed. Can move while channeling.",
+      "description": "Grips the target in lightning, stunning and dealing 14,630 Nature damage over 5 sec while the target is lassoed. Can move while channeling.",
       "castTime": "Instant",
       "compatibleSlots": [
         1,
@@ -4079,7 +4079,7 @@
       "talentId": 5640,
       "spellId": 375901,
       "name": "Mindgames",
-      "description": "Assault an enemy's mind, dealing 1,114 Shadow damage and briefly reversing their perception of reality.\r\n\r\nFor 7 sec, the next 3,990 damage they deal will heal their target, and the next 3,990 healing they deal will damage their target.",
+      "description": "Assault an enemy's mind, dealing 1,128 Shadow damage and briefly reversing their perception of reality.\r\n\r\nFor 7 sec, the next 3,990 damage they deal will heal their target, and the next 3,990 healing they deal will damage their target.",
       "castTime": "1.5 sec cast",
       "compatibleSlots": [
         1,
@@ -4146,7 +4146,7 @@
       "talentId": 5447,
       "spellId": 357711,
       "name": "Cascading Horrors",
-      "description": "Void Eruption sends out slow-moving bolts of Shadow energy at random locations every 0.5 sec for 3 sec, dealing 291 Shadow damage to all targets within 8 yds, and causing them to flee in Horror for 2 sec.",
+      "description": "Void Eruption sends out slow-moving bolts of Shadow energy at random locations every 0.5 sec for 3 sec, dealing 288 Shadow damage to all targets within 8 yds, and causing them to flee in Horror for 2 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -4198,7 +4198,7 @@
       "talentId": 5638,
       "spellId": 375901,
       "name": "Mindgames",
-      "description": "Assault an enemy's mind, dealing 1,139 Shadow damage and briefly reversing their perception of reality.\r\n\r\nFor 7 sec, the next 3,990 damage they deal will heal their target, and the next 3,990 healing they deal will damage their target.",
+      "description": "Assault an enemy's mind, dealing 1,145 Shadow damage and briefly reversing their perception of reality.\r\n\r\nFor 7 sec, the next 3,990 damage they deal will heal their target, and the next 3,990 healing they deal will damage their target.",
       "castTime": "1.5 sec cast",
       "compatibleSlots": [
         1,
@@ -4239,7 +4239,7 @@
       "talentId": 147,
       "spellId": 198145,
       "name": "System Shock",
-      "description": "Casting Envenom with at least 5 combo points on a target afflicted by your Garrote, Rupture, and lethal poison deals 11 Nature damage, and reduces their movement speed by 90% for 2 sec.",
+      "description": "Casting Envenom with at least 5 combo points on a target afflicted by your Garrote, Rupture, and lethal poison deals 10 Nature damage, and reduces their movement speed by 90% for 2 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -4436,7 +4436,7 @@
       "talentId": 5401,
       "spellId": 353753,
       "name": "Bonds of Fel",
-      "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 8 yd radius they explode, dealing 2,747 Fire damage split amongst all nearby enemies.",
+      "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 8 yd radius they explode, dealing 2,787 Fire damage split amongst all nearby enemies.",
       "castTime": "1.5 sec cast",
       "compatibleSlots": [
         1,
@@ -4542,7 +4542,7 @@
       "talentId": 5545,
       "spellId": 353753,
       "name": "Bonds of Fel",
-      "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 8 yd radius they explode, dealing 2,735 Fire damage split amongst all nearby enemies.",
+      "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 8 yd radius they explode, dealing 2,739 Fire damage split amongst all nearby enemies.",
       "castTime": "1.5 sec cast",
       "compatibleSlots": [
         1,
@@ -4977,7 +4977,7 @@
       "talentId": 5711,
       "spellId": 377509,
       "name": "Dream Projection",
-      "description": "Summon a flying projection of yourself that heals allies you pass through for 775. Detonating your projection dispels all nearby allies of Magical effects, and heals for 3,757 over 20 sec.",
+      "description": "Summon a flying projection of yourself that heals allies you pass through for 744. Detonating your projection dispels all nearby allies of Magical effects, and heals for 3,790 over 20 sec.",
       "castTime": "0.5 sec cast",
       "compatibleSlots": [
         1,
