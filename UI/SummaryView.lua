@@ -32,6 +32,7 @@ local SUGGESTION_TITLES = {
     LOW_HEALER_PRESSURE = "Healer received little damage",
     TILT_WARNING = "Performance dip detected (possible tilt)",
     COMP_DEFICIT = "Low win rate vs this opponent composition",
+    DIED_WITH_DEFENSIVES = "Died with defensives available",
 }
 
 local function formatPercent(value)
@@ -550,15 +551,25 @@ function SummaryView:Refresh(payload)
         local dmgTaken = session.totals.damageTaken or 0
         if (dmgDone + healDone + dmgTaken) > 0 then
             self.outputBarTitle:Show()
-            if self.outputBarWidget then
-                self.outputBarWidget:Hide()
+            -- Reuse cached widget when data is unchanged; recreate only on new session data.
+            local sameData = self.outputBarWidget
+                and self._outputBarDmgDone == dmgDone
+                and self._outputBarHealDone == healDone
+                and self._outputBarDmgTaken == dmgTaken
+            if not sameData then
+                if self.outputBarWidget then
+                    self.outputBarWidget:Hide()
+                end
+                self.outputBarWidget = ns.Widgets.CreateSegmentedBar(self.canvas, {
+                    { value = dmgDone,  color = { 0.90, 0.30, 0.25, 1.0 }, label = Helpers.FormatNumber(dmgDone) .. " dmg" },
+                    { value = healDone, color = { 0.44, 0.82, 0.60, 1.0 }, label = Helpers.FormatNumber(healDone) .. " heal" },
+                    { value = dmgTaken, color = { 0.35, 0.55, 0.90, 1.0 }, label = Helpers.FormatNumber(dmgTaken) .. " taken" },
+                }, 750, 22)
+                self.outputBarWidget:SetPoint("TOPLEFT", self.outputBarAnchor, "TOPLEFT", 0, 0)
+                self._outputBarDmgDone = dmgDone
+                self._outputBarHealDone = healDone
+                self._outputBarDmgTaken = dmgTaken
             end
-            self.outputBarWidget = ns.Widgets.CreateSegmentedBar(self.canvas, {
-                { value = dmgDone,  color = { 0.90, 0.30, 0.25, 1.0 }, label = Helpers.FormatNumber(dmgDone) .. " dmg" },
-                { value = healDone, color = { 0.44, 0.82, 0.60, 1.0 }, label = Helpers.FormatNumber(healDone) .. " heal" },
-                { value = dmgTaken, color = { 0.35, 0.55, 0.90, 1.0 }, label = Helpers.FormatNumber(dmgTaken) .. " taken" },
-            }, 750, 22)
-            self.outputBarWidget:SetPoint("TOPLEFT", self.outputBarAnchor, "TOPLEFT", 0, 0)
             self.outputBarWidget:Show()
             self.outputBarAnchor:Show()
         else
@@ -732,10 +743,14 @@ function SummaryView:Refresh(payload)
         end
     end
 
+    local dmgDoneSubtitle = string.format("%s DPS over %s versus %s. Source: %s.", Helpers.FormatNumber(session.metrics.sustainedDps or 0), Helpers.FormatDuration(session.duration or 0), opponent, readSource)
+    if session.expectedDamageContaminated then
+        dmgDoneSubtitle = dmgDoneSubtitle .. " (team-contaminated estimate)"
+    end
     self.metricCards[1]:SetData(
         string.format("%s", Helpers.FormatNumber(session.totals.damageDone or 0)),
         "Damage Done",
-        string.format("%s DPS over %s versus %s. Source: %s.", Helpers.FormatNumber(session.metrics.sustainedDps or 0), Helpers.FormatDuration(session.duration or 0), opponent, readSource),
+        dmgDoneSubtitle,
         Theme.accent
     )
     self.metricCards[1]:Show()

@@ -35,6 +35,7 @@ local SUGGESTION_TITLES = {
     CC_GOOD_TRINKET = "Good trinket timing (well done!)",
     CC_CHAIN_BREAK = "CC chain broken prematurely",
     CC_HIGH_UPTIME = "Excessive time spent crowd-controlled",
+    DIED_WITH_DEFENSIVES = "Died with defensives available",
 }
 
 -- ---------------------------------------------------------------------------
@@ -60,6 +61,7 @@ local REASON_TO_CATEGORY = {
     DEFENSIVE_UNUSED_ON_LOSS       = "defense",
     DEFENSIVE_DRIFT                = "defense",
     REACTIVE_DEFENSIVE_LATE        = "defense",
+    DIED_WITH_DEFENSIVES           = "defense",
     -- CC
     DIED_IN_CC                     = "cc",
     TRINKET_TIMING_POOR            = "cc",
@@ -218,6 +220,16 @@ local function buildEvidenceText(suggestion)
     end
     if suggestion.reasonCode == "CC_HIGH_UPTIME" then
         return string.format("CC uptime: %.1f%%. Total time under CC: %.1fs.", (evidence.uptimePct or 0) * 100, evidence.totalCCTime or 0)
+    end
+    if suggestion.reasonCode == "DIED_WITH_DEFENSIVES" then
+        local deathSec = evidence.deathTime or 0
+        local mins = math.floor(deathSec / 60)
+        local secs = math.floor(deathSec % 60)
+        local timeStr = string.format("%d:%02d", mins, secs)
+        if evidence and evidence.availableDefensives and #evidence.availableDefensives > 0 then
+            return string.format("Died at %s with %s available.", timeStr, table.concat(evidence.availableDefensives, ", "))
+        end
+        return string.format("Died at %s with defensives still available.", timeStr)
     end
 
     return "Derived from current session output and your stored PvP history."
@@ -797,29 +809,37 @@ function SuggestionsView:Refresh()
             end
             self.trendSection._header:Show()
 
+            -- Reuse pooled trend rows; create new ones only when the pool is exhausted.
+            if not self.trendSection._rowPool then
+                self.trendSection._rowPool = {}
+            end
+            local pool = self.trendSection._rowPool
+
             local yOffset = -24
-            for _, trend in ipairs(trends) do
-                local row = CreateFrame("Frame", nil, self.trendSection)
-                row:SetSize(self.trendSection:GetWidth() - 16, 20)
-                row:SetPoint("TOPLEFT", self.trendSection, "TOPLEFT", 8, yOffset)
-
-                local arrow = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                arrow:SetPoint("LEFT", row, "LEFT", 0, 0)
-                if trend.direction == "improving" then
-                    arrow:SetText("+")
-                    arrow:SetTextColor(0.44, 0.82, 0.60)
-                else
-                    arrow:SetText("-")
-                    arrow:SetTextColor(0.90, 0.35, 0.35)
+            for trendIdx, trend in ipairs(trends) do
+                local row = pool[trendIdx]
+                if not row then
+                    row = CreateFrame("Frame", nil, self.trendSection)
+                    row:SetSize(self.trendSection:GetWidth() - 16, 20)
+                    row._arrow = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    row._arrow:SetPoint("LEFT", row, "LEFT", 0, 0)
+                    row._msg = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    row._msg:SetPoint("LEFT", row._arrow, "RIGHT", 6, 0)
+                    row._msg:SetTextColor(0.80, 0.82, 0.85)
+                    pool[trendIdx] = row
                 end
-
-                local msg = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                msg:SetPoint("LEFT", arrow, "RIGHT", 6, 0)
-                msg:SetText(trend.message)
-                msg:SetTextColor(0.80, 0.82, 0.85)
-
+                row:ClearAllPoints()
+                row:SetPoint("TOPLEFT", self.trendSection, "TOPLEFT", 8, yOffset)
+                if trend.direction == "improving" then
+                    row._arrow:SetText("+")
+                    row._arrow:SetTextColor(0.44, 0.82, 0.60)
+                else
+                    row._arrow:SetText("-")
+                    row._arrow:SetTextColor(0.90, 0.35, 0.35)
+                end
+                row._msg:SetText(trend.message)
                 row:Show()
-                table.insert(self.trendSection._trendRows, row)
+                self.trendSection._trendRows[trendIdx] = row
                 yOffset = yOffset - 22
             end
 

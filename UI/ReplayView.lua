@@ -70,11 +70,18 @@ end
 
 -- ─── element pool ────────────────────────────────────────────────────────────
 
+-- Frame-leak fix: _clear hides all tracked elements but keeps the backing pool
+-- tables so _dot/_bar can reuse textures by index on the next Render call.
+-- Only textures that exceed the previous high-water mark are created fresh.
 function ReplayView:_clear()
     for _, el in ipairs(self._elements or {}) do
         if el and el.Hide then el:Hide() end
     end
     self._elements = {}
+    -- Reset per-render indices; pool tables (_dotPool, _barPool, _labelPool) persist.
+    self._dotIdx   = 0
+    self._barIdx   = 0
+    self._labelIdx = {}
 end
 
 function ReplayView:_add(el)
@@ -82,29 +89,64 @@ function ReplayView:_add(el)
     return el
 end
 
+-- Return a reused or newly created dot-texture from the pool.
 function ReplayView:_dot(x, y, r, g, b, a)
-    local t = self.canvas:CreateTexture(nil, "ARTWORK")
+    if not self._dotPool then self._dotPool = {} end
+    self._dotIdx = (self._dotIdx or 0) + 1
+    local t = self._dotPool[self._dotIdx]
+    if not t then
+        t = self.canvas:CreateTexture(nil, "ARTWORK")
+        t:SetTexture("Interface\\Buttons\\WHITE8x8")
+        self._dotPool[self._dotIdx] = t
+    end
     t:SetColorTexture(r, g, b, a or 1)
+    t:ClearAllPoints()
     t:SetPoint("TOPLEFT", self.canvas, "TOPLEFT",
         x - math.floor(DOT_SIZE / 2),
         -(y + math.floor((LANE_H - DOT_SIZE) / 2)))
     t:SetSize(DOT_SIZE, DOT_SIZE)
+    t:Show()  -- pooled texture was Hide()'d by _clear(); re-show on reuse
     self:_add(t)
 end
 
+-- Return a reused or newly created bar-texture from the pool.
 function ReplayView:_bar(x1, x2, y, r, g, b, a)
+    if not self._barPool then self._barPool = {} end
+    self._barIdx = (self._barIdx or 0) + 1
     local w = math.max(3, x2 - x1)
-    local t = self.canvas:CreateTexture(nil, "ARTWORK")
+    local t = self._barPool[self._barIdx]
+    if not t then
+        t = self.canvas:CreateTexture(nil, "ARTWORK")
+        t:SetTexture("Interface\\Buttons\\WHITE8x8")
+        self._barPool[self._barIdx] = t
+    end
     t:SetColorTexture(r, g, b, a or 1)
+    t:ClearAllPoints()
     t:SetPoint("TOPLEFT", self.canvas, "TOPLEFT",
         x1,
         -(y + math.floor((LANE_H - BAR_H) / 2)))
     t:SetSize(w, BAR_H)
+    t:Show()  -- pooled texture was Hide()'d by _clear(); re-show on reuse
     self:_add(t)
 end
 
+-- _label: pool FontStrings by index (child regions of canvas, cannot be
+-- unparented; safe to reuse since they all share the same parent and font).
 function ReplayView:_label(x, y, text, font, cr, cg, cb, ca)
-    local fs = self.canvas:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
+    if not self._labelPool then self._labelPool = {} end
+    -- Use a separate sub-pool per font to avoid cross-font reuse artifacts.
+    local poolKey = font or "GameFontHighlightSmall"
+    if not self._labelPool[poolKey] then self._labelPool[poolKey] = {} end
+    local subPool = self._labelPool[poolKey]
+    if not self._labelIdx then self._labelIdx = {} end
+    self._labelIdx[poolKey] = (self._labelIdx[poolKey] or 0) + 1
+    local idx = self._labelIdx[poolKey]
+    local fs = subPool[idx]
+    if not fs then
+        fs = self.canvas:CreateFontString(nil, "OVERLAY", poolKey)
+        subPool[idx] = fs
+    end
+    fs:ClearAllPoints()
     fs:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", x, -y)
     if cr then
         fs:SetTextColor(cr, cg or 1, cb or 1, ca or 1)
@@ -112,6 +154,7 @@ function ReplayView:_label(x, y, text, font, cr, cg, cb, ca)
         fs:SetTextColor(unpack(Theme.textMuted))
     end
     fs:SetText(text)
+    fs:Show()  -- pooled fontstring was Hide()'d by _clear(); re-show on reuse
     self:_add(fs)
     return fs
 end
@@ -161,7 +204,13 @@ function ReplayView:Initialize()
     self.cardArea:SetPoint("TOPLEFT", self.canvas, "BOTTOMLEFT", 0, -14)
     self.cardArea:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 12)
 
-    self._elements = {}
+    self._elements  = {}
+    self._dotPool   = {}
+    self._barPool   = {}
+    self._labelPool = {}
+    self._dotIdx    = 0
+    self._barIdx    = 0
+    self._labelIdx  = {}
 end
 
 -- ─── rendering ────────────────────────────────────────────────────────────────
@@ -490,26 +539,42 @@ end
 
 function ReplayView:_renderCards(session, rawEvents, deathOffset)
     local cardArea = self.cardArea
-    local function addCard(x, title, body)
+    -- Frame-leak fix: lazily create the three coaching-card slots once; reuse
+    -- them on every subsequent Render by updating text in place.
+    if not self._cards then
         local W = 218
-        local bg = cardArea:CreateTexture(nil, "BACKGROUND")
-        bg:SetColorTexture(0.08, 0.10, 0.15, 0.85)
-        bg:SetPoint("TOPLEFT", cardArea, "TOPLEFT", x, 0)
-        bg:SetSize(W, 72)
-        self:_add(bg)
-
-        local titleFs = cardArea:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        titleFs:SetPoint("TOPLEFT", cardArea, "TOPLEFT", x + 7, -7)
-        titleFs:SetTextColor(unpack(Theme.accent))
-        titleFs:SetText(title)
-        self:_add(titleFs)
-
-        local bodyFs = cardArea:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        bodyFs:SetPoint("TOPLEFT", cardArea, "TOPLEFT", x + 7, -26)
-        bodyFs:SetWidth(W - 14)
-        bodyFs:SetTextColor(unpack(Theme.text))
-        bodyFs:SetText(body)
-        self:_add(bodyFs)
+        self._cards = {}
+        for ci = 1, 3 do
+            local xOff = (ci - 1) * 226
+            local c = {}
+            c.bg = cardArea:CreateTexture(nil, "BACKGROUND")
+            c.bg:SetColorTexture(0.08, 0.10, 0.15, 0.85)
+            c.bg:SetPoint("TOPLEFT", cardArea, "TOPLEFT", xOff, 0)
+            c.bg:SetSize(W, 72)
+            c.titleFs = cardArea:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            c.titleFs:SetPoint("TOPLEFT", cardArea, "TOPLEFT", xOff + 7, -7)
+            c.titleFs:SetTextColor(unpack(Theme.accent))
+            c.bodyFs = cardArea:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            c.bodyFs:SetPoint("TOPLEFT", cardArea, "TOPLEFT", xOff + 7, -26)
+            c.bodyFs:SetWidth(W - 14)
+            c.bodyFs:SetTextColor(unpack(Theme.text))
+            self._cards[ci] = c
+        end
+    end
+    local cardIdx = 0
+    local function addCard(x, title, body)
+        cardIdx = cardIdx + 1
+        local c = self._cards[cardIdx]
+        if c then
+            c.titleFs:SetText(title)
+            c.bodyFs:SetText(body)
+            c.bg:Show()
+            c.titleFs:Show()
+            c.bodyFs:Show()
+            self:_add(c.bg)
+            self:_add(c.titleFs)
+            self:_add(c.bodyFs)
+        end
     end
 
     -- Card 1: Opener
@@ -528,7 +593,7 @@ function ReplayView:_renderCards(session, rawEvents, deathOffset)
     if openerCount > 0 then
         openerBody = string.format("%d casts in first 8s", openerCount)
         if firstSpell then
-            local info = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(firstSpell)
+            local info = ns.ApiCompat and ns.ApiCompat.GetSpellInfo(firstSpell)
             local name = info and info.name or ("Spell #" .. tostring(firstSpell))
             openerBody = openerBody .. "\nOpener: " .. name
         end

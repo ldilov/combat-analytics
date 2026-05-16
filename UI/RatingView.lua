@@ -39,6 +39,9 @@ local COLOR_LOSS = { 0.90, 0.30, 0.25, 1.0 }
 local COLOR_LINE = { 0.35, 0.78, 0.90, 0.6 }
 local COLOR_TIER = { 0.60, 0.69, 0.78, 0.25 }
 
+-- Frame-leak fix: hide all pooled chart objects without discarding the pool.
+-- The render path reuses pooled slots by index and hides surplus slots at the
+-- end, so WoW never allocates a new frame when a hidden one can be reused.
 local function releaseChartObjects(self)
     if self.dots then
         for _, dot in ipairs(self.dots) do
@@ -46,7 +49,7 @@ local function releaseChartObjects(self)
             dot:ClearAllPoints()
         end
     end
-    self.dots = {}
+    -- Keep self.dots table; render path reuses by index.
 
     if self.lines then
         for _, line in ipairs(self.lines) do
@@ -55,7 +58,7 @@ local function releaseChartObjects(self)
             line:Hide()
         end
     end
-    self.lines = {}
+    -- Keep self.lines table; render path reuses by index.
 
     if self.tierLines then
         for _, obj in ipairs(self.tierLines) do
@@ -63,7 +66,7 @@ local function releaseChartObjects(self)
             obj.label:Hide()
         end
     end
-    self.tierLines = {}
+    -- Keep self.tierLines table; render path reuses by index.
 
     if self.dotTooltipFrames then
         for _, frame in ipairs(self.dotTooltipFrames) do
@@ -71,7 +74,14 @@ local function releaseChartObjects(self)
             frame:ClearAllPoints()
         end
     end
-    self.dotTooltipFrames = {}
+    -- Keep self.dotTooltipFrames table; render path reuses by index.
+
+    if self.yAxisLabels then
+        for _, lbl in ipairs(self.yAxisLabels) do
+            lbl:Hide()
+        end
+    end
+    -- Keep self.yAxisLabels table; render path reuses by index.
 end
 
 local function computeYRange(data)
@@ -246,49 +256,64 @@ function RatingView:Refresh()
 
     local minR, maxR = computeYRange(data)
 
-    -- Draw tier threshold lines
+    -- Draw tier threshold lines (pool reuse: get-or-create by index).
+    local tierLineIdx = 0
     for _, threshold in ipairs(TIER_THRESHOLDS) do
         if threshold >= minR and threshold <= maxR then
             local y = ratingToY(threshold, minR, maxR, canvasHeight)
-
-            local tierLine = self.chartCanvas:CreateLine(nil, "BACKGROUND")
-            tierLine:SetThickness(1)
-            tierLine:SetStartPoint("TOPLEFT", self.chartCanvas, 0, -y)
-            tierLine:SetEndPoint("TOPLEFT", self.chartCanvas, canvasWidth, -y)
-            tierLine:SetColorTexture(COLOR_TIER[1], COLOR_TIER[2], COLOR_TIER[3], COLOR_TIER[4])
-            tierLine:Show()
-
-            local tierLabel = self.chartCanvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            tierLabel:SetPoint("RIGHT", self.chartCanvas, "TOPLEFT", -4, -y)
-            tierLabel:SetText(tostring(threshold))
-            tierLabel:SetTextColor(unpack(Theme.textMuted))
-            tierLabel:Show()
-
-            self.tierLines[#self.tierLines + 1] = { line = tierLine, label = tierLabel }
+            tierLineIdx = tierLineIdx + 1
+            local slot = self.tierLines[tierLineIdx]
+            if not slot then
+                local tierLine  = self.chartCanvas:CreateLine(nil, "BACKGROUND")
+                local tierLabel = self.chartCanvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                tierLabel:SetTextColor(unpack(Theme.textMuted))
+                slot = { line = tierLine, label = tierLabel }
+                self.tierLines[tierLineIdx] = slot
+            end
+            slot.line:SetThickness(1)
+            slot.line:SetStartPoint("TOPLEFT", self.chartCanvas, 0, -y)
+            slot.line:SetEndPoint("TOPLEFT", self.chartCanvas, canvasWidth, -y)
+            slot.line:SetColorTexture(COLOR_TIER[1], COLOR_TIER[2], COLOR_TIER[3], COLOR_TIER[4])
+            slot.line:Show()
+            slot.label:ClearAllPoints()
+            slot.label:SetPoint("RIGHT", self.chartCanvas, "TOPLEFT", -4, -y)
+            slot.label:SetText(tostring(threshold))
+            slot.label:Show()
         end
     end
-
-    -- Draw Y-axis range labels (min and max)
-    for _, lbl in ipairs(self.yAxisLabels) do
-        lbl:Hide()
+    -- Hide surplus tier-line slots from a previous refresh with more visible tiers.
+    for i = tierLineIdx + 1, #self.tierLines do
+        self.tierLines[i].line:Hide()
+        self.tierLines[i].label:Hide()
     end
-    self.yAxisLabels = {}
 
-    local minLabel = self.chartCanvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    -- Draw Y-axis range labels (min and max) — pool reuse: get-or-create by index.
+    if not self.yAxisLabels[1] then
+        self.yAxisLabels[1] = self.chartCanvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        self.yAxisLabels[1]:SetTextColor(unpack(Theme.textMuted))
+    end
+    if not self.yAxisLabels[2] then
+        self.yAxisLabels[2] = self.chartCanvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        self.yAxisLabels[2]:SetTextColor(unpack(Theme.textMuted))
+    end
+    local minLabel = self.yAxisLabels[1]
+    minLabel:ClearAllPoints()
     minLabel:SetPoint("RIGHT", self.chartCanvas, "BOTTOMLEFT", -4, 0)
     minLabel:SetText(tostring(minR))
-    minLabel:SetTextColor(unpack(Theme.textMuted))
-    self.yAxisLabels[#self.yAxisLabels + 1] = minLabel
+    minLabel:Show()
 
-    local maxLabel = self.chartCanvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local maxLabel = self.yAxisLabels[2]
+    maxLabel:ClearAllPoints()
     maxLabel:SetPoint("RIGHT", self.chartCanvas, "TOPLEFT", -4, 0)
     maxLabel:SetText(tostring(maxR))
-    maxLabel:SetTextColor(unpack(Theme.textMuted))
-    self.yAxisLabels[#self.yAxisLabels + 1] = maxLabel
+    maxLabel:Show()
 
-    -- Draw data points and connecting lines
+    -- Draw data points and connecting lines.
+    -- Frame-leak fix: get-or-create pools by index so no new frames are allocated
+    -- when a hidden slot from a previous refresh can be reused.
     local count = #data
     local prevDot = nil
+    local lineIdx = 0
 
     for i, entry in ipairs(data) do
         local rating = entry.ratingAfter or 0
@@ -297,25 +322,35 @@ function RatingView:Refresh()
         local isWin = entry.result == "won"
         local dotColor = isWin and COLOR_WIN or COLOR_LOSS
 
-        -- Create dot
-        local dot = CreateFrame("Frame", nil, self.chartCanvas)
+        -- Dot frame: reuse pooled slot or create new.
+        local dot = self.dots[i]
+        if not dot then
+            dot = CreateFrame("Frame", nil, self.chartCanvas)
+            dot:SetFrameLevel(self.chartCanvas:GetFrameLevel() + 2)
+            local dotTexture = dot:CreateTexture(nil, "ARTWORK")
+            dotTexture:SetTexture("Interface\\Buttons\\WHITE8x8")
+            dotTexture:SetAllPoints()
+            dot._tex = dotTexture
+            self.dots[i] = dot
+        end
         dot:SetSize(DOT_SIZE, DOT_SIZE)
+        dot:ClearAllPoints()
         dot:SetPoint("CENTER", self.chartCanvas, "TOPLEFT", x, -y)
-        dot:SetFrameLevel(self.chartCanvas:GetFrameLevel() + 2)
+        dot._tex:SetVertexColor(dotColor[1], dotColor[2], dotColor[3], dotColor[4])
+        dot:Show()
 
-        local dotTexture = dot:CreateTexture(nil, "ARTWORK")
-        dotTexture:SetTexture("Interface\\Buttons\\WHITE8x8")
-        dotTexture:SetAllPoints()
-        dotTexture:SetVertexColor(dotColor[1], dotColor[2], dotColor[3], dotColor[4])
-
-        self.dots[#self.dots + 1] = dot
-
-        -- Tooltip hover frame (slightly larger for easier mouse targeting)
-        local tooltipFrame = CreateFrame("Frame", nil, self.chartCanvas)
+        -- Tooltip hover frame: reuse pooled slot or create new.
+        local tooltipFrame = self.dotTooltipFrames[i]
+        if not tooltipFrame then
+            tooltipFrame = CreateFrame("Frame", nil, self.chartCanvas)
+            tooltipFrame:SetFrameLevel(self.chartCanvas:GetFrameLevel() + 3)
+            tooltipFrame:EnableMouse(true)
+            self.dotTooltipFrames[i] = tooltipFrame
+        end
         tooltipFrame:SetSize(DOT_SIZE + 8, DOT_SIZE + 8)
+        tooltipFrame:ClearAllPoints()
         tooltipFrame:SetPoint("CENTER", dot, "CENTER", 0, 0)
-        tooltipFrame:SetFrameLevel(self.chartCanvas:GetFrameLevel() + 3)
-        tooltipFrame:EnableMouse(true)
+        tooltipFrame:Show()
 
         local entryData = entry
         local entryIndex = i
@@ -358,20 +393,37 @@ function RatingView:Refresh()
         tooltipFrame:SetScript("OnLeave", function()
             GameTooltip:Hide()
         end)
-        self.dotTooltipFrames[#self.dotTooltipFrames + 1] = tooltipFrame
 
-        -- Connect to previous dot with a line
+        -- Connecting line to previous dot: reuse pooled slot or create new.
         if prevDot then
-            local line = self.chartCanvas:CreateLine(nil, "ARTWORK")
-            line:SetThickness(LINE_THICKNESS)
+            lineIdx = lineIdx + 1
+            local line = self.lines[lineIdx]
+            if not line then
+                line = self.chartCanvas:CreateLine(nil, "ARTWORK")
+                line:SetThickness(LINE_THICKNESS)
+                line:SetColorTexture(COLOR_LINE[1], COLOR_LINE[2], COLOR_LINE[3], COLOR_LINE[4])
+                self.lines[lineIdx] = line
+            end
             line:SetStartPoint("CENTER", prevDot)
             line:SetEndPoint("CENTER", dot)
-            line:SetColorTexture(COLOR_LINE[1], COLOR_LINE[2], COLOR_LINE[3], COLOR_LINE[4])
             line:Show()
-            self.lines[#self.lines + 1] = line
         end
 
         prevDot = dot
+    end
+
+    -- Hide surplus pool slots from a previous refresh that had more data points.
+    for i = count + 1, #self.dots do
+        self.dots[i]:Hide()
+    end
+    for i = count + 1, #self.dotTooltipFrames do
+        self.dotTooltipFrames[i]:Hide()
+    end
+    for i = lineIdx + 1, #self.lines do
+        local surplus = self.lines[i]
+        surplus:SetStartPoint("CENTER", self.chartCanvas)
+        surplus:SetEndPoint("CENTER", self.chartCanvas)
+        surplus:Hide()
     end
 
     self:UpdateSummaryStats(data)
@@ -402,9 +454,15 @@ function RatingView:UpdateConfidencePill(data)
         return
     end
 
-    -- Create a fresh pill each refresh (cheap; one small frame + font string).
-    self.confidencePill = ns.Widgets.CreateConfidencePill(self.confidencePillAnchor, confidence)
-    self.confidencePill:SetPoint("TOPLEFT", self.confidencePillAnchor, "TOPLEFT", 0, -6)
+    -- Frame-leak fix: reuse the cached pill via SetConfidence() instead of
+    -- hiding + recreating on each refresh.
+    if self.confidencePill then
+        self.confidencePill:SetConfidence(confidence)
+        self.confidencePill:Show()
+    else
+        self.confidencePill = ns.Widgets.CreateConfidencePill(self.confidencePillAnchor, confidence)
+        self.confidencePill:SetPoint("TOPLEFT", self.confidencePillAnchor, "TOPLEFT", 0, -6)
+    end
 
     -- For degraded confidence levels, replace the default tooltip with a warning.
     local WARNING_LEVELS = { estimated = true, partial_roster = true }

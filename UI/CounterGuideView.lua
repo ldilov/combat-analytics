@@ -131,12 +131,28 @@ function CounterGuideView:Refresh()
     local store = ns.Addon:GetModule("CombatStore")
     local classList = buildSpecList()
 
+    -- Frame-leak fix: hide all pooled spec-list buttons; reuse them by index below
+    -- instead of discarding and recreating on every Refresh call.
     for _, btn in ipairs(self.specButtons) do btn:Hide() end
-    self.specButtons = {}
+    -- Do NOT reset self.specButtons = {}; we reuse slots by index.
+
+    -- Class-header font strings are created once per class and re-used via the
+    -- same pool table (self._classHeaders, allocated lazily).
+    if not self._classHeaders then self._classHeaders = {} end
+    for _, h in ipairs(self._classHeaders) do h:Hide() end
+
+    local btnIdx = 0
+    local hdrIdx = 0
 
     local yOffset = 0
     for _, classGroup in ipairs(classList) do
-        local header = self.listCanvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        hdrIdx = hdrIdx + 1
+        local header = self._classHeaders[hdrIdx]
+        if not header then
+            header = self.listCanvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            self._classHeaders[hdrIdx] = header
+        end
+        header:ClearAllPoints()
         header:SetPoint("TOPLEFT", self.listCanvas, "TOPLEFT", 4, -yOffset)
         header:SetText(classGroup.classFile)
         if RAID_CLASS_COLORS and RAID_CLASS_COLORS[classGroup.classFile] then
@@ -145,28 +161,40 @@ function CounterGuideView:Refresh()
         else
             header:SetTextColor(unpack(Theme.textMuted))
         end
+        header:Show()
         yOffset = yOffset + 16
 
         for _, spec in ipairs(classGroup.specs) do
-            local btn = CreateFrame("Button", nil, self.listCanvas)
-            btn:SetSize(200, 22)
-            btn:SetPoint("TOPLEFT", self.listCanvas, "TOPLEFT", 8, -yOffset)
-
-            -- Small spec icon
-            local iconTex = btn:CreateTexture(nil, "ARTWORK")
-            iconTex:SetSize(16, 16)
-            iconTex:SetPoint("LEFT", btn, "LEFT", 0, 0)
-            local _, _, _, iconId = ApiCompat.GetSpecializationInfoByID(spec.specId)
-            if iconId then
-                iconTex:SetTexture(iconId)
-                iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-            else
-                iconTex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+            btnIdx = btnIdx + 1
+            local btn = self.specButtons[btnIdx]
+            if not btn then
+                -- First time: create the button with permanent child widgets.
+                btn = CreateFrame("Button", nil, self.listCanvas)
+                btn:SetSize(200, 22)
+                local iconTex = btn:CreateTexture(nil, "ARTWORK")
+                iconTex:SetSize(16, 16)
+                iconTex:SetPoint("LEFT", btn, "LEFT", 0, 0)
+                btn._iconTex = iconTex
+                btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                btn.label:SetPoint("LEFT", iconTex, "RIGHT", 4, 0)
+                btn.label:SetTextColor(unpack(Theme.text))
+                btn:SetScript("OnEnter",  function(b) b.label:SetTextColor(unpack(Theme.accent)) end)
+                btn:SetScript("OnLeave",  function(b) b.label:SetTextColor(unpack(Theme.text)) end)
+                self.specButtons[btnIdx] = btn
             end
 
-            btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            btn.label:SetPoint("LEFT", iconTex, "RIGHT", 4, 0)
-            btn.label:SetTextColor(unpack(Theme.text))
+            -- Update pooled button in place.
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", self.listCanvas, "TOPLEFT", 8, -yOffset)
+
+            local _, _, _, iconId = ApiCompat.GetSpecializationInfoByID(spec.specId)
+            if iconId then
+                btn._iconTex:SetTexture(iconId)
+                btn._iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            else
+                btn._iconTex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                btn._iconTex:SetTexCoord(0, 1, 0, 1)
+            end
 
             local wins, losses = getSpecWinLoss(store, spec.specId)
             local badge = ""
@@ -174,16 +202,23 @@ function CounterGuideView:Refresh()
                 badge = string.format("  |cff00cc00%dW|r|cffcc0000%dL|r", wins, losses)
             end
             btn.label:SetText(spec.specName .. badge)
+            btn.label:SetTextColor(unpack(Theme.text))
 
             local specId = spec.specId
-            btn:SetScript("OnClick",  function() self.selectedSpecId = specId; self:RefreshDetail() end)
-            btn:SetScript("OnEnter",  function(b) b.label:SetTextColor(unpack(Theme.accent)) end)
-            btn:SetScript("OnLeave",  function(b) b.label:SetTextColor(unpack(Theme.text)) end)
-
-            self.specButtons[#self.specButtons + 1] = btn
+            btn:SetScript("OnClick", function() self.selectedSpecId = specId; self:RefreshDetail() end)
+            btn:Show()
             yOffset = yOffset + 24
         end
         yOffset = yOffset + 6
+    end
+
+    -- Hide surplus button slots from a previous refresh that had more specs.
+    for i = btnIdx + 1, #self.specButtons do
+        self.specButtons[i]:Hide()
+    end
+    -- Hide surplus class header slots.
+    for i = hdrIdx + 1, #self._classHeaders do
+        self._classHeaders[i]:Hide()
     end
 
     ns.Widgets.SetCanvasHeight(self.listCanvas, yOffset + 20)

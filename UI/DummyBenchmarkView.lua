@@ -483,8 +483,14 @@ function DummyBenchmarkView:Refresh()
             self.dynamicElements[#self.dynamicElements + 1] = gapSummary
 
             -- Opener best vs median delta bar
+            -- CombatStore has no GetDummySessions; pull training-dummy
+            -- sessions via the context-filtered list so the opener-variance
+            -- band actually receives data instead of an empty table.
+            local dummySessions = store.ListCombats
+                and store:ListCombats(1, 500, { context = ns.Constants.CONTEXT.TRAINING_DUMMY }, characterKey)
+                or {}
             local openerBand = Metrics.ComputeOpenerVarianceBand
-                and Metrics:ComputeOpenerVarianceBand(store.GetDummySessions and store:GetDummySessions(characterKey) or {}) or nil
+                and Metrics:ComputeOpenerVarianceBand(dummySessions) or nil
             if openerBand and openerBand.best > 0 then
                 local deltaBar = ns.Widgets.CreateMirroredDeltaBar(
                     self.canvas,

@@ -356,8 +356,12 @@ function OpponentStatsView:Refresh()
     self.heatCaption:Show()
     self.heatLegend:Show()
 
+    -- Frame-leak fix: unparent previous heat-grid before recreating (CreateHeatGrid
+    -- has no in-place update method; bounded to one orphan per refresh cycle).
     if self.heatGridWidget then
         self.heatGridWidget:Hide()
+        self.heatGridWidget:SetParent(nil)
+        self.heatGridWidget = nil
     end
 
     self.heatGridWidget = ns.Widgets.CreateHeatGrid(
@@ -467,8 +471,9 @@ function OpponentStatsView:Refresh()
                     rosterCardCount = rosterCardCount + 1
                     local card = getOrCreateRosterCard(self, rosterCardCount)
 
-                    -- Class-colored dot
-                    local classFile = slotData.classFile
+                    -- Class-colored dot (use sanitized classFile to avoid taint in
+                    -- RAID_CLASS_COLORS lookup; secret key would panic on comparison).
+                    local classFile = slotData.classFile and ns.ApiCompat.SanitizeString(slotData.classFile)
                     if classFile and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile] then
                         local cc = RAID_CLASS_COLORS[classFile]
                         card.dot:SetVertexColor(cc.r, cc.g, cc.b, 1)
@@ -478,15 +483,21 @@ function OpponentStatsView:Refresh()
                         card.nameLabel:SetTextColor(unpack(Theme.text))
                     end
 
-                    local name = slotData.name or slotData.guid or "Unknown"
+                    -- Taint guard: inspect-sourced identity strings may be secret values
+                    -- in instanced PvP (WoW Midnight secret-string taint).  Sanitize
+                    -- before SetText so a secret value never reaches the render path.
+                    local rawName = slotData.name or slotData.guid or "Unknown"
+                    local name = ns.ApiCompat.SanitizeString(rawName) or "Unknown"
                     card.nameLabel:SetText(name)
 
                     local specParts = {}
-                    if slotData.specName then
-                        specParts[#specParts + 1] = slotData.specName
+                    local safeSpecName = slotData.specName and ns.ApiCompat.SanitizeString(slotData.specName)
+                    local safeClassFile = slotData.classFile and ns.ApiCompat.SanitizeString(slotData.classFile)
+                    if safeSpecName then
+                        specParts[#specParts + 1] = safeSpecName
                     end
-                    if slotData.classFile then
-                        specParts[#specParts + 1] = slotData.classFile
+                    if safeClassFile then
+                        specParts[#specParts + 1] = safeClassFile
                     end
                     local specText = #specParts > 0 and table.concat(specParts, " / ") or "?"
                     if slotData.pressureScore then
@@ -512,17 +523,27 @@ function OpponentStatsView:Refresh()
                         card.provenanceLabel:SetText(provStr)
                     end
 
-                    -- Confidence pill for this slot
-                    if card.confidencePill then
-                        card.confidencePill:Hide()
-                    end
+                    -- Confidence pill for this slot.
+                    -- Frame-leak fix: reuse the cached pill via SetConfidence() when it
+                    -- already exists; only CreateConfidencePill on first use per card slot.
                     local slotConfidence = slotData.fieldConfidence
                         or (latestSession.captureQuality and latestSession.captureQuality.confidence)
                         or nil
                     if slotConfidence then
-                        card.confidencePill = ns.Widgets.CreateConfidencePill(card, slotConfidence)
-                        card.confidencePill:ClearAllPoints()
-                        card.confidencePill:SetPoint("RIGHT", card, "RIGHT", -10, 0)
+                        if card.confidencePill then
+                            card.confidencePill:SetConfidence(slotConfidence)
+                            card.confidencePill:ClearAllPoints()
+                            card.confidencePill:SetPoint("RIGHT", card, "RIGHT", -10, 0)
+                            card.confidencePill:Show()
+                        else
+                            card.confidencePill = ns.Widgets.CreateConfidencePill(card, slotConfidence)
+                            card.confidencePill:ClearAllPoints()
+                            card.confidencePill:SetPoint("RIGHT", card, "RIGHT", -10, 0)
+                        end
+                    else
+                        if card.confidencePill then
+                            card.confidencePill:Hide()
+                        end
                     end
 
                     -- Position cards in a 2-column layout
@@ -553,13 +574,14 @@ function OpponentStatsView:Refresh()
             for _ in pairs(unresolved) do unresolvedCount = unresolvedCount + 1 end
 
             if unresolvedCount > 0 then
-                if self.unresolvedPill then
-                    self.unresolvedPill:Hide()
+                -- Frame-leak fix: reuse existing unresolvedPill via SetData() instead
+                -- of hiding + recreating on each refresh.
+                if not self.unresolvedPill then
+                    self.unresolvedPill = ns.Widgets.CreatePill(
+                        self.canvas, nil, nil,
+                        Theme.severityMedium, Theme.warning
+                    )
                 end
-                self.unresolvedPill = ns.Widgets.CreatePill(
-                    self.canvas, nil, nil,
-                    Theme.severityMedium, Theme.warning
-                )
                 self.unresolvedPill:SetData(
                     string.format("%d Unresolved", unresolvedCount),
                     Theme.text,

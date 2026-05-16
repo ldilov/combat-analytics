@@ -214,12 +214,16 @@ function ArenaScoutView:CreateEnemyRow(parent, index)
             return
         end
 
-        -- Class-color accent and name
-        local r, g, b, a = classColor(enemy.classFile)
+        -- Class-color accent and name.
+        -- Taint guard: inspect-sourced specName/classFile may be secret strings in
+        -- instanced PvP; sanitize before SetText to prevent taint propagation.
+        local safeClassFile = enemy.classFile and ns.ApiCompat.SanitizeString(enemy.classFile)
+        local r, g, b, a = classColor(safeClassFile)
         self.accent:SetVertexColor(r, g, b, a)
 
-        local nameStr = enemy.specName or "Unknown"
-        if enemy.classFile then
+        local safeSpecName = enemy.specName and ns.ApiCompat.SanitizeString(enemy.specName)
+        local nameStr = safeSpecName or "Unknown"
+        if safeClassFile then
             nameStr = string.format("|cff%02x%02x%02x%s|r",
                 math.floor(r * 255), math.floor(g * 255), math.floor(b * 255),
                 nameStr)

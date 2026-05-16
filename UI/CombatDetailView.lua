@@ -228,7 +228,7 @@ local function buildOverviewText(session)
         contextLabel = string.format("%s • %s", contextLabel, prettifyToken(session.subcontext))
     end
 
-    return table.concat({
+    local lines = {
         string.format(
             "Opponent: %s  |  Context: %s  |  Result: %s",
             opponent,
@@ -273,7 +273,15 @@ local function buildOverviewText(session)
             "Cooldowns Committed: %s",
             formatSpellList(openerFingerprint.openerCooldownSpellIds)
         ),
-    }, "\n")
+    }
+    if session.crossValidation and session.crossValidation.applied then
+        lines[#lines + 1] = string.format("Damage cross-validated (x%.2f)", session.crossValidation.scalingFactor or 1)
+    end
+    if session.expectedDamageContaminated
+        or session.expectedDamageSource == "enemy_damage_taken_team_contaminated" then
+        lines[#lines + 1] = "(team-contaminated estimate)"
+    end
+    return table.concat(lines, "\n")
 end
 
 local function buildRawEventSection(session, filteredRawEvents, rawPage, actorFilter, spellFilter, eventTypeFilter, windowFilter)
@@ -890,6 +898,19 @@ function CombatDetailView:BuildTimeline(session)
         local spellInfo = evt.spellId and ns.ApiCompat.GetSpellInfo(evt.spellId) or {}
         local spellName = spellInfo.name or tostring(evt.spellId or "Melee")
         addToBucket(evt, string.format("Dealt: %s %s%s", spellName, ns.Helpers.FormatNumber(amount), evt.critical and " (crit)" or ""), TIMELINE_COLORS.damageDealt)
+        -- Task 1d: append inferred-effect and caster metadata when present
+        if evt.effectModel or evt.effectAtOffset then
+            local bucketIdx = math.floor((offset / duration) * (bucketCount - 1)) + 1
+            bucketIdx = math.max(1, math.min(bucketIdx, bucketCount))
+            local effectLabel = evt.effectModel and ("Effect: " .. tostring(evt.effectModel)) or string.format("Effect at +%.1fs", evt.effectAtOffset or 0)
+            buckets[bucketIdx][#buckets[bucketIdx] + 1] = { text = effectLabel, r = 0.80, g = 0.80, b = 0.55 }
+        end
+        if evt.casterName or evt.casterClassFile then
+            local bucketIdx = math.floor((offset / duration) * (bucketCount - 1)) + 1
+            bucketIdx = math.max(1, math.min(bucketIdx, bucketCount))
+            local casterLabel = "Caster: " .. tostring(evt.casterName or evt.casterClassFile or "")
+            buckets[bucketIdx][#buckets[bucketIdx] + 1] = { text = casterLabel, r = 0.70, g = 0.85, b = 0.70 }
+        end
     end
 
     -- 3) Render damage taken bars (downward from center line)
@@ -909,6 +930,19 @@ function CombatDetailView:BuildTimeline(session)
         local spellInfo = evt.spellId and ns.ApiCompat.GetSpellInfo(evt.spellId) or {}
         local spellName = spellInfo.name or tostring(evt.spellId or "Melee")
         addToBucket(evt, string.format("Taken: %s %s%s", spellName, ns.Helpers.FormatNumber(amount), evt.critical and " (crit)" or ""), TIMELINE_COLORS.damageTaken)
+        -- Task 1d: append inferred-effect and caster metadata when present
+        if evt.effectModel or evt.effectAtOffset then
+            local bucketIdx = math.floor((offset / duration) * (bucketCount - 1)) + 1
+            bucketIdx = math.max(1, math.min(bucketIdx, bucketCount))
+            local effectLabel = evt.effectModel and ("Effect: " .. tostring(evt.effectModel)) or string.format("Effect at +%.1fs", evt.effectAtOffset or 0)
+            buckets[bucketIdx][#buckets[bucketIdx] + 1] = { text = effectLabel, r = 0.80, g = 0.80, b = 0.55 }
+        end
+        if evt.casterName or evt.casterClassFile then
+            local bucketIdx = math.floor((offset / duration) * (bucketCount - 1)) + 1
+            bucketIdx = math.max(1, math.min(bucketIdx, bucketCount))
+            local casterLabel = "Caster: " .. tostring(evt.casterName or evt.casterClassFile or "")
+            buckets[bucketIdx][#buckets[bucketIdx] + 1] = { text = casterLabel, r = 0.70, g = 0.85, b = 0.70 }
+        end
     end
 
     -- 4) Render healing bars (upward from center line, on top of damage dealt)
@@ -1164,6 +1198,9 @@ function CombatDetailView:Refresh(payload)
         dmgSubtext = string.format("%s DPS over %s against %s.", ns.Helpers.FormatNumber(session.metrics.sustainedDps or 0), ns.Helpers.FormatDuration(session.duration or 0), opponent)
     end
 
+    if session.expectedDamageContaminated then
+        dmgSubtext = dmgSubtext .. " (team-contaminated estimate)"
+    end
     self.metricCards[1]:SetData(
         dmgDisplayValue,
         "Damage Done",
@@ -1327,24 +1364,60 @@ function CombatDetailView:Refresh(payload)
         local laneGap = 4
         local prevLaneWidget = nil
 
+        -- Pool of reusable lane widget slots; each slot is { widget, label }.
+        -- Widgets created by CreateTimelineLane accumulate internal textures on
+        -- reuse, but the per-Refresh fontstring leak at the label is eliminated
+        -- by caching _label on the slot and only calling CreateFontString once.
+        if not self._multiLanePool then
+            self._multiLanePool = {}
+        end
+
         for _, laneName in ipairs(LANE_ORDER) do
             local events = laneGroups[laneName]
             if events and #events > 0 then
                 laneCount = laneCount + 1
-                local laneWidget = ns.Widgets.CreateTimelineLane(
-                    self.canvas, events, duration, 750, laneHeight
-                )
+
+                -- Reuse an existing slot or create a new one.
+                local slot = self._multiLanePool[laneCount]
+                local laneWidget
+                if slot then
+                    laneWidget = slot.widget
+                    -- The lane widget's internal event bars are already drawn;
+                    -- we recreate the widget to get fresh event bars for this
+                    -- session, but reuse the label fontstring from the slot.
+                    laneWidget:Hide()
+                    laneWidget = ns.Widgets.CreateTimelineLane(
+                        self.canvas, events, duration, 750, laneHeight
+                    )
+                    slot.widget = laneWidget
+                    -- Reattach the cached label to the new widget.
+                    if slot.label then
+                        slot.label:SetParent(laneWidget)
+                        slot.label:ClearAllPoints()
+                        slot.label:SetPoint("LEFT", laneWidget, "LEFT", 4, 0)
+                    else
+                        slot.label = laneWidget:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                        slot.label:SetPoint("LEFT", laneWidget, "LEFT", 4, 0)
+                        slot.label:SetTextColor(unpack(Theme.text))
+                    end
+                else
+                    laneWidget = ns.Widgets.CreateTimelineLane(
+                        self.canvas, events, duration, 750, laneHeight
+                    )
+                    local lbl = laneWidget:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                    lbl:SetPoint("LEFT", laneWidget, "LEFT", 4, 0)
+                    lbl:SetTextColor(unpack(Theme.text))
+                    slot = { widget = laneWidget, label = lbl }
+                    self._multiLanePool[laneCount] = slot
+                end
+
+                slot.label:SetText(LANE_LABELS[laneName] or laneName)
+
                 if prevLaneWidget then
                     laneWidget:SetPoint("TOPLEFT", prevLaneWidget, "BOTTOMLEFT", 0, -laneGap)
                 else
                     laneWidget:SetPoint("TOPLEFT", self.multiLaneContainer, "TOPLEFT", 0, 0)
                 end
-
-                -- Add lane label on the left side
-                local lbl = laneWidget:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                lbl:SetPoint("LEFT", laneWidget, "LEFT", 4, 0)
-                lbl:SetTextColor(unpack(Theme.text))
-                lbl:SetText(LANE_LABELS[laneName] or laneName)
 
                 laneWidget:Show()
                 self.multiLaneWidgets[#self.multiLaneWidgets + 1] = laneWidget

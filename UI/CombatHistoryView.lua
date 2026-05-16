@@ -266,6 +266,10 @@ function CombatHistoryView:Refresh()
     end
 
     -- 20-session results sparkline
+    -- Frame-leak fix: destroy the old sparkline widget (SetParent nil, bounded to
+    -- one orphan per refresh) and recreate only when we have data.  CreateSparkline
+    -- has no in-place SetData method, so we must recreate; but we never accumulate
+    -- more than one stale instance.
     if self.sparkline then
         local allSessions, allTotal = store:ListCombats(1, 20, {}, characterKey)
         local sparkData = {}
@@ -276,16 +280,13 @@ function CombatHistoryView:Refresh()
             end
         end
         if #sparkData > 0 then
+            -- Release the previous widget before creating a new one.
             self.sparkline:Hide()
-            local anchor = { self.sparkline:GetPoint(1) }
+            self.sparkline:SetParent(nil)
             self.sparkline = ns.Widgets.CreateSparkline(
                 self.frame, sparkData, ns.Widgets.THEME.success, 200, 14
             )
-            if anchor[1] then
-                self.sparkline:SetPoint(anchor[1], anchor[2], anchor[3], anchor[4], anchor[5])
-            else
-                self.sparkline:SetPoint("LEFT", self.sparklineLabel, "RIGHT", 8, 0)
-            end
+            self.sparkline:SetPoint("LEFT", self.sparklineLabel, "RIGHT", 8, 0)
             self.sparkline:Show()
         else
             self.sparkline:Hide()
@@ -318,15 +319,20 @@ function CombatHistoryView:Refresh()
                 or readQuality
 
             -- T025: Determine damage display for history row based on totalAuthority.
+            -- Guard the sub-tables: sessions persisted before totals/metrics
+            -- existed (or abandoned/UNKNOWN sessions) may not have them, and a
+            -- bare session.totals.X would error and blank the whole view.
+            local totals = session.totals or {}
+            local metrics = session.metrics or {}
             local importedTotals = session.importedTotals or {}
             local totalAuthority = importedTotals.totalAuthority
             local damageDisplay
             if totalAuthority == "failed" then
                 damageDisplay = "|cffff8800\226\156\151 —|r"
             elseif totalAuthority == "estimated" then
-                damageDisplay = "|cffa0a0a0~" .. ns.Helpers.FormatNumber(session.totals.damageDone or 0) .. "|r"
+                damageDisplay = "|cffa0a0a0~" .. ns.Helpers.FormatNumber(totals.damageDone or 0) .. "|r"
             else
-                damageDisplay = ns.Helpers.FormatNumber(session.totals.damageDone or 0)
+                damageDisplay = ns.Helpers.FormatNumber(totals.damageDone or 0)
             end
 
             row:SetData({
@@ -342,9 +348,9 @@ function CombatHistoryView:Refresh()
                     "Duration %s  |  Damage %s  |  Taken %s  |  Pressure %.1f  |  Burst %.1f",
                     ns.Helpers.FormatDuration(session.duration or 0),
                     damageDisplay,
-                    ns.Helpers.FormatNumber(session.totals.damageTaken or 0),
-                    session.metrics.pressureScore or 0,
-                    session.metrics.burstScore or 0
+                    ns.Helpers.FormatNumber(totals.damageTaken or 0),
+                    metrics.pressureScore or 0,
+                    metrics.burstScore or 0
                 ),
                 source = string.format("%s via %s", richLabel, readSource),
                 result = string.lower(tostring(session.result or "unknown")),

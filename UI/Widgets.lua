@@ -1250,6 +1250,11 @@ function Widgets.CreateConfidencePill(parent, confidence)
                 GameTooltip:Show()
             end)
             p:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        else
+            -- Reused pill may have moved from a confidence WITH a tooltip to
+            -- one without; clear stale handlers so hover doesn't show prior text.
+            p:SetScript("OnEnter", nil)
+            p:SetScript("OnLeave", nil)
         end
     end
     applyTooltip(pill, mapping)
