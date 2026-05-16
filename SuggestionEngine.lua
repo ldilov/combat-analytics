@@ -9,6 +9,65 @@ local function addSuggestion(results, suggestion)
     results[#results + 1] = suggestion
 end
 
+-- ── T035-T036: RICE priority scoring ────────────────────────────────────────
+local function computePriorityScore(suggestion, recentSuggestionCounts)
+    local frequency = (recentSuggestionCounts[suggestion.reasonCode] or 0) / math.max(recentSuggestionCounts._totalSessions or 1, 1)
+    local impact = suggestion.severity == "high" and 3 or (suggestion.severity == "medium" and 2 or 1)
+    local confidence = suggestion.confidence or 0.5
+    local effort = suggestion.effort or 2
+    return (frequency * impact * confidence) / math.max(effort, 1)
+end
+
+-- ── T038-T039: Confidence tier based on sample count ────────────────────────
+local function getConfidenceTier(sampleCount)
+    if sampleCount >= 20 then return "established_trend"
+    elseif sampleCount >= 10 then return "consistent_pattern"
+    elseif sampleCount >= 5 then return "emerging_pattern"
+    else return "early_signal" end
+end
+
+-- ── T040-T041: Controllability mapping per reason code ──────────────────────
+local CONTROLLABILITY = {
+    -- Resource available but unused
+    DEFENSIVE_UNUSED_ON_LOSS    = "resource_available",
+    DIED_WITH_DEFENSIVES        = "resource_available",
+    PROC_WINDOWS_UNDERUSED      = "resource_available",
+    -- Timing-based
+    LATE_FIRST_GO               = "timing",
+    DEFENSIVE_DRIFT             = "timing",
+    TRINKET_TIMING_POOR         = "timing",
+    REACTIVE_DEFENSIVE_LATE     = "timing",
+    -- Outcome-based (score comparisons)
+    LOW_PRESSURE_VS_BUILD_BASELINE = "outcome_based",
+    ROTATION_GAPS_OBSERVED      = "outcome_based",
+    WEAK_BURST_FOR_CONTEXT      = "outcome_based",
+    HIGH_CC_UPTIME              = "outcome_based",
+    HIGH_DAMAGE_TAKEN_VS_OPPONENT = "outcome_based",
+    HIGH_AVOIDABLE_DAMAGE_TAKEN = "outcome_based",
+    SPEC_WINRATE_DEFICIT        = "outcome_based",
+    SPEC_WINRATE_STRENGTH       = "outcome_based",
+    POOR_INTERRUPT_RATE         = "timing",
+    LOW_HEALER_PRESSURE         = "outcome_based",
+    TILT_WARNING                = "outcome_based",
+    COMP_DEFICIT                = "outcome_based",
+    DUMMY_OPENER_VARIANCE       = "outcome_based",
+    DUMMY_SUSTAINED_VARIANCE    = "outcome_based",
+    SUBOPTIMAL_OPENER_SEQUENCE  = "timing",
+    DIED_IN_CC                  = "resource_available",
+    -- Informational
+    RAW_EVENT_OVERFLOW          = "informational",
+    MIDNIGHT_SAFE_LIMITS        = "informational",
+    SPEC_SCALING_NOTABLE        = "informational",
+}
+
+-- Controllability sort priority (lower = more actionable = sorted first)
+local CONTROLLABILITY_RANK = {
+    resource_available = 1,
+    timing             = 2,
+    outcome_based      = 3,
+    informational      = 4,
+}
+
 -- T038: suggestionConf is an optional attribution confidence string indicating
 -- how trustworthy the source events for this suggestion are.
 --   "confirmed"      — based on realtime observed events
@@ -116,8 +175,13 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     local hasCCCoverage       = (cov.ccReceived   and cov.ccReceived.score       or 0) >= AURA_COV_THRESHOLD
     local hasIdentityCoverage = (cov.identity     and cov.identity.score         or 0) >= IDENTITY_COV_THRESHOLD
 
+    -- T042: Adaptive thresholds from MetricBaselineService
+    local mbsModule = nil
+    pcall(function() mbsModule = ns.Addon:GetModule("MetricBaselineService", true) end)
+
     local buildBaseline = store:GetBuildBaseline(buildHash, contextKey, nil, characterKey)
-    if buildBaseline and buildBaseline.fights >= 5 and m.pressureScore and m.pressureScore < (buildBaseline.averagePressureScore * 0.8) then
+    local pressureThreshold = mbsModule and mbsModule:GetThreshold(session.context, "pressureScore", "p25") or nil
+    if buildBaseline and buildBaseline.fights >= 5 and m.pressureScore and m.pressureScore < (pressureThreshold or (buildBaseline.averagePressureScore * 0.8)) then
         addSuggestion(results, buildSuggestion(
             session,
             "LOW_PRESSURE_VS_BUILD_BASELINE",
@@ -129,7 +193,8 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         ))
     end
 
-    if hasCastCoverage and successfulCastCount >= 6 and (m.rotationalConsistencyScore or 0) > 0 and m.rotationalConsistencyScore < 45 then
+    local rotationThreshold = mbsModule and mbsModule:GetThreshold(session.context, "rotationConsistencyScore", "p25") or 45
+    if hasCastCoverage and successfulCastCount >= 6 and (m.rotationalConsistencyScore or 0) > 0 and m.rotationalConsistencyScore < rotationThreshold then
         addSuggestion(results, buildSuggestion(
             session,
             "ROTATION_GAPS_OBSERVED",
@@ -203,8 +268,9 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         ))
     end
 
-    -- Task 2.2: High CC uptime suggestion
-    if hasCCCoverage and (m.ccUptimePct or 0) > 0.35 then
+    -- Task 2.2: High CC uptime suggestion (T042: adaptive threshold)
+    local ccUptimeThreshold = mbsModule and mbsModule:GetThreshold(session.context, "ccUptimePct", "p75") or 0.35
+    if hasCCCoverage and (m.ccUptimePct or 0) > ccUptimeThreshold then
         local damageTakenDuringCC = session.totals and session.totals.damageTakenDuringCC
         local totalDamageTaken = (session.totals and session.totals.damageTaken) or 0
         local fireSuggestion = false
@@ -235,7 +301,8 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     end
 
     local contextBaseline = store:GetContextBaseline(contextKey, nil, characterKey)
-    if hasRawTimeline and contextBaseline and contextBaseline.fights >= 5 and m.burstScore and m.burstScore < (contextBaseline.averageBurstScore * 0.8) then
+    local burstThreshold = mbsModule and mbsModule:GetThreshold(session.context, "burstScore", "p25") or nil
+    if hasRawTimeline and contextBaseline and contextBaseline.fights >= 5 and m.burstScore and m.burstScore < (burstThreshold or (contextBaseline.averageBurstScore * 0.8)) then
         addSuggestion(results, buildSuggestion(
             session,
             "WEAK_BURST_FOR_CONTEXT",
@@ -303,7 +370,8 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     local avoidable  = (session.totals and session.totals.avoidableDamageTaken) or 0
     if avoidable > 0 and totalTaken > 0 then
         local ratio = avoidable / totalTaken
-        if ratio >= 0.25 then
+        local avoidableThreshold = mbsModule and mbsModule:GetThreshold(session.context, "avoidableDamagePct", "p75") or 0.25
+        if ratio >= avoidableThreshold then
             local topSpellName   = nil
             local topSpellAmount = 0
             local avoidableSpells = session.importedTotals and session.importedTotals.avoidableSpells or {}
@@ -729,7 +797,85 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         end
     end
 
-    return results
+    -- ── T043-T045: DeathAnalyzer integration ──────────────────────────────────
+    local okDeath, deathResult = pcall(function()
+        local deathAnalyzer = ns.Addon:GetModule("DeathAnalyzer", true)
+        if deathAnalyzer then
+            local deathSuggestions = deathAnalyzer:AnalyzeDeaths(session)
+            for _, s in ipairs(deathSuggestions) do
+                addSuggestion(results, buildSuggestion(
+                    session,
+                    s.reasonCode,
+                    s.severity,
+                    s.confidence,
+                    s.evidence,
+                    "death_analysis",
+                    s.message
+                ))
+            end
+        end
+    end)
+    if not okDeath then
+        ns.Addon:Debug("DeathAnalyzer integration failed: %s", tostring(deathResult))
+    end
+
+    -- ── T035-T042: Post-processing — RICE scoring, confidence tiers, top-3 cap ──
+    local mbs = nil
+    pcall(function() mbs = ns.Addon:GetModule("MetricBaselineService", true) end)
+
+    -- Build recent suggestion frequency counts from store
+    local recentSuggestionCounts = { _totalSessions = 1 }
+    pcall(function()
+        local recentSessions = store:GetRecentSessionStreak(20)
+        if recentSessions then
+            recentSuggestionCounts._totalSessions = math.max(#recentSessions, 1)
+            for _, rs in ipairs(recentSessions) do
+                for _, sug in ipairs(rs.suggestions or {}) do
+                    if sug.reasonCode then
+                        recentSuggestionCounts[sug.reasonCode] = (recentSuggestionCounts[sug.reasonCode] or 0) + 1
+                    end
+                end
+            end
+        end
+    end)
+
+    -- Attach metadata to each suggestion: priorityScore, confidenceTier, controllability
+    for _, sug in ipairs(results) do
+        sug.priorityScore = computePriorityScore(sug, recentSuggestionCounts)
+        sug.controllability = sug.controllability or CONTROLLABILITY[sug.reasonCode] or "outcome_based"
+        sug.effort = sug.effort or 2
+
+        -- Confidence tier from MetricBaselineService sample count
+        local sampleCount = 0
+        if mbs then
+            pcall(function()
+                sampleCount = mbs:GetSampleCount(session.context or "general", "pressureScore")
+            end)
+        end
+        sug.confidenceTier = getConfidenceTier(sampleCount)
+    end
+
+    -- Sort by priority score descending, then by controllability rank ascending
+    table.sort(results, function(a, b)
+        if (a.priorityScore or 0) ~= (b.priorityScore or 0) then
+            return (a.priorityScore or 0) > (b.priorityScore or 0)
+        end
+        local rankA = CONTROLLABILITY_RANK[a.controllability] or 99
+        local rankB = CONTROLLABILITY_RANK[b.controllability] or 99
+        return rankA < rankB
+    end)
+
+    -- Store full list, then cap display list at top 3 (suppress early_signal from display)
+    session.allSuggestions = results
+
+    local display = {}
+    for _, sug in ipairs(results) do
+        if sug.confidenceTier ~= "early_signal" and #display < 3 then
+            display[#display + 1] = sug
+        end
+    end
+
+    return display
 end
 
 ns.Addon:RegisterModule("SuggestionEngine", SuggestionEngine)

@@ -116,4 +116,51 @@ function Math.LinearTrendSlope(points, xKey, yKey)
     return ((count * sumXY) - (sumX * sumY)) / denominator
 end
 
+function Math.BayesianShrinkage(playerMean, sampleCount, populationMean, priorWeight)
+    priorWeight = priorWeight or 7
+    sampleCount = sampleCount or 0
+    if sampleCount <= 0 then
+        return populationMean or 0
+    end
+    return ((priorWeight * (populationMean or 0)) + (sampleCount * playerMean)) / (priorWeight + sampleCount)
+end
+
+function Math.LinearRegression(xValues, yValues)
+    if not xValues or not yValues or #xValues < 2 or #xValues ~= #yValues then
+        return { slope = 0, intercept = 0, rSquared = 0 }
+    end
+    local n = #xValues
+    local sumX, sumY, sumXY, sumXX, sumYY = 0, 0, 0, 0, 0
+    for i = 1, n do
+        local x = tonumber(xValues[i]) or 0
+        local y = tonumber(yValues[i]) or 0
+        sumX = sumX + x
+        sumY = sumY + y
+        sumXY = sumXY + x * y
+        sumXX = sumXX + x * x
+        sumYY = sumYY + y * y
+    end
+    local denomX = n * sumXX - sumX * sumX
+    if denomX == 0 then
+        return { slope = 0, intercept = 0, rSquared = 0 }
+    end
+    local slope = (n * sumXY - sumX * sumY) / denomX
+    local intercept = (sumY - slope * sumX) / n
+    local denomR = math.sqrt((n * sumXX - sumX * sumX) * (n * sumYY - sumY * sumY))
+    local rSquared = 0
+    if denomR > 0 then
+        local r = (n * sumXY - sumX * sumY) / denomR
+        rSquared = r * r
+    end
+    return { slope = slope, intercept = intercept, rSquared = rSquared }
+end
+
+function Math.ExponentialMovingAverage(currentValue, previousEma, alpha)
+    alpha = alpha or 0.3
+    if previousEma == nil then
+        return currentValue
+    end
+    return alpha * currentValue + (1 - alpha) * previousEma
+end
+
 ns.Math = Math

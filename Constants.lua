@@ -2,7 +2,7 @@ local ADDON_NAME, ns = ...
 
 ns.Constants = {
     ADDON_NAME = ADDON_NAME,
-    SCHEMA_VERSION = 8,
+    SCHEMA_VERSION = 9,
     RAW_EVENT_VERSION = 2,
     MAX_RAW_EVENTS_PER_SESSION = 25000,
     RAW_EVENT_WARNING_THRESHOLD = 500000,
@@ -257,6 +257,8 @@ ns.Constants = {
         showConfidenceBadges = true,
         showPreMatchAdvisory = true,
         enablePartySync = false,
+        enableAnimations = true,
+        maxSuggestionsDisplay = 3,
     },
     -- ──────────────────────────────────────────────────────────────────────────
     -- Combat Log Object Flags (Midnight-native, replaces deprecated globals)

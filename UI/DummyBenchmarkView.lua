@@ -484,7 +484,7 @@ function DummyBenchmarkView:Refresh()
 
             -- Opener best vs median delta bar
             local openerBand = Metrics.ComputeOpenerVarianceBand
-                and Metrics:ComputeOpenerVarianceBand(store:GetDummySessions and store:GetDummySessions(characterKey) or {}) or nil
+                and Metrics:ComputeOpenerVarianceBand(store.GetDummySessions and store:GetDummySessions(characterKey) or {}) or nil
             if openerBand and openerBand.best > 0 then
                 local deltaBar = ns.Widgets.CreateMirroredDeltaBar(
                     self.canvas,

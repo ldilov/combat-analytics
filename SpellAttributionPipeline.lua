@@ -18,6 +18,14 @@ local Constants = ns.Constants
 -- This distinction lets downstream code know whether attribution was computed.
 local SpellAttributionPipeline = {}
 
+-- T025-T027: Guardian attribution — maps summoned guardian GUIDs to their owners.
+-- Populated by HandleSummonEvent (SPELL_SUMMON) and cleaned on UNIT_DIED.
+-- When a guardian deals damage, the pipeline re-attributes it to the owner GUID.
+local summonMap = {}
+
+-- COMBATLOG_OBJECT_TYPE_GUARDIAN flag for sourceFlags-based guardian detection.
+local COMBATLOG_OBJECT_TYPE_GUARDIAN = 0x00002000
+
 -- ──────────────────────────────────────────────────────────────────────────────
 -- Internal helpers
 -- ──────────────────────────────────────────────────────────────────────────────
@@ -136,6 +144,85 @@ end
 
 function SpellAttributionPipeline:Initialize()
     -- Stateless module; attribution state lives on sessions.
+    -- T025: Clear summonMap on init to avoid stale cross-session references.
+    wipe(summonMap)
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- T025-T027: Guardian / summon tracking
+-- ──────────────────────────────────────────────────────────────────────────────
+
+--- Record a SPELL_SUMMON event to map guardian GUID → owner GUID.
+--- Called from CombatTracker event routing when SPELL_SUMMON fires.
+function SpellAttributionPipeline:HandleSummonEvent(sourceGUID, destGUID)
+    if sourceGUID and destGUID then
+        summonMap[destGUID] = sourceGUID
+    end
+end
+
+--- Clean up summonMap entry when a summoned unit dies (UNIT_DIED).
+function SpellAttributionPipeline:HandleUnitDied(destGUID)
+    if destGUID then
+        summonMap[destGUID] = nil
+    end
+end
+
+--- Resolve the effective source GUID for attribution purposes.
+--- If sourceGUID belongs to a known guardian, returns the owner GUID instead.
+--- Also checks sourceFlags for the GUARDIAN type bit as a fallback.
+--- @param sourceGUID string  The damage source GUID.
+--- @param sourceFlags number|nil  The CLEU sourceFlags bitmask.
+--- @return string  The resolved owner GUID, or the original sourceGUID.
+function SpellAttributionPipeline:ResolveOwnerGUID(sourceGUID, sourceFlags)
+    -- Direct summonMap lookup (most reliable).
+    local owner = sourceGUID and summonMap[sourceGUID]
+    if owner then
+        return owner
+    end
+    -- Fallback: if sourceFlags indicate a guardian but summonMap missed it,
+    -- return nil to signal "unknown owner". The caller should use sourceGUID as-is.
+    if sourceFlags and bit.band(sourceFlags, COMBATLOG_OBJECT_TYPE_GUARDIAN) > 0 then
+        -- Guardian without a known owner — flag it for diagnostics but
+        -- keep the original sourceGUID so damage isn't lost.
+        return sourceGUID
+    end
+    return sourceGUID
+end
+
+--- Get the current summonMap (for diagnostics / testing).
+function SpellAttributionPipeline:GetSummonMap()
+    return summonMap
+end
+
+--- Clear guardian tracking state (called on session reset / new match).
+function SpellAttributionPipeline:ResetSummonMap()
+    wipe(summonMap)
+end
+
+--- B5: Populate summonMap from UnitGraphService pet-owner state.
+--- SPELL_SUMMON never fires in instanced PvP (no CLEU), so the only
+--- guardian->owner signal available is UnitGraphService's UNIT_PET-derived
+--- petOwners map ([petGuid] = ownerGuid). Copy each known relationship into
+--- summonMap so MergeDamageMeterSource:ResolveOwnerGUID re-attributes
+--- pet/totem/guardian damage to the owner. Additive and idempotent: a pet
+--- GUID maps to a stable owner GUID, so re-running cannot corrupt state.
+function SpellAttributionPipeline:PopulateSummonMapFromUnitGraph()
+    local ugs = ns.Addon:GetModule("UnitGraphService")
+    if not ugs then return 0 end
+    local added = 0
+    pcall(function()
+        local petOwners = ugs.state and ugs.state.petOwners
+        if type(petOwners) ~= "table" then return end
+        for petGuid, ownerGuid in pairs(petOwners) do
+            if petGuid and ownerGuid and petGuid ~= ownerGuid
+                and not summonMap[petGuid]
+            then
+                summonMap[petGuid] = ownerGuid
+                added = added + 1
+            end
+        end
+    end)
+    return added
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────
@@ -145,11 +232,45 @@ end
 -- Uses max() for totals (not addition) to deduplicate overlapping snapshots.
 -- ──────────────────────────────────────────────────────────────────────────────
 
+--- Begin a new import generation. Call once per ImportSession run BEFORE the
+--- per-source MergeDamageMeterSource loop. Clears the additive per-target
+--- accumulators so a re-import recomputes them instead of double-counting,
+--- while max()-based source/spell totals stay naturally idempotent.
+function SpellAttributionPipeline:BeginImportGeneration(session)
+    if not session then return end
+    local state = getOrInitState(session)
+    state.importGeneration = (state.importGeneration or 0) + 1
+    state.byTarget = {}
+    state.bySourceTargetSpell = {}
+    -- This is the per-import reset point: clear the cross-validation flags so
+    -- the freshly-regenerated (unscaled) per-target rows get re-scaled on a
+    -- re-import (e.g. Solo Shuffle rounds). Leaving crossValidationApplied
+    -- sticky would let ApplyScalingFactor early-return and leave the new
+    -- generation's rows unscaled. Idempotency is tied to importGeneration via
+    -- this reset, not to a permanently-sticky boolean.
+    if type(state.reconciliation) == "table" then
+        state.reconciliation.crossValidationApplied = nil
+        state.reconciliation.crossValidationFactor = nil
+        state.reconciliation.crossValidationSkipped = nil
+    end
+end
+
 function SpellAttributionPipeline:MergeDamageMeterSource(session, combatSource, combatSourceDetail)
     if not session or not combatSource then return end
     local state = getOrInitState(session)
 
     local srcGuid = combatSource.sourceGUID
+    -- T025-T027: Resolve guardian → owner attribution before keying.
+    -- If this source GUID belongs to a known guardian, re-attribute to the owner.
+    if srcGuid then
+        local resolvedGuid = self:ResolveOwnerGUID(srcGuid, nil)
+        if resolvedGuid and resolvedGuid ~= srcGuid then
+            -- Track the summon relationship in attribution state for diagnostics.
+            state.summons = state.summons or {}
+            state.summons[srcGuid] = resolvedGuid
+            srcGuid = resolvedGuid
+        end
+    end
     local srcKey  = srcGuid or string.format("n=%s|c=%s",
         tostring(combatSource.name or "?"),
         tostring(combatSource.classFilename or "?")
@@ -303,6 +424,65 @@ function SpellAttributionPipeline:GetTopSpellForSource(session, sourceGuid)
         end
     end
     return best
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- T029-T030: CLEU Cross-Validation — Scaling Factor Application
+--
+-- When DamageMeterService detects that CLEU-derived totals under-report compared
+-- to DM authoritative totals, this method proportionally scales per-spell breakdown
+-- amounts so relative distribution is preserved while totals match DM.
+--
+-- Stub implementation — full logic deferred until CLEU ingestion is re-enabled.
+-- ──────────────────────────────────────────────────────────────────────────────
+
+--- Scale all per-spell attribution amounts by a given factor.
+--- Preserves relative distribution while adjusting absolute totals.
+--- @param session table  A session with populated attribution state.
+--- @param factor number  The scaling factor (> 1.0 means CLEU under-reported).
+function SpellAttributionPipeline:ApplyScalingFactor(session, factor)
+    if not session or not factor or factor <= 1.0 then return end
+    if type(session.attribution) ~= "table" then return end
+
+    -- Idempotency guard: never scale the same attribution state twice (a
+    -- re-import would otherwise compound the factor).
+    local state = session.attribution
+    state.reconciliation = state.reconciliation or {}
+    if state.reconciliation.crossValidationApplied then return end
+
+    -- Clamp to a sane range: a >3x correction means the source data is too
+    -- unreliable to scale meaningfully — skip rather than fabricate damage.
+    if factor > 3.0 then
+        state.reconciliation.crossValidationFactor = factor
+        state.reconciliation.crossValidationApplied = false
+        state.reconciliation.crossValidationSkipped = "factor_out_of_range"
+        return
+    end
+
+    for _, src in pairs(state.bySource or {}) do
+        src.totalAmount = (src.totalAmount or 0) * factor
+    end
+
+    for _, spells in pairs(state.bySourceSpell or {}) do
+        for _, agg in pairs(spells) do
+            agg.totalAmount = (agg.totalAmount or 0) * factor
+        end
+    end
+
+    for _, byTgt in pairs(state.bySourceTargetSpell or {}) do
+        for _, spells in pairs(byTgt) do
+            for _, agg in pairs(spells) do
+                agg.totalAmount = (agg.totalAmount or 0) * factor
+            end
+        end
+    end
+
+    for _, tgt in pairs(state.byTarget or {}) do
+        tgt.totalAmount = (tgt.totalAmount or 0) * factor
+    end
+
+    state.reconciliation.crossValidationFactor = factor
+    state.reconciliation.crossValidationApplied = true
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────

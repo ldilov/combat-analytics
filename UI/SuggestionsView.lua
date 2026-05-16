@@ -475,14 +475,25 @@ function SuggestionsView:Build(parent)
     self.shell:SetPoint("TOPLEFT", self.caption, "BOTTOMLEFT", 0, -12)
     self.shell:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -16, 16)
 
+    -- T057: Performance Trends placeholder (populated later by TrendAnalyzer)
+    self.trendSection = CreateFrame("Frame", nil, self.canvas)
+    self.trendSection:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
+    self.trendSection:SetSize(750, 1)  -- collapsed by default
+    self.canvas._trendSection = self.trendSection
+
     self.emptyCard = ns.Widgets.CreateInsightCard(self.canvas, 750, 96)
-    self.emptyCard:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
+    self.emptyCard:SetPoint("TOPLEFT", self.trendSection, "BOTTOMLEFT", 0, 0)
 
     -- -----------------------------------------------------------------------
     -- Trust card + severity bar + confidence pill
     -- -----------------------------------------------------------------------
     self.trustCard = ns.Widgets.CreateInsightCard(self.canvas, 750, 104)
-    self.trustCard:SetPoint("TOPLEFT", self.canvas, "TOPLEFT", 0, 0)
+    self.trustCard:SetPoint("TOPLEFT", self.trendSection, "BOTTOMLEFT", 0, 0)
+
+    -- T055: Add hover effects to top-level insight cards
+    if ns.Widgets.AddHoverEffect then
+        ns.Widgets.AddHoverEffect(self.trustCard, 0.06)
+    end
 
     self.trustSeverityBar = ns.Widgets.CreateMetricBar(self.canvas, 750, 32)
     self.trustSeverityBar:SetPoint("TOPLEFT", self.trustCard, "BOTTOMLEFT", 0, -4)
@@ -495,6 +506,10 @@ function SuggestionsView:Build(parent)
     -- -----------------------------------------------------------------------
     self.storyCard = ns.Widgets.CreateInsightCard(self.canvas, 750, 104)
     self.storyCard:SetPoint("TOPLEFT", self.trustConfidencePill, "BOTTOMLEFT", 0, -10)
+
+    if ns.Widgets.AddHoverEffect then
+        ns.Widgets.AddHoverEffect(self.storyCard, 0.06)
+    end
 
     self.storySeverityBar = ns.Widgets.CreateMetricBar(self.canvas, 750, 32)
     self.storySeverityBar:SetPoint("TOPLEFT", self.storyCard, "BOTTOMLEFT", 0, -4)
@@ -515,6 +530,10 @@ function SuggestionsView:Build(parent)
     -- -----------------------------------------------------------------------
     self.matchupCard = ns.Widgets.CreateInsightCard(self.canvas, 750, 104)
     self.matchupCard:SetPoint("TOPLEFT", self.storyPillFrame, "BOTTOMLEFT", 0, -10)
+
+    if ns.Widgets.AddHoverEffect then
+        ns.Widgets.AddHoverEffect(self.matchupCard, 0.06)
+    end
 
     self.matchupSeverityBar = ns.Widgets.CreateMetricBar(self.canvas, 750, 32)
     self.matchupSeverityBar:SetPoint("TOPLEFT", self.matchupCard, "BOTTOMLEFT", 0, -4)
@@ -564,6 +583,10 @@ function SuggestionsView:Build(parent)
             card:SetPoint("TOPLEFT", self.cardSeverityBars[index - 1], "BOTTOMLEFT", 0, -10)
         end
         self.cards[index] = card
+        -- T055: Add hover effect to coaching note cards
+        if ns.Widgets.AddHoverEffect then
+            ns.Widgets.AddHoverEffect(card, 0.06)
+        end
 
         local severityBar = ns.Widgets.CreateMetricBar(self.canvas, 750, 28)
         severityBar:SetPoint("TOPLEFT", card, "BOTTOMLEFT", 0, -2)
@@ -749,6 +772,65 @@ function SuggestionsView:Refresh()
     for _, ppCard in ipairs(self.practicePlanCards) do ppCard:Hide() end
     for _, ppBar in ipairs(self.practicePlanBars) do ppBar:Hide() end
 
+    -- T073: Populate Performance Trends section from TrendAnalyzer
+    local trendAnalyzer = ns.Addon:GetModule("TrendAnalyzer", true)
+    if trendAnalyzer and self.trendSection then
+        local context = latestSession and latestSession.context or "arena"
+        local trendOk, trends = pcall(function() return trendAnalyzer:AnalyzeTrends(context) end)
+        if not trendOk then trends = {} end
+
+        -- Clear existing trend rows
+        if self.trendSection._trendRows then
+            for _, row in ipairs(self.trendSection._trendRows) do
+                row:Hide()
+            end
+        end
+        self.trendSection._trendRows = {}
+
+        if trends and #trends > 0 then
+            if not self.trendSection._header then
+                local header = self.trendSection:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                header:SetPoint("TOPLEFT", self.trendSection, "TOPLEFT", 8, -4)
+                header:SetText("Performance Trends")
+                header:SetTextColor(1, 0.82, 0)
+                self.trendSection._header = header
+            end
+            self.trendSection._header:Show()
+
+            local yOffset = -24
+            for _, trend in ipairs(trends) do
+                local row = CreateFrame("Frame", nil, self.trendSection)
+                row:SetSize(self.trendSection:GetWidth() - 16, 20)
+                row:SetPoint("TOPLEFT", self.trendSection, "TOPLEFT", 8, yOffset)
+
+                local arrow = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                arrow:SetPoint("LEFT", row, "LEFT", 0, 0)
+                if trend.direction == "improving" then
+                    arrow:SetText("+")
+                    arrow:SetTextColor(0.44, 0.82, 0.60)
+                else
+                    arrow:SetText("-")
+                    arrow:SetTextColor(0.90, 0.35, 0.35)
+                end
+
+                local msg = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                msg:SetPoint("LEFT", arrow, "RIGHT", 6, 0)
+                msg:SetText(trend.message)
+                msg:SetTextColor(0.80, 0.82, 0.85)
+
+                row:Show()
+                table.insert(self.trendSection._trendRows, row)
+                yOffset = yOffset - 22
+            end
+
+            self.trendSection:SetHeight(math.abs(yOffset) + 8)
+            self.trendSection:Show()
+        else
+            self.trendSection:SetHeight(1)
+            if self.trendSection._header then self.trendSection._header:Hide() end
+        end
+    end
+
     if not latestSession and #suggestions == 0 then
         self.emptyCard:SetData(
             "low",
@@ -882,6 +964,10 @@ function SuggestionsView:Refresh()
                 buildEvidenceText(suggestion)
             )
             setSeverityBar(severityBar, suggestion.severity, REASON_TO_CATEGORY[suggestion.reasonCode] or "note")
+            -- T056: Add pulse glow for high-severity coaching cards
+            if suggestion.severity == "high" and ns.Widgets.AddPulseGlow then
+                ns.Widgets.AddPulseGlow(card)
+            end
             card:Show()
             severityBar:Show()
             visibleCount = visibleCount + 1
@@ -1063,6 +1149,11 @@ function SuggestionsView:RecalculateCanvasHeight()
     -- Sum up the approximate heights of all visible sections.
     -- This keeps the scroll canvas tight rather than using a fixed oversize.
     local height = 0
+
+    -- T073: Trend section height
+    if self.trendSection and self.trendSection:IsShown() and self.trendSection:GetHeight() > 1 then
+        height = height + self.trendSection:GetHeight()
+    end
 
     -- Top section cards (trust + severity + confidence + story + severity + pills + matchup + severity)
     if self.trustCard:IsShown() then

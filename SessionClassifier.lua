@@ -82,6 +82,15 @@ local function createIdentity(kind, subkind, source)
     }
 end
 
+-- T081: Detect NPCs that behave as players (Training Grounds bots, etc.)
+local function isNPCAsPlayer(unit)
+    if UnitIsNPCAsPlayer then
+        local ok, result = pcall(UnitIsNPCAsPlayer, unit)
+        if ok then return result end
+    end
+    return false
+end
+
 local function createUnitInfo(unitToken)
     if not unitToken or not ApiCompat.UnitExists(unitToken) then
         return nil
@@ -92,11 +101,15 @@ local function createUnitInfo(unitToken)
         return nil
     end
 
+    local isRealPlayer = ApiCompat.UnitIsPlayer(unitToken)
+    local isNpcPlayer  = isNPCAsPlayer(unitToken)
+
     return {
         guid = guid,
         name = ApiCompat.GetUnitName(unitToken),
         unitToken = unitToken,
-        isPlayer = ApiCompat.UnitIsPlayer(unitToken),
+        isPlayer = isRealPlayer or isNpcPlayer,
+        isNPCAsPlayer = isNpcPlayer,
         isHostile = ApiCompat.UnitCanAttack("player", unitToken) or ApiCompat.UnitIsEnemy("player", unitToken),
         isPet = ApiCompat.IsGuidPet(guid),
         creatureId = ApiCompat.GetCreatureIdFromGUID(guid),

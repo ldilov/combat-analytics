@@ -609,8 +609,41 @@ function CombatDetailView:Build(parent)
     end
     local deathRecapLastAnchor = self.deathRecapLines[#self.deathRecapLines]
 
-    -- Raw Timeline section (text dump), now anchored below the death sequence section
-    self.rawTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Raw Timeline", "TOPLEFT", deathRecapLastAnchor, "BOTTOMLEFT", 0, -22)
+    -- Solo Shuffle Rounds section (T066-T071)
+    self.ssRoundsTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Solo Shuffle Rounds", "TOPLEFT", deathRecapLastAnchor, "BOTTOMLEFT", 0, -22)
+    self.ssRoundsCaption = ns.Widgets.CreateCaption(self.canvas, "Per-round breakdown for this Solo Shuffle match.", "TOPLEFT", self.ssRoundsTitle, "BOTTOMLEFT", 0, -4)
+    self.ssRoundsTitle:Hide()
+    self.ssRoundsCaption:Hide()
+
+    -- Header row
+    self.ssRoundsHeader = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.ssRoundsHeader:SetPoint("TOPLEFT", self.ssRoundsCaption, "BOTTOMLEFT", 0, -10)
+    self.ssRoundsHeader:SetJustifyH("LEFT")
+    self.ssRoundsHeader:SetWidth(740)
+    self.ssRoundsHeader:SetTextColor(unpack(Theme.textMuted))
+    self.ssRoundsHeader:SetText("Round  |  Result  |  Damage Done  |  Healing Recv  |  Healer  |  Duration")
+    self.ssRoundsHeader:Hide()
+
+    self.ssRoundRows = {}
+    for index = 1, 6 do
+        local row = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        if index == 1 then
+            row:SetPoint("TOPLEFT", self.ssRoundsHeader, "BOTTOMLEFT", 0, -6)
+        else
+            row:SetPoint("TOPLEFT", self.ssRoundRows[index - 1], "BOTTOMLEFT", 0, -4)
+        end
+        row:SetJustifyH("LEFT")
+        row:SetWidth(740)
+        row:SetWordWrap(false)
+        row:SetTextColor(unpack(Theme.text))
+        row:Hide()
+        self.ssRoundRows[index] = row
+    end
+
+    local ssRoundsLastAnchor = self.ssRoundRows[#self.ssRoundRows]
+
+    -- Raw Timeline section (text dump), now anchored below the Solo Shuffle / death sequence section
+    self.rawTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Raw Timeline", "TOPLEFT", ssRoundsLastAnchor, "BOTTOMLEFT", 0, -22)
     self.rawCaption = ns.Widgets.CreateCaption(self.canvas, "Filtered raw events stay available here, but they are now the support layer instead of the whole screen.", "TOPLEFT", self.rawTitle, "BOTTOMLEFT", 0, -4)
     self.rawMeta = self.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.rawMeta:SetPoint("TOPLEFT", self.rawCaption, "BOTTOMLEFT", 0, -10)
@@ -1044,6 +1077,10 @@ function CombatDetailView:Refresh(payload)
         self.rawCaption:Hide()
         self.rawMeta:Hide()
         self.rawShell:Hide()
+        if self.ssRoundsTitle then self.ssRoundsTitle:Hide() end
+        if self.ssRoundsCaption then self.ssRoundsCaption:Hide() end
+        if self.ssRoundsHeader then self.ssRoundsHeader:Hide() end
+        for _, row in ipairs(self.ssRoundRows or {}) do row:Hide() end
         if self.exportDiagButton then self.exportDiagButton:Hide() end
         return
     end
@@ -1520,6 +1557,47 @@ function CombatDetailView:Refresh(payload)
         for _, line in ipairs(self.deathRecapLines or {}) do line:Hide() end
     end
 
+    -- Solo Shuffle Rounds (T066-T071)
+    local ssRounds = session.arena and type(session.arena) == "table"
+        and session.subcontext == Constants.SUBCONTEXT.SOLO_SHUFFLE
+        and session.arena.rounds or nil
+    if ssRounds and #ssRounds > 0 then
+        self.ssRoundsTitle:Show()
+        self.ssRoundsCaption:Show()
+        self.ssRoundsHeader:Show()
+        for index, row in ipairs(self.ssRoundRows) do
+            local roundData = ssRounds[index]
+            if roundData then
+                local resultText
+                if roundData.result == "won" then
+                    resultText = "|cff70d196W|r"
+                elseif roundData.result == "lost" then
+                    resultText = "|cffe64d40L|r"
+                else
+                    resultText = "-"
+                end
+                local healer = roundData.healerClass or "-"
+                row:SetText(string.format(
+                    "  #%d     |  %s       |  %s          |  %s          |  %s      |  %s",
+                    roundData.roundIndex or index,
+                    resultText,
+                    Helpers.FormatNumber(roundData.damageDone or 0),
+                    Helpers.FormatNumber(roundData.healingReceived or 0),
+                    healer,
+                    Helpers.FormatDuration(roundData.duration or 0)
+                ))
+                row:Show()
+            else
+                row:Hide()
+            end
+        end
+    else
+        self.ssRoundsTitle:Hide()
+        self.ssRoundsCaption:Hide()
+        self.ssRoundsHeader:Hide()
+        for _, row in ipairs(self.ssRoundRows) do row:Hide() end
+    end
+
     -- Show raw events only if there are rawEvents
     local hasRawEvents = session.rawEvents and #session.rawEvents > 0
     if hasRawEvents then
@@ -1566,7 +1644,8 @@ function CombatDetailView:Refresh(payload)
     -- T059: explicit bottom padding via LAYOUT token so last row is never clipped
     local L = ns.Widgets.LAYOUT
     local deathRecapHeight = (deathRecap and deathRecap.recapID and deathRecap.recapID ~= 0) and 180 or 0
-    ns.Widgets.SetCanvasHeight(self.canvas, 2240 + multiLaneHeight + tradeLedgerHeight + deathRecapHeight + L.ROW_GAP * 2)
+    local ssRoundsHeight = (ssRounds and #ssRounds > 0) and (40 + 20 + (#ssRounds * 18)) or 0
+    ns.Widgets.SetCanvasHeight(self.canvas, 2240 + multiLaneHeight + tradeLedgerHeight + deathRecapHeight + ssRoundsHeight + L.ROW_GAP * 2)
 end
 
 ns.Addon:RegisterModule("CombatDetailView", CombatDetailView)

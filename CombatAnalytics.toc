@@ -1,4 +1,4 @@
-## Interface: 120001
+## Interface: 120005
 ## Title: CombatAnalytics
 ## Notes: Post-combat advanced PvP analytics for duels, arenas, battlegrounds, world PvP, and training dummies.
 ## Author: Lazar Dilov
@@ -19,6 +19,7 @@ seed\CompArchetypes.lua
 seed\MetricThresholds.lua
 StaticPvpData.lua
 Utils\Math.lua
+MetricBaselineService.lua
 Utils\BuildHash.lua
 ApiCompat.lua
 Core.lua
@@ -30,6 +31,8 @@ SnapshotService.lua
 DamageMeterService.lua
 CombatStore.lua
 SuggestionEngine.lua
+DeathAnalyzer.lua
+TrendAnalyzer.lua
 StrategyEngine.lua
 Utils\Metrics.lua
 ArenaRoundTracker.lua

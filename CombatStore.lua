@@ -37,6 +37,7 @@ local function buildEmptyDb()
             openers = {},
             matchupMemory = {},
             duelSeries = {},
+            metricBaselines = {},
         },
         dummyBenchmarks = {},
         suggestionCache = {
@@ -85,10 +86,12 @@ local function ensureDefaults(db)
     db.aggregates.bgBlitzSpecStats = db.aggregates.bgBlitzSpecStats or {}
     db.aggregates.openerSequenceEffectiveness = db.aggregates.openerSequenceEffectiveness or {}
     db.aggregates.comps = db.aggregates.comps or {}
+    db.aggregates.soloShuffleHealerStats = db.aggregates.soloShuffleHealerStats or {}
     db.aggregates.matchupArchetypes = db.aggregates.matchupArchetypes or {}
     db.aggregates.openers = db.aggregates.openers or {}
     db.aggregates.matchupMemory = db.aggregates.matchupMemory or {}
     db.aggregates.duelSeries = db.aggregates.duelSeries or {}
+    db.aggregates.metricBaselines = db.aggregates.metricBaselines or {}
 
     db.dummyBenchmarks = db.dummyBenchmarks or {}
 
@@ -849,6 +852,55 @@ function CombatStore:MigrateSchema(db)
         })
     end
 
+    -- v8 → v9: PvP Improvements — add metric baselines, comp aggregates,
+    -- rating history, absorbs, activeTime, effectiveDamageDone, and
+    -- Solo Shuffle round-level fields.
+    if version < 9 then
+        -- Initialize new aggregate buckets
+        db.aggregates.metricBaselines = db.aggregates.metricBaselines or {}
+        -- comps bucket may already exist from v4; ensure it does
+        db.aggregates.comps = db.aggregates.comps or {}
+        -- ratingHistory may already exist from v3; ensure it does
+        db.aggregates.ratingHistory = db.aggregates.ratingHistory or {}
+
+        -- Stub new session-level fields on existing sessions
+        for _, sessionId in ipairs(db.combats.order or {}) do
+            local s = db.combats.byId[sessionId]
+            if s then
+                if s.activeTime == nil then
+                    s.activeTime = false
+                end
+                if s.effectiveDamageDone == nil then
+                    s.effectiveDamageDone = false
+                end
+                if s.absorbs == nil then
+                    s.absorbs = false
+                end
+                if s.ratingBefore == nil then
+                    s.ratingBefore = false
+                end
+                if s.ratingAfter == nil then
+                    s.ratingAfter = false
+                end
+                if s.mmrBefore == nil then
+                    s.mmrBefore = false
+                end
+                if s.mmrAfter == nil then
+                    s.mmrAfter = false
+                end
+                -- Ensure arena.rounds is available for Solo Shuffle sessions
+                if type(s.arena) == "table" and s.arena.rounds == nil then
+                    s.arena.rounds = {}
+                end
+            end
+        end
+
+        db.schemaVersion = 9
+        ns.Addon:Trace("migration.v9.complete", {
+            sessions = #(db.combats.order or {}),
+        })
+    end
+
     -- Future migrations go here as additional `if version < N then` blocks.
 
     -- T121: Post-migration validation for mixed-version datasets.
@@ -1234,6 +1286,7 @@ function CombatStore:UpdateAggregatesForSession(session)
     updateMatchupArchetypes(aggregates, session)
     updateDummyBenchmark(db, session)
     self:UpdateCompAggregate(session)
+    self:UpdateSoloShuffleHealerStats(session)
 end
 
 function CombatStore:PersistSession(session)
@@ -1263,14 +1316,34 @@ function CombatStore:PersistSession(session)
         end
     end
 
-    db.maintenance.totalRawEvents = db.maintenance.totalRawEvents + #(session.rawEvents or {})
-    -- Invalidate the scoped-session query cache whenever a new session is added.
-    if isNew and self._queryCache then
-        self._queryCache = {}
+    -- Idempotence guard: a session may be persisted more than once (the
+    -- deferred DamageMeter re-import path), and the same session is re-seen
+    -- after /reload from SavedVariables. The guard is a content fingerprint
+    -- stored ON the persisted session record, so it (a) is bounded — one
+    -- field per session, pruned with the session, (b) survives /reload, and
+    -- (c) correctly re-aggregates when a re-import genuinely changed content.
+    -- totalRawEvents is advanced by the delta vs. the previously-counted
+    -- amount so a content-changed re-import neither double-counts nor
+    -- under-counts.
+    local rawCount = #(session.rawEvents or {})
+    local lastOffset = session.lastEventOffset or session.duration or 0
+    local fingerprint = rawCount .. ":" .. tostring(lastOffset)
+    if session._aggregatedFingerprint ~= fingerprint then
+        local prevCounted = session._aggregatedRawCount or 0
+        local delta = rawCount - prevCounted
+        if delta > 0 then
+            db.maintenance.totalRawEvents = db.maintenance.totalRawEvents + delta
+        end
+        session._aggregatedRawCount = rawCount
+        session._aggregatedFingerprint = fingerprint
+        -- Invalidate the scoped-session query cache when a new session is added.
+        if isNew and self._queryCache then
+            self._queryCache = {}
+        end
+        C_Timer.After(0, function()
+            self:UpdateAggregatesForSession(session)
+        end)
     end
-    C_Timer.After(0, function()
-        self:UpdateAggregatesForSession(session)
-    end)
 
     db.suggestionCache.bySessionId[session.id] = session.suggestions or {}
     if isNew then
@@ -2000,7 +2073,14 @@ function CombatStore:UpdateCompAggregate(session)
     local key = session.opponentCompKey
     local comp = db.aggregates.comps[key]
     if not comp then
-        comp = { fights = 0, wins = 0, losses = 0, lastSessionId = nil, avgDuration = 0 }
+        comp = {
+            compKey = key,
+            compLabel = "",
+            fights = 0, wins = 0, losses = 0, other = 0,
+            totalDuration = 0, totalDamageDone = 0, totalDamageTaken = 0,
+            avgPressureScore = 0, avgBurstScore = 0, avgSurvivabilityScore = 0,
+            lastSeen = 0, lastSessionId = nil, avgDuration = 0,
+        }
         db.aggregates.comps[key] = comp
     end
     comp.fights = comp.fights + 1
@@ -2008,15 +2088,80 @@ function CombatStore:UpdateCompAggregate(session)
         comp.wins = comp.wins + 1
     elseif session.result == Constants.SESSION_RESULT.LOST then
         comp.losses = comp.losses + 1
+    else
+        comp.other = (comp.other or 0) + 1
     end
     -- Running average duration
     comp.avgDuration = comp.avgDuration + ((session.duration or 0) - comp.avgDuration) / comp.fights
+    comp.totalDuration = (comp.totalDuration or 0) + (session.duration or 0)
+    comp.totalDamageDone = (comp.totalDamageDone or 0)
+        + (session.effectiveDamageDone or (session.totals and session.totals.damageDone) or 0)
+    comp.totalDamageTaken = (comp.totalDamageTaken or 0)
+        + (session.totals and session.totals.damageTaken or 0)
+    -- Running average for metrics
+    local m = session.metrics or {}
+    comp.avgPressureScore = ((comp.avgPressureScore or 0) * (comp.fights - 1) + (m.pressureScore or 0)) / comp.fights
+    comp.avgBurstScore = ((comp.avgBurstScore or 0) * (comp.fights - 1) + (m.burstScore or 0)) / comp.fights
+    comp.avgSurvivabilityScore = ((comp.avgSurvivabilityScore or 0) * (comp.fights - 1) + (m.survivabilityScore or 0)) / comp.fights
+    comp.lastSeen = ns.ApiCompat and ns.ApiCompat.GetServerTime() or time()
     comp.lastSessionId = session.id
+    -- Build human-readable label from spec archetypes
+    if (comp.compLabel or "") == "" then
+        local labels = {}
+        local archetypes = ns.StaticPvpData and ns.StaticPvpData.SPEC_ARCHETYPES
+        if archetypes and session.arena and type(session.arena) == "table" then
+            for _, slot in pairs(session.arena.slots or {}) do
+                local sid = slot.prepSpecId or slot.specId
+                local arch = sid and archetypes[sid]
+                if arch then
+                    labels[#labels + 1] = arch.specName or "Unknown"
+                end
+            end
+        end
+        if #labels > 0 then
+            table.sort(labels)
+            comp.compLabel = table.concat(labels, " / ")
+        end
+    end
 end
 
 function CombatStore:GetCompWinRates()
     local db = self:GetDB()
     return db.aggregates.comps or {}
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Phase 4: Solo Shuffle healer class aggregates
+-- ──────────────────────────────────────────────────────────────────────────────
+
+function CombatStore:UpdateSoloShuffleHealerStats(session)
+    if not session then return end
+    if session.subcontext ~= Constants.SUBCONTEXT.SOLO_SHUFFLE then return end
+    if not session.arena or type(session.arena) ~= "table" then return end
+    local rounds = session.arena.rounds
+    if not rounds or #rounds == 0 then return end
+
+    local db = self:GetDB()
+    db.aggregates.soloShuffleHealerStats = db.aggregates.soloShuffleHealerStats or {}
+    local ssStats = db.aggregates.soloShuffleHealerStats
+
+    for _, round in ipairs(rounds) do
+        if round.healerClass and round.healerClass ~= "" then
+            local key = "healer_" .. round.healerClass
+            ssStats[key] = ssStats[key] or { fights = 0, wins = 0, losses = 0 }
+            ssStats[key].fights = ssStats[key].fights + 1
+            if round.result == Constants.SESSION_RESULT.WON or round.result == "won" then
+                ssStats[key].wins = ssStats[key].wins + 1
+            elseif round.result == Constants.SESSION_RESULT.LOST or round.result == "lost" then
+                ssStats[key].losses = ssStats[key].losses + 1
+            end
+        end
+    end
+end
+
+function CombatStore:GetSoloShuffleHealerStats()
+    local db = self:GetDB()
+    return db.aggregates.soloShuffleHealerStats or {}
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────

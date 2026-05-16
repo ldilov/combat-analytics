@@ -1099,7 +1099,7 @@ function CombatTracker:UpdateSurvivalStats(session, eventRecord)
             local taxonomy = ns.StaticPvpData and ns.StaticPvpData.SPELL_TAXONOMY
             if taxonomy and taxonomy.majorDefensive then
                 for sid in pairs(taxonomy.majorDefensive) do
-                    local isUsable = C_Spell.IsSpellUsable(sid)
+                    local isUsable = ApiCompat.IsSpellUsable(sid)
                     if isUsable then
                         session.survival.greedDeaths =
                             (session.survival.greedDeaths or 0) + 1
@@ -1135,41 +1135,66 @@ function CombatTracker:UpdateSurvivalStats(session, eventRecord)
 end
 
 function CombatTracker:UpdateAuraWindowContribution(session, eventRecord)
-    if eventRecord.eventType ~= "damage" and eventRecord.eventType ~= "healing" and eventRecord.eventType ~= "cast" then
+    local et = eventRecord.eventType
+    if et ~= "damage" and et ~= "healing" and et ~= "cast" then
         return
     end
 
-    for _, auraMap in pairs(session.activeAuraWindows or {}) do
-        for auraId in pairs(auraMap) do
-            local aggregate = self:EnsureAuraAggregate(session, auraId)
-            if eventRecord.sourceMine and eventRecord.eventType == "damage" then
-                aggregate.damageDuringWindows = aggregate.damageDuringWindows + (eventRecord.amount or 0)
-            elseif eventRecord.sourceMine and eventRecord.eventType == "healing" then
-                aggregate.healingDuringWindows = aggregate.healingDuringWindows + (eventRecord.amount or 0)
-            elseif eventRecord.sourceMine and eventRecord.eventType == "cast" then
-                aggregate.castsDuringWindows = aggregate.castsDuringWindows + 1
-            elseif eventRecord.destMine and eventRecord.eventType == "damage" then
-                aggregate.damageTakenDuringWindows = aggregate.damageTakenDuringWindows + (eventRecord.amount or 0)
+    local sourceMine = eventRecord.sourceMine
+    local destMine   = eventRecord.destMine
+    local amount     = eventRecord.amount or 0
+
+    local windows = session.activeAuraWindows
+    if windows and next(windows) then
+        for _, auraMap in pairs(windows) do
+            for auraId in pairs(auraMap) do
+                local aggregate = self:EnsureAuraAggregate(session, auraId)
+                if sourceMine and et == "damage" then
+                    aggregate.damageDuringWindows = aggregate.damageDuringWindows + amount
+                elseif sourceMine and et == "healing" then
+                    aggregate.healingDuringWindows = aggregate.healingDuringWindows + amount
+                elseif sourceMine and et == "cast" then
+                    aggregate.castsDuringWindows = aggregate.castsDuringWindows + 1
+                elseif destMine and et == "damage" then
+                    aggregate.damageTakenDuringWindows = aggregate.damageTakenDuringWindows + amount
+                end
             end
         end
     end
 
-    for _, cooldown in pairs(session.cooldowns or {}) do
-        if cooldown.lastUsedAt and eventRecord.timestampOffset >= cooldown.lastUsedAt and eventRecord.timestampOffset <= (cooldown.lastUsedAt + 8) then
-            if eventRecord.sourceMine and eventRecord.eventType == "damage" then
-                cooldown.damageDuringWindows = cooldown.damageDuringWindows + (eventRecord.amount or 0)
-            elseif eventRecord.sourceMine and eventRecord.eventType == "healing" then
-                cooldown.healingDuringWindows = cooldown.healingDuringWindows + (eventRecord.amount or 0)
-            elseif eventRecord.sourceMine and eventRecord.eventType == "cast" then
-                cooldown.castsDuringWindows = cooldown.castsDuringWindows + 1
-            elseif eventRecord.destMine and eventRecord.eventType == "damage" then
-                cooldown.damageTakenDuringWindows = cooldown.damageTakenDuringWindows + (eventRecord.amount or 0)
+    local cooldowns = session.cooldowns
+    if cooldowns and next(cooldowns) then
+        local ts = eventRecord.timestampOffset
+        for _, cooldown in pairs(cooldowns) do
+            local lastUsedAt = cooldown.lastUsedAt
+            if lastUsedAt and ts >= lastUsedAt and ts <= (lastUsedAt + 8) then
+                if sourceMine and et == "damage" then
+                    cooldown.damageDuringWindows = cooldown.damageDuringWindows + amount
+                elseif sourceMine and et == "healing" then
+                    cooldown.healingDuringWindows = cooldown.healingDuringWindows + amount
+                elseif sourceMine and et == "cast" then
+                    cooldown.castsDuringWindows = cooldown.castsDuringWindows + 1
+                elseif destMine and et == "damage" then
+                    cooldown.damageTakenDuringWindows = cooldown.damageTakenDuringWindows + amount
+                end
             end
         end
     end
 end
 
 function CombatTracker:HandleNormalizedEvent(eventRecord)
+    -- T025-T027: Forward SPELL_SUMMON and UNIT_DIED to SpellAttributionPipeline
+    -- for guardian→owner tracking regardless of the CA_DEV_LEGACY gate.
+    -- These lightweight map updates must run even when full CLEU processing is off
+    -- so the DamageMeter merge path can resolve guardian attribution.
+    if eventRecord.subEvent == "SPELL_SUMMON" then
+        local sap = ns.Addon:GetModule("SpellAttributionPipeline")
+        if sap then sap:HandleSummonEvent(eventRecord.sourceGuid, eventRecord.destGuid) end
+    elseif eventRecord.eventType == "death" and eventRecord.subEvent == "UNIT_DIED" then
+        local sap = ns.Addon:GetModule("SpellAttributionPipeline")
+        if sap then sap:HandleUnitDied(eventRecord.destGuid) end
+    end
+
     -- T015/T031: Gated behind dev flag — AccumulateEvidence and
     -- ShouldStartNewSession have been removed from SessionClassifier.
     -- CA_DEV_LEGACY is never set in production; function body kept for later refactor.
@@ -1919,6 +1944,47 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
     session.result = self:DeriveResult(session, explicitResult, reason)
     session.survival.unusedDefensives = self:EstimateUnusedDefensives(session)
 
+    -- T017-T019: Compute effectiveDamageDone by stripping overkill from raw totals.
+    -- Overkill is excess damage dealt beyond what was needed to kill the target.
+    -- effectiveDamageDone gives a fairer measure for metrics like pressure score.
+    do
+        local totalOverkill = 0
+        for _, evt in ipairs(session.rawEvents or {}) do
+            totalOverkill = totalOverkill + (evt.overkill or 0)
+        end
+        -- Also include overkill from localTotals if rawEvents are ring-buffered and incomplete.
+        if totalOverkill <= 0 then
+            totalOverkill = session.localTotals and session.localTotals.overkill or 0
+        end
+        session.totalOverkill = totalOverkill
+        session.effectiveDamageDone = math.max(0, (session.totals.damageDone or 0) - totalOverkill)
+    end
+
+    -- T020-T022: Compute active combat time (excluding idle gaps > 5s).
+    -- Used by pressure score to avoid penalizing players for out-of-combat downtime.
+    do
+        local activeTime = ns.Metrics.ComputeActiveTime(session.rawEvents, 5)
+        session.activeTime = activeTime
+    end
+
+    -- T023-T024: Build per-spell absorb tracking from raw events.
+    -- The absorbed field on damage events indicates damage that was soaked by shields.
+    do
+        session.absorbs = session.absorbs or {}
+        for _, evt in ipairs(session.rawEvents or {}) do
+            if evt.eventType == "damage" and evt.destMine and (evt.absorbed or 0) > 0 then
+                local absorbKey = evt.spellId or 0
+                local entry = session.absorbs[absorbKey]
+                if not entry then
+                    entry = { totalAbsorbed = 0, count = 0 }
+                    session.absorbs[absorbKey] = entry
+                end
+                entry.totalAbsorbed = entry.totalAbsorbed + (evt.absorbed or 0)
+                entry.count = entry.count + 1
+            end
+        end
+    end
+
     local okWindows, errWindows = xpcall(function()
         ns.Metrics.DeriveWindows(session)
         ns.Metrics.ComputeDerivedMetrics(session)
@@ -1928,6 +1994,21 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         session.metrics = session.metrics or {}
         ns.Addon:Warn("Metrics derivation failed; storing raw session only.")
         ns.Addon:Debug("%s", errWindows)
+    end
+
+    -- T031-T034: Record core metrics into MetricBaselineService for adaptive thresholds.
+    local okBaselines, errBaselines = xpcall(function()
+        local mbs = ns.Addon:GetModule("MetricBaselineService", true)
+        if mbs and session.metrics then
+            local ctx = session.context or "general"
+            mbs:RecordMetric(ctx, "pressureScore", session.metrics.pressureScore or 0)
+            mbs:RecordMetric(ctx, "burstScore", session.metrics.burstScore or 0)
+            mbs:RecordMetric(ctx, "survivabilityScore", session.metrics.survivabilityScore or 0)
+            mbs:RecordMetric(ctx, "rotationConsistencyScore", session.metrics.rotationConsistencyScore or 0)
+        end
+    end, debugstack)
+    if not okBaselines then
+        ns.Addon:Debug("MetricBaselineService recording failed: %s", errBaselines)
     end
 
     local okSuggestions, errSuggestions = xpcall(function()
@@ -3438,8 +3519,8 @@ function CombatTracker:OnUpdate()
         then
             local rt = session._runtime
             if rt then
-                local currentHealth = UnitHealth("target") or 0
-                local maxHealth = UnitHealthMax("target") or 0
+                local currentHealth = ApiCompat.UnitHealth("target") or 0
+                local maxHealth = ApiCompat.UnitHealthMax("target") or 0
                 if not rt.healthDelta then
                     rt.healthDelta = {
                         totalDamageEstimate = 0,

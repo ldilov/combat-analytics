@@ -7,6 +7,36 @@ local MathUtil = ns.Math
 
 local Metrics = {}
 
+-- T020: Compute active combat time by summing contiguous segments of activity.
+-- Gaps larger than gapThreshold (seconds) start a new segment. This prevents
+-- downtime (kiting, CC, reset periods) from diluting DPS calculations.
+local function computeActiveTime(rawEvents, gapThreshold)
+    gapThreshold = gapThreshold or 5
+    if not rawEvents or #rawEvents < 2 then
+        return 0
+    end
+    local activeTime = 0
+    local segmentStart = nil
+    local lastEventTime = nil
+    for _, event in ipairs(rawEvents) do
+        local t = event.timestampOffset or event.timestamp or 0
+        if not segmentStart then
+            segmentStart = t
+            lastEventTime = t
+        elseif (t - lastEventTime) > gapThreshold then
+            activeTime = activeTime + (lastEventTime - segmentStart)
+            segmentStart = t
+            lastEventTime = t
+        else
+            lastEventTime = t
+        end
+    end
+    if segmentStart and lastEventTime then
+        activeTime = activeTime + (lastEventTime - segmentStart)
+    end
+    return math.max(activeTime, 0.1)
+end
+
 local function gatherDamageEvents(session, predicate)
     local events = {}
     for _, eventRecord in ipairs(session.rawEvents or {}) do
@@ -64,6 +94,22 @@ local function summarizeWindow(session, windowType, startOffset, endOffset)
     return summary
 end
 
+-- T028: Resolve per-spec burst window size from SeedSpecArchetypes burstArchetype.
+-- Returns window size in seconds: instant=3, setup=5, sustained=8, ramp=10.
+local function resolveBurstWindowSize(session)
+    local archetypes = ns.StaticPvpData and ns.StaticPvpData.SPEC_ARCHETYPES
+    local specId = session.playerSnapshot and session.playerSnapshot.specId
+    if archetypes and specId and archetypes[specId] then
+        local arch = archetypes[specId].burstArchetype
+        if arch == "instant" then return 3
+        elseif arch == "setup" then return 5
+        elseif arch == "sustained" then return 8
+        elseif arch == "ramp" then return 10
+        end
+    end
+    return Constants.WINDOW_BURST_MAX_SECONDS
+end
+
 local function findBurstWindow(session)
     local damageEvents = gatherDamageEvents(session, function(eventRecord)
         return eventRecord.eventType == "damage" and eventRecord.sourceMine
@@ -71,6 +117,10 @@ local function findBurstWindow(session)
     if #damageEvents == 0 then
         return nil
     end
+
+    -- T028: Use per-spec burst window size instead of fixed constants.
+    local burstWindowSize = resolveBurstWindowSize(session)
+    local burstMinSeconds = math.min(Constants.WINDOW_BURST_MIN_SECONDS, burstWindowSize)
 
     local bestStart = damageEvents[1].timestampOffset or 0
     local bestEnd = bestStart
@@ -84,23 +134,24 @@ local function findBurstWindow(session)
         local currentStart = damageEvents[left].timestampOffset or 0
         local currentEnd = current.timestampOffset or 0
 
-        while (currentEnd - currentStart) > Constants.WINDOW_BURST_MAX_SECONDS and left < right do
+        while (currentEnd - currentStart) > burstWindowSize and left < right do
             windowDamage = windowDamage - (damageEvents[left].amount or 0)
             left = left + 1
             currentStart = damageEvents[left].timestampOffset or 0
         end
 
-        if (currentEnd - currentStart) >= Constants.WINDOW_BURST_MIN_SECONDS and windowDamage > bestDamage then
+        if (currentEnd - currentStart) >= burstMinSeconds and windowDamage > bestDamage then
             bestDamage = windowDamage
             bestStart = currentStart
             bestEnd = currentEnd
         end
     end
 
-    if session.totals.damageDone <= 0 then
+    local effectiveDamage = session.effectiveDamageDone or session.totals.damageDone or 0
+    if effectiveDamage <= 0 then
         return nil
     end
-    if (bestDamage / session.totals.damageDone) < Constants.WINDOW_BURST_MIN_DAMAGE_SHARE then
+    if (bestDamage / effectiveDamage) < Constants.WINDOW_BURST_MIN_DAMAGE_SHARE then
         return nil
     end
 
@@ -549,8 +600,11 @@ function Metrics.DeriveCoordination(session)
 end
 
 function Metrics.ComputeDerivedMetrics(session)
-    local duration = math.max(session.duration or 0, 1)
-    local outgoing = session.totals.damageDone or 0
+    -- T020: Prefer activeTime over raw duration for DPS calculations.
+    local rawDuration = math.max(session.duration or 0, 1)
+    local duration = (session.activeTime and session.activeTime > 0) and session.activeTime or rawDuration
+    -- T017: Prefer effectiveDamageDone (overkill-stripped) for metric calculations.
+    local outgoing = session.effectiveDamageDone or session.totals.damageDone or 0
     local incoming = session.totals.damageTaken or 0
     local healing = session.totals.healingDone or 0
     local burstDamage = 0
@@ -566,7 +620,10 @@ function Metrics.ComputeDerivedMetrics(session)
 
     local sustainedDps = outgoing / duration
     local sustainedHps = healing / duration
-    local burstDps = burstDamage > 0 and (burstDamage / math.max(Constants.WINDOW_BURST_MIN_SECONDS, 1)) or 0
+    -- T028: Use per-spec burst window size for burst DPS normalization.
+    local specBurstWindow = resolveBurstWindowSize(session)
+    local burstMinForDps = math.max(math.min(Constants.WINDOW_BURST_MIN_SECONDS, specBurstWindow), 1)
+    local burstDps = burstDamage > 0 and (burstDamage / burstMinForDps) or 0
     local limitedTimeline = not hasRawTimeline(session)
     local procConversionScore, procWindowsObserved, procWindowCastCount = computeProcConversion(session)
     local topOutputShare = computeTopOutputShare(session)
@@ -607,9 +664,25 @@ function Metrics.ComputeDerivedMetrics(session)
     for _, cc in ipairs(getCCWindows(session)) do
         timeUnderCC = timeUnderCC + (cc.duration or 0)
     end
-    local ccUptimePct = timeUnderCC / duration
+    -- CC uptime uses raw session duration (not active time) since CC occurs during
+    -- the full session window, including periods the player was idle/kiting.
+    local ccUptimePct = timeUnderCC / rawDuration
 
-    local survivabilityScore = Helpers.Clamp(((healing + 1) / math.max(incoming, 1)) * 65 + ((session.survival.defensivesUsed or 0) * 5), 0, 100)
+    -- T023-T024: Factor absorbed damage into survivability — shields that prevented
+    -- damage are a positive survival signal. Compute total absorbed from session.absorbs
+    -- and reduce effective incoming damage or add as a survivability bonus.
+    local totalAbsorbed = 0
+    if session.absorbs then
+        for _, data in pairs(session.absorbs) do
+            totalAbsorbed = totalAbsorbed + (data.totalAbsorbed or 0)
+        end
+    end
+    -- Fallback: use survival.totalAbsorbed if per-spell absorbs unavailable (old sessions).
+    if totalAbsorbed <= 0 then
+        totalAbsorbed = session.survival and session.survival.totalAbsorbed or 0
+    end
+    local effectiveIncoming = math.max(incoming - totalAbsorbed, 1)
+    local survivabilityScore = Helpers.Clamp(((healing + 1) / effectiveIncoming) * 65 + ((session.survival.defensivesUsed or 0) * 5) + Helpers.Clamp((totalAbsorbed / math.max(incoming, 1)) * 20, 0, 20), 0, 100)
     -- Task 2.2: Surviving while CC'd is harder; bonus when CC uptime exceeds 30%
     if ccUptimePct > 0.3 then
         survivabilityScore = Helpers.Clamp(survivabilityScore + Helpers.Clamp(ccUptimePct * 15, 0, 15), 0, 100)
@@ -620,6 +693,13 @@ function Metrics.ComputeDerivedMetrics(session)
     local ccDRState = computeCCDRState(session)
 
     session.metrics = {
+        -- T017-T019: Effective damage and overkill tracking.
+        effectiveDamageDone = session.effectiveDamageDone or outgoing,
+        totalOverkill = session.totalOverkill or 0,
+        -- T020-T022: Active combat time for DPS normalization.
+        activeTime = session.activeTime or rawDuration,
+        -- T023-T024: Total absorbed damage.
+        totalAbsorbed = totalAbsorbed,
         sustainedDps = Helpers.Round(sustainedDps, 2),
         sustainedHps = Helpers.Round(sustainedHps, 2),
         burstDps = Helpers.Round(limitedTimeline and math.max(sustainedDps, outgoing * topOutputShare) or burstDps, 2),
@@ -812,5 +892,8 @@ function Metrics.InheritDegradedStatus(session, metricsResult)
     end
     return metricsResult
 end
+
+-- Expose computeActiveTime for CombatTracker finalization (T020).
+Metrics.ComputeActiveTime = computeActiveTime
 
 ns.Metrics = Metrics

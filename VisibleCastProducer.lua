@@ -61,6 +61,21 @@ local function getTP()
     return ns.Addon:GetModule("TimelineProducer")
 end
 
+-- C1: Static cast->effect offset lookup (seconds). Drives an inferred
+-- `effectAtOffset` so consumers can time-align a cast with its actual
+-- damage/impact. This is NOT a physics engine: fixed table-driven estimates
+-- only, always tagged effectConfidence="inferred" so observed data is never
+-- conflated with the estimate. model: "projectile" = cast + travel;
+-- "channel" = effect window beginning at cast. effectOffset adds to cast `t`.
+local SPELL_EFFECT_MODEL = {
+    [116]    = { model = "projectile", effectOffset = 1.9 },                       -- Frostbolt
+    [11366]  = { model = "projectile", effectOffset = 4.0 },                       -- Pyroblast
+    [19434]  = { model = "projectile", effectOffset = 2.7 },                       -- Aimed Shot
+    [116858] = { model = "projectile", effectOffset = 3.3 },                       -- Chaos Bolt
+    [198590] = { model = "channel",    effectOffset = 0.0, effectDuration = 6.0 }, -- Drain Soul
+    [755]    = { model = "channel",    effectOffset = 0.0, effectDuration = 6.0 }, -- Health Funnel
+}
+
 -- ---------------------------------------------------------------------------
 -- T008/T009: Actor identity resolution
 -- Resolves normalized top-level source identity fields from UnitGraphService.
@@ -161,6 +176,9 @@ function VisibleCastProducer:HandleUnitSpellcastSucceeded(unitTarget, castGUID, 
     -- Sanitize spellID — may be a secret value for arena opponents.
     local safeSpellId = ApiCompat.SanitizeNumber(spellID)
 
+    -- C1: single lookup of the static cast->effect model for this spell.
+    local fx = safeSpellId and SPELL_EFFECT_MODEL[safeSpellId] or nil
+
     local classification = classifySpell(safeSpellId or 0)
 
     -- T008/T009: Resolve normalized actor identity.
@@ -195,6 +213,11 @@ function VisibleCastProducer:HandleUnitSpellcastSucceeded(unitTarget, castGUID, 
         guid      = sourceGuid,
         unitToken = unitTarget,
         ownerGUID = ownerGuid,
+        -- C1: inferred cast->effect timing (static table; not observed).
+        effectModel      = fx and fx.model or nil,
+        effectAtOffset   = fx and (t + (fx.effectOffset or 0)) or nil,
+        effectDuration   = fx and fx.effectDuration or nil,
+        effectConfidence = fx and "inferred" or nil,
         meta = {
             isOffensive    = classification.isOffensive,
             isDefensive    = classification.isDefensive,

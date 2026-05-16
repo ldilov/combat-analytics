@@ -218,6 +218,10 @@ function MainFrame:ShowView(viewId, payload)
         return
     end
 
+    local Widgets = ns.Widgets
+    local previousView = self._activeView and self._activeView.frame or nil
+    local nextView = nil
+
     for _, tab in ipairs(self.tabs) do
         local isActive = tab.id == self.activeViewId
         local button = self.buttons[tab.id]
@@ -229,14 +233,46 @@ function MainFrame:ShowView(viewId, payload)
         local view = self.views[tab.id]
         if view and view.frame then
             if isActive then
-                view.frame:Show()
-                if view.Refresh then
-                    runViewMethod(view, "Refresh", payload)
-                end
+                nextView = view
             else
                 view.frame:Hide()
             end
         end
+    end
+
+    -- Fade transition: fade out old view, then fade in new view.
+    -- T086: Cancel any in-progress animation before starting a new transition.
+    if nextView and nextView.frame then
+        local animationsEnabled = ns.Addon:GetSetting("enableAnimations")
+
+        -- Stop in-progress fade on the old view to prevent overlap.
+        if previousView and previousView._caFadeAG then
+            previousView._caFadeAG:Stop()
+        end
+        if nextView.frame._caFadeAG then
+            nextView.frame._caFadeAG:Stop()
+        end
+
+        local function showNext()
+            nextView.frame:Show()
+            nextView.frame:SetAlpha(1)
+            if animationsEnabled and Widgets and Widgets.FadeIn then
+                Widgets.FadeIn(nextView.frame, 0.25)
+            end
+            if nextView.Refresh then
+                runViewMethod(nextView, "Refresh", payload)
+            end
+        end
+
+        if animationsEnabled and previousView and previousView ~= nextView.frame and previousView:IsShown() and Widgets and Widgets.FadeOut then
+            Widgets.FadeOut(previousView, 0.2, showNext)
+        else
+            if previousView and previousView ~= nextView.frame then
+                previousView:Hide()
+            end
+            showNext()
+        end
+        self._activeView = nextView
     end
 
     -- When navigating to a hidden tab (e.g. matchup drill-down),

@@ -161,14 +161,8 @@ end
 
 local function resolveSpellName(spellId)
     if not spellId then return nil end
-    local name
-    if C_Spell and C_Spell.GetSpellName then
-        local ok, n = pcall(C_Spell.GetSpellName, spellId)
-        name = ok and n or nil
-    else
-        local ok, n = pcall(GetSpellInfo, spellId)
-        name = ok and n or nil
-    end
+    local ok, n = pcall(ns.ApiCompat.GetSpellName, spellId)
+    local name = ok and n or nil
     return name
 end
 
@@ -416,7 +410,7 @@ function BuildComparisonService:Compare(buildIdA, buildIdB, scope, options)
 
     -- Resolve scope (default if nil).
     if not scope then
-        local snap = ns.Addon:GetLatestPlayerSnapshot and ns.Addon:GetLatestPlayerSnapshot()
+        local snap = ns.Addon.GetLatestPlayerSnapshot and ns.Addon:GetLatestPlayerSnapshot()
         local charKey = snap and snap.name and snap.realm and (snap.name .. "-" .. snap.realm) or nil
         local specId  = snap and snap.specId or nil
         scope = self:GetLastScope(charKey, specId)

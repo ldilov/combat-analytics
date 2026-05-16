@@ -442,9 +442,12 @@ function ApiCompat.GetAllSelectedPvpTalentIDs()
     return {}
 end
 
-function ApiCompat.GetInspectSelectedPvpTalent(slot)
+function ApiCompat.GetInspectSelectedPvpTalent(unitToken, slot)
     if C_SpecializationInfo and C_SpecializationInfo.GetInspectSelectedPvpTalent then
-        return C_SpecializationInfo.GetInspectSelectedPvpTalent(slot)
+        -- 12.x signature is (unitToken, talentIndex). Inspect APIs on arena
+        -- unit tokens can return secret values during an active match, so
+        -- callers must still pcall + ApiCompat.IsSecretValue the result.
+        return C_SpecializationInfo.GetInspectSelectedPvpTalent(unitToken, slot)
     end
     return nil
 end
@@ -665,6 +668,21 @@ function ApiCompat.GetSpellTexture(spellId)
     return nil
 end
 
+-- Returns a single normalized boolean (callers only need usability).
+-- pcall-wrapped to match sibling shims and stay safe if the API returns a
+-- secret/throws for an out-of-spellbook id.
+function ApiCompat.IsSpellUsable(spellId)
+    local usable
+    if C_Spell and C_Spell.IsSpellUsable then
+        local ok, res = pcall(C_Spell.IsSpellUsable, spellId)
+        if ok then usable = res end
+    elseif IsUsableSpell then
+        local ok, res = pcall(IsUsableSpell, spellId)
+        if ok then usable = res end
+    end
+    return usable and true or false
+end
+
 function ApiCompat.IsSpellDataCached(spellId)
     if C_Spell and C_Spell.IsSpellDataCached then
         return C_Spell.IsSpellDataCached(spellId)
@@ -734,7 +752,13 @@ end
 
 function ApiCompat.AuraIsBigDefensive(spellId)
     if C_UnitAuras and C_UnitAuras.AuraIsBigDefensive then
-        return C_UnitAuras.AuraIsBigDefensive(spellId)
+        local ok, result = pcall(C_UnitAuras.AuraIsBigDefensive, spellId)
+        if ok and result then return result end
+    end
+    -- Fallback to seed data
+    local spellData = ns.StaticPvpData and ns.StaticPvpData.SPELL_INTELLIGENCE
+    if spellData and spellData[spellId] then
+        return spellData[spellId].isMajorDefensive or false
     end
     return false
 end
@@ -876,15 +900,31 @@ end
 -- ──────────────────────────────────────────────────────────────────────────────
 
 function ApiCompat.IsSpellCrowdControl(spellId)
-    if not spellId or not C_Spell or not C_Spell.IsSpellCrowdControl then return nil end
-    local ok, result = pcall(C_Spell.IsSpellCrowdControl, spellId)
-    return ok and result or nil
+    if not spellId then return nil end
+    if C_Spell and C_Spell.IsSpellCrowdControl then
+        local ok, result = pcall(C_Spell.IsSpellCrowdControl, spellId)
+        if ok and result ~= nil then return result end
+    end
+    -- Fallback to seed data
+    local spellData = ns.StaticPvpData and ns.StaticPvpData.SPELL_INTELLIGENCE
+    if spellData and spellData[spellId] then
+        return spellData[spellId].isCrowdControl or false
+    end
+    return nil
 end
 
 function ApiCompat.IsExternalDefensive(spellId)
-    if not spellId or not C_Spell or not C_Spell.IsExternalDefensive then return nil end
-    local ok, result = pcall(C_Spell.IsExternalDefensive, spellId)
-    return ok and result or nil
+    if not spellId then return nil end
+    if C_Spell and C_Spell.IsExternalDefensive then
+        local ok, result = pcall(C_Spell.IsExternalDefensive, spellId)
+        if ok and result ~= nil then return result end
+    end
+    -- Fallback to seed data
+    local spellData = ns.StaticPvpData and ns.StaticPvpData.SPELL_INTELLIGENCE
+    if spellData and spellData[spellId] then
+        return spellData[spellId].isDefensive or false
+    end
+    return nil
 end
 
 function ApiCompat.IsSpellImportant(spellId)

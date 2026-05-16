@@ -324,7 +324,39 @@ function ArenaRoundTracker:EndRound(reason, winner, duration)
     round.endReason       = reason   or "unknown"
     round.endedAt         = nowServer()
     round.winner          = winner
-    round.duration        = duration
+    round.duration        = duration or (round.endedAt - (round.startedAt or round.endedAt))
+
+    -- Solo Shuffle round-level stat summary (T066-T071).
+    -- Captures healer identity, partner/opponent specs, and basic totals.
+    -- Per-round damage/healing is populated later by CopyStateIntoSession
+    -- from session event data. Here we capture roster composition.
+    if matchRecord.subcontext == Constants.SUBCONTEXT.SOLO_SHUFFLE then
+        round.soloShuffle = round.soloShuffle or {}
+        local archetypes = ns.StaticPvpData and ns.StaticPvpData.SPEC_ARCHETYPES
+        local partnerSpecs = {}
+        local opponentSpecs = {}
+        local healerClass = ""
+        local healerSpecId = nil
+        -- In solo shuffle, team composition rotates each round.
+        -- The roster is in slots; we detect the healer by checking
+        -- the spec archetype role for each slot.
+        if archetypes then
+            for _, s in pairs(round.slots) do
+                local sid = s.prepSpecId or s.specId
+                if sid then
+                    local arch = archetypes[sid]
+                    if arch and arch.role == "HEALER" then
+                        healerClass = s.classFile or (arch and arch.classFile) or ""
+                        healerSpecId = sid
+                    end
+                end
+            end
+        end
+        round.soloShuffle.healerClass = healerClass
+        round.soloShuffle.healerSpecId = healerSpecId
+        round.soloShuffle.partnerSpecs = partnerSpecs
+        round.soloShuffle.opponentSpecs = opponentSpecs
+    end
 
     -- T044: Determine completionState based on roster and disconnect signals.
     local hasUnresolved  = false
@@ -349,8 +381,27 @@ function ArenaRoundTracker:EndRound(reason, winner, duration)
         hasUnresolved = true
         break
     end
+    -- T087: Solo Shuffle DC handling — a full Solo Shuffle round requires 6 players.
+    -- If fewer GUIDs are present, the round is irregular (likely a disconnect).
+    local soloShuffleIncomplete = false
+    if matchRecord.subcontext == Constants.SUBCONTEXT.SOLO_SHUFFLE then
+        local guidCount = 0
+        for slot = 1, 6 do
+            local s = round.slots[slot]
+            if s and s.guid then
+                guidCount = guidCount + 1
+            end
+        end
+        if guidCount < 6 then
+            soloShuffleIncomplete = true
+        end
+    end
+
     if hasDisconnect then
         round.completionState = "partial_disconnect"
+    elseif soloShuffleIncomplete then
+        round.completionState = "partial_disconnect"
+        round.irregular = true
     elseif hasUnresolved then
         round.completionState = "partial_leaver"
     else
@@ -992,6 +1043,42 @@ function ArenaRoundTracker:CopyStateIntoSession(session)
         end
         for guid, unresolved in pairs(round.unresolvedEnemyGuids) do
             session.arena.unresolvedGuids[guid] = shallowCopy(unresolved)
+        end
+    end
+
+    -- T066-T071: Export Solo Shuffle per-round data into session.arena.rounds[].
+    if matchRecord.subcontext == Constants.SUBCONTEXT.SOLO_SHUFFLE then
+        session.arena.rounds = {}
+        for _, r in ipairs(matchRecord.rounds) do
+            local roundEntry = {
+                roundIndex = r.roundIndex,
+                roundKey = r.roundKey,
+                result = nil,  -- determined below from winner
+                damageDone = 0,
+                healingDone = 0,
+                damageTaken = 0,
+                healingReceived = 0,
+                deaths = 0,
+                healerClass = r.soloShuffle and r.soloShuffle.healerClass or "",
+                healerSpecId = r.soloShuffle and r.soloShuffle.healerSpecId or nil,
+                partnerSpecs = r.soloShuffle and r.soloShuffle.partnerSpecs or {},
+                opponentSpecs = r.soloShuffle and r.soloShuffle.opponentSpecs or {},
+                duration = r.duration or 0,
+                irregular = r.completionState ~= "complete",
+            }
+            -- Derive round result from winner + player team
+            -- winner is the faction index; map to won/lost relative to player
+            if r.winner ~= nil then
+                local playerTeam = ApiCompat.GetBattlefieldArenaFaction()
+                if playerTeam ~= nil then
+                    if r.winner == playerTeam then
+                        roundEntry.result = "won"
+                    else
+                        roundEntry.result = "lost"
+                    end
+                end
+            end
+            session.arena.rounds[#session.arena.rounds + 1] = roundEntry
         end
     end
 

@@ -45,6 +45,47 @@ local function resolveActorIdentity(unitToken)
     return guid, name, classFile, arenaSlot
 end
 
+-- C2: When an aura's sourceUnit is unknown (secret/nil on arena opponents),
+-- infer the caster by correlating with the nearest preceding cast_succeeded
+-- of the same spellId within a small time window. Returns inferred identity
+-- fields when a match is found (caller lowers the confidence tier).
+local CASTER_CORRELATION_WINDOW = 3.0  -- seconds
+
+local function inferCasterFromCasts(session, spellId, auraT)
+    if not session or not session.timelineEvents or not spellId then return nil end
+    local events = session.timelineEvents
+    -- Order-independent: timelineEvents is appended in insertion order, which
+    -- is NOT guaranteed to be sorted by `t` (DM/summary rows carry computed
+    -- offsets). Scan all events and keep the closest *preceding* realtime cast
+    -- of this spellId within the window, instead of breaking on assumed order.
+    local best
+    local bestT
+    for i = 1, #events do
+        local ev = events[i]
+        if ev.type == "cast_succeeded"
+            and ev.spellId == spellId
+            and ev.t
+            and ev.chronology == "realtime"
+        then
+            local dt = auraT - ev.t
+            if dt >= 0 and dt <= CASTER_CORRELATION_WINDOW then
+                if not bestT or ev.t > bestT then
+                    best = ev
+                    bestT = ev.t
+                end
+            end
+        end
+    end
+    if not best then return nil end
+    return {
+        guid      = best.sourceGuid,
+        name      = best.sourceName,
+        classFile = best.sourceClassFile,
+        slot      = best.sourceSlot,
+        unitToken = best.sourceUnitToken,
+    }
+end
+
 -- Enumerate all current auras on a unit from live game state.
 -- Returns a list of raw aura data tables. Each table is wrapped in pcall to
 -- avoid crashing on secret values present on arena opponent auras in Midnight.
@@ -107,24 +148,50 @@ function AuraReconciliationService:HandleUnitAura(unitTarget, updateInfo)
                 -- T025: Resolve actor identity for the unit that has the aura.
                 local srcGuid, srcName, srcClassFile, srcSlot = resolveActorIdentity(unitTarget)
 
+                -- C2: holder identity is the aura target, not the caster. When
+                -- the real sourceUnit is unknown (secret/nil on arena enemies),
+                -- infer the caster from a preceding cast_succeeded of the same
+                -- spellId and expose it in distinct caster* fields.
+                local safeSourceUnit = ApiCompat.SanitizeString(sourceUnit)
+                local casterConfidence = Constants.ATTRIBUTION_CONFIDENCE.confirmed
+                local casterGuid, casterName, casterClassFile, casterSlot, casterToken
+                if not safeSourceUnit or safeSourceUnit == "" then
+                    local inferred = inferCasterFromCasts(
+                        session, auraSpellId ~= 0 and auraSpellId or nil, t)
+                    if inferred then
+                        casterGuid       = inferred.guid
+                        casterName       = inferred.name
+                        casterClassFile  = inferred.classFile
+                        casterSlot       = inferred.slot
+                        casterToken      = inferred.unitToken
+                        casterConfidence = Constants.ATTRIBUTION_CONFIDENCE.inferred
+                    end
+                end
+
                 return {
                     t               = t,
                     lane            = Constants.TIMELINE_LANE.VISIBLE_AURA,
                     type            = "applied",
                     source          = Constants.PROVENANCE_SOURCE.VISIBLE_UNIT,
-                    confidence      = Constants.ATTRIBUTION_CONFIDENCE.confirmed,
+                    confidence      = casterConfidence,
                     sourceGuid      = srcGuid,
                     sourceName      = srcName,
                     sourceClassFile = srcClassFile,
                     sourceSlot      = srcSlot,
                     sourceUnitToken = unitTarget,
+                    -- C2: inferred caster identity (distinct from aura holder).
+                    casterGuid      = casterGuid,
+                    casterName      = casterName,
+                    casterClassFile = casterClassFile,
+                    casterSlot      = casterSlot,
+                    casterUnitToken = casterToken,
                     spellId         = auraSpellId ~= 0 and auraSpellId or nil,
                     spellName       = auraName,
                     unitToken       = unitTarget,
                     meta = {
                         auraInstanceID = auraInstanceID ~= 0 and auraInstanceID or nil,
                         isHelpful      = isHelpful and true or false,
-                        sourceUnit     = ApiCompat.SanitizeString(sourceUnit),
+                        sourceUnit     = safeSourceUnit,
                         duration       = ApiCompat.SanitizeNumber(duration),
                         expirationTime = ApiCompat.SanitizeNumber(expirationTime),
                     },

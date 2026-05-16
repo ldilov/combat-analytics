@@ -39,6 +39,8 @@ function SettingsPanel:RefreshStatus()
         string.format("Include general combat: %s", ns.Addon:GetSetting("includeGeneralCombat") and "enabled" or "disabled"),
         string.format("Theme preset: %s", ns.Addon:GetSetting("themePreset") or "default"),
         string.format("Minimap button: %s  (use /ca minimap to toggle)", ns.Addon:GetSetting("showMinimapButton") and "shown" or "hidden"),
+        string.format("Animations: %s", ns.Addon:GetSetting("enableAnimations") and "enabled" or "disabled"),
+        string.format("Max suggestions displayed: %d", ns.Addon:GetSetting("maxSuggestionsDisplay") or 3),
         "",
         "Use /caa or /combatanalytics to open the addon directly.",
     }
@@ -136,7 +138,14 @@ function SettingsPanel:BuildPanel()
         self:RefreshStatus()
     end)
 
-    self.statusText = createText(panel, "GameFontHighlight", "", "TOPLEFT", self.debugButton, "BOTTOMLEFT", 0, -18, ns.Widgets.THEME.text)
+    self.animationsButton = ns.Widgets.CreateButton(panel, "Toggle Animations", 150, 24)
+    self.animationsButton:SetPoint("TOPLEFT", self.debugButton, "BOTTOMLEFT", 0, -48)
+    self.animationsButton:SetScript("OnClick", function()
+        ns.Addon:SetSetting("enableAnimations", not ns.Addon:GetSetting("enableAnimations"))
+        self:RefreshStatus()
+    end)
+
+    self.statusText = createText(panel, "GameFontHighlight", "", "TOPLEFT", self.animationsButton, "BOTTOMLEFT", 0, -18, ns.Widgets.THEME.text)
     self.statusText:SetWidth(680)
 
     panel:SetScript("OnShow", function()

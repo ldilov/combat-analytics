@@ -90,7 +90,8 @@ end
 
 function Widgets.CreateSurface(parent, width, height, backgroundColor, borderColor)
     local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    frame:SetSize(width, height)
+    -- T058: Snap panel dimensions to pixel grid for crisp borders
+    frame:SetSize(Widgets.SnapToPixel(width), Widgets.SnapToPixel(height))
     Widgets.ApplyBackdrop(frame, backgroundColor, borderColor)
     return frame
 end
@@ -424,6 +425,7 @@ function Widgets.CreateRowButton(parent, width, height)
 end
 
 function Widgets.CreateMetricCard(parent, width, height)
+    -- T058: SnapToPixel is applied inside CreateSurface
     local card = Widgets.CreateSurface(parent, width, height, Widgets.THEME.panelAlt, Widgets.THEME.border)
 
     card.value = card:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
@@ -469,7 +471,8 @@ function Widgets.CreateMetricBar(parent, width, height)
     row.barShell = CreateFrame("Frame", nil, row, "BackdropTemplate")
     row.barShell:SetPoint("TOPLEFT", row.title, "BOTTOMLEFT", 0, -8)
     row.barShell:SetPoint("TOPRIGHT", row.value, "BOTTOMRIGHT", 0, -8)
-    row.barShell:SetHeight(10)
+    -- T058: Snap bar shell height to pixel grid
+    row.barShell:SetHeight(Widgets.SnapToPixel(10))
     Widgets.ApplyBackdrop(row.barShell, Widgets.THEME.barShell, Widgets.THEME.border, { left = 0, right = 0, top = 0, bottom = 0 })
 
     row.fill = row.barShell:CreateTexture(nil, "ARTWORK")
@@ -520,6 +523,7 @@ function Widgets.CreateMetricBar(parent, width, height)
 end
 
 function Widgets.CreateSpellRow(parent, width, height)
+    -- T058: SnapToPixel is applied inside CreateSurface
     local row = Widgets.CreateSurface(parent, width, height or 56, Widgets.THEME.panelAlt, Widgets.THEME.border)
 
     row.icon = row:CreateTexture(nil, "ARTWORK")
@@ -547,7 +551,8 @@ function Widgets.CreateSpellRow(parent, width, height)
     row.barShell = CreateFrame("Frame", nil, row, "BackdropTemplate")
     row.barShell:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMRIGHT", 10, 8)
     row.barShell:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -12, 8)
-    row.barShell:SetHeight(6)
+    -- T058: Snap spell bar shell height to pixel grid
+    row.barShell:SetHeight(Widgets.SnapToPixel(6))
     Widgets.ApplyBackdrop(row.barShell, Widgets.THEME.barShell, Widgets.THEME.border, { left = 0, right = 0, top = 0, bottom = 0 })
 
     row.fill = row.barShell:CreateTexture(nil, "ARTWORK")
@@ -572,6 +577,7 @@ function Widgets.CreateSpellRow(parent, width, height)
 end
 
 function Widgets.CreateInsightCard(parent, width, height)
+    -- T058: SnapToPixel is applied inside CreateSurface
     local card = Widgets.CreateSurface(parent, width, height or 92, Widgets.THEME.panelAlt, Widgets.THEME.border)
 
     card.badge = Widgets.CreateSurface(card, 56, 18, Widgets.THEME.accentSoft, Widgets.THEME.borderStrong)
@@ -710,14 +716,16 @@ end
 
 function Widgets.CreateHistoryRow(parent, width, height)
     local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    button:SetSize(width or 808, height or 64)
+    -- T058: Snap history row dimensions to pixel grid
+    button:SetSize(Widgets.SnapToPixel(width or 808), Widgets.SnapToPixel(height or 64))
     Widgets.ApplyBackdrop(button, Widgets.THEME.panel, Widgets.THEME.border)
 
     button.accent = button:CreateTexture(nil, "ARTWORK")
     button.accent:SetTexture("Interface\\Buttons\\WHITE8x8")
     button.accent:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
     button.accent:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
-    button.accent:SetWidth(3)
+    -- T058: Snap accent border width to pixel grid
+    button.accent:SetWidth(Widgets.SnapToPixel(3))
     button.accent:SetVertexColor(unpack(Widgets.THEME.accent))
 
     button.confidenceBadge = Widgets.CreateConfidenceBadge(button, 10)
@@ -1507,5 +1515,188 @@ end
 
 -- Expose badge colors for use by SummaryView and other consumers.
 Widgets.CONFIDENCE_BADGE_COLORS = CONFIDENCE_BADGE_COLORS
+
+-- ═══════════════════════════════════════════════════
+-- Animation & Visual Polish Helpers (v9+)
+-- ═══════════════════════════════════════════════════
+
+-- T009: Pixel-perfect helpers
+function Widgets.PixelSize()
+    local _, screenHeight = GetPhysicalScreenSize()
+    if not screenHeight or screenHeight == 0 then return 1 end
+    return 768 / screenHeight / UIParent:GetEffectiveScale()
+end
+
+function Widgets.SnapToPixel(value)
+    local px = Widgets.PixelSize()
+    if px <= 0 then return value end
+    return math.floor(value / px + 0.5) * px
+end
+
+-- T010: Smooth bar transition
+function Widgets.SmoothBar(bar, targetValue, duration)
+    if not bar then return end
+    duration = duration or 0.4
+    local startValue = bar:GetValue()
+    if math.abs(targetValue - startValue) < 0.01 then
+        bar:SetValue(targetValue)
+        return
+    end
+    bar._smoothTarget = targetValue
+    bar:SetScript("OnUpdate", function(self, elapsed)
+        local current = self:GetValue()
+        local target = self._smoothTarget
+        if not target then self:SetScript("OnUpdate", nil); return end
+        local diff = target - current
+        if math.abs(diff) < 0.1 then
+            self:SetValue(target)
+            self:SetScript("OnUpdate", nil)
+            self._smoothTarget = nil
+            return
+        end
+        self:SetValue(current + diff * math.min(elapsed * (1 / duration * 4), 1))
+    end)
+end
+
+-- T011: Animate number countup
+function Widgets.AnimateNumber(fontString, targetValue, duration, formatFunc)
+    if not fontString then return end
+    duration = duration or 0.4
+    local startValue = fontString._caCurrentValue or 0
+    local startTime = GetTime()
+    fontString:SetScript("OnUpdate", function(self, elapsed)
+        local progress = math.min((GetTime() - startTime) / duration, 1)
+        local eased = 1 - (1 - progress) * (1 - progress)
+        local current = startValue + (targetValue - startValue) * eased
+        if formatFunc then
+            self:SetText(formatFunc(current))
+        else
+            self:SetText(string.format("%.0f", current))
+        end
+        if progress >= 1 then
+            self:SetScript("OnUpdate", nil)
+            self._caCurrentValue = targetValue
+        end
+    end)
+end
+
+-- T012: Fade in/out
+function Widgets.FadeIn(frame, duration)
+    if not frame then return end
+    duration = duration or 0.25
+    frame:SetAlpha(0)
+    frame:Show()
+    if not frame._caFadeAG then
+        frame._caFadeAG = frame:CreateAnimationGroup()
+        frame._caFadeAnim = frame._caFadeAG:CreateAnimation("Alpha")
+    end
+    local ag = frame._caFadeAG
+    local anim = frame._caFadeAnim
+    ag:Stop()
+    anim:SetFromAlpha(0)
+    anim:SetToAlpha(1)
+    anim:SetDuration(duration)
+    anim:SetSmoothing("OUT")
+    ag:SetToFinalAlpha(true)
+    ag:Play()
+end
+
+function Widgets.FadeOut(frame, duration, callback)
+    if not frame then return end
+    duration = duration or 0.2
+    if not frame._caFadeAG then
+        frame._caFadeAG = frame:CreateAnimationGroup()
+        frame._caFadeAnim = frame._caFadeAG:CreateAnimation("Alpha")
+    end
+    local ag = frame._caFadeAG
+    local anim = frame._caFadeAnim
+    ag:Stop()
+    anim:SetFromAlpha(frame:GetAlpha())
+    anim:SetToAlpha(0)
+    anim:SetDuration(duration)
+    anim:SetSmoothing("IN")
+    ag:SetScript("OnFinished", function()
+        frame:Hide()
+        frame:SetAlpha(1)
+        ag:SetScript("OnFinished", nil)
+        if callback then callback() end
+    end)
+    ag:Play()
+end
+
+-- T013: Hover effect
+function Widgets.AddHoverEffect(frame, highlightAlpha)
+    if not frame then return end
+    highlightAlpha = highlightAlpha or 0.08
+    if frame._caHoverHighlight then return end
+    local highlight = frame:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetTexture("Interface/Buttons/WHITE8x8")
+    highlight:SetVertexColor(1, 1, 1, highlightAlpha)
+    highlight:SetBlendMode("ADD")
+    frame._caHoverHighlight = highlight
+    frame:EnableMouse(true)
+end
+
+-- T014: Pulse glow for high-severity cards
+function Widgets.AddPulseGlow(frame, r, g, b)
+    if not frame then return end
+    r = r or 0.9; g = g or 0.3; b = b or 0.3
+    if frame._caPulseGlow then return end
+    local glow = frame:CreateTexture(nil, "OVERLAY")
+    glow:SetPoint("TOPLEFT", -2, 2)
+    glow:SetPoint("BOTTOMRIGHT", 2, -2)
+    glow:SetTexture("Interface/Buttons/WHITE8x8")
+    glow:SetVertexColor(r, g, b, 0)
+    glow:SetBlendMode("ADD")
+    frame._caPulseGlow = glow
+    local ag = glow:CreateAnimationGroup()
+    local pulse = ag:CreateAnimation("Alpha")
+    pulse:SetFromAlpha(0)
+    pulse:SetToAlpha(0.15)
+    pulse:SetDuration(1.2)
+    pulse:SetSmoothing("IN_OUT")
+    ag:SetLooping("BOUNCE")
+    ag:Play()
+end
+
+-- T015: Rich tooltip helper
+function Widgets.ShowRichTooltip(owner, data)
+    if not owner or not data then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    if data.title then
+        GameTooltip:AddLine(data.title, 1, 0.82, 0)
+    end
+    GameTooltip:AddLine(" ")
+    if data.sessionValue then
+        GameTooltip:AddDoubleLine("This session", string.format("%.1f", data.sessionValue), 0.7,0.7,0.7, 0.2,1,0.2)
+    end
+    if data.playerAvg then
+        GameTooltip:AddDoubleLine("Your average", string.format("%.1f", data.playerAvg), 0.7,0.7,0.7, 0.8,0.8,0.8)
+    end
+    if data.specAvg then
+        GameTooltip:AddDoubleLine("Spec average", string.format("%.1f", data.specAvg), 0.7,0.7,0.7, 0.5,0.5,0.5)
+    end
+    if data.sampleCount then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(string.format("Based on %d sessions", data.sampleCount), 0.5, 0.5, 0.5)
+    end
+    GameTooltip:Show()
+end
+
+-- T016: Gradient panel background upgrade
+function Widgets.ApplyGradientBackground(frame, r1, g1, b1, a1, r2, g2, b2, a2)
+    if not frame then return end
+    local bg = frame._caGradientBg
+    if not bg then
+        bg = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
+        bg:SetAllPoints()
+        bg:SetTexture("Interface/Buttons/WHITE8x8")
+        frame._caGradientBg = bg
+    end
+    bg:SetGradient("VERTICAL",
+        CreateColor(r1 or 0.06, g1 or 0.07, b1 or 0.10, a1 or 0.95),
+        CreateColor(r2 or 0.10, g2 or 0.12, b2 or 0.16, a2 or 0.90))
+end
 
 ns.Widgets = Widgets

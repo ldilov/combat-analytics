@@ -83,8 +83,31 @@ function OpponentStatsView:Build(parent)
     self.heatAnchor:SetPoint("TOPLEFT", self.heatLegend, "BOTTOMLEFT", 0, -6)
     self.heatAnchor:SetSize(CANVAS_WIDTH, 1)
 
+    -- Section: Comp Win Rates
+    self.compTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Comp Win Rates", "TOPLEFT", self.heatAnchor, "BOTTOMLEFT", 0, -SECTION_SPACING)
+    self.compCaption = ns.Widgets.CreateCaption(self.canvas, "Win rate against each opponent team composition, sorted by fight count.", "TOPLEFT", self.compTitle, "BOTTOMLEFT", 0, -4)
+    self.compTitle:Hide()
+    self.compCaption:Hide()
+
+    self.compBars = {}
+    for index = 1, MAX_BARS do
+        local bar = ns.Widgets.CreateMetricBar(self.canvas, CANVAS_WIDTH, BAR_HEIGHT)
+        if index == 1 then
+            bar:SetPoint("TOPLEFT", self.compCaption, "BOTTOMLEFT", 0, -10)
+        else
+            bar:SetPoint("TOPLEFT", self.compBars[index - 1], "BOTTOMLEFT", 0, -BAR_SPACING)
+        end
+        bar:Hide()
+        self.compBars[index] = bar
+    end
+
+    -- Anchor for whatever follows comps section
+    self.compAnchor = CreateFrame("Frame", nil, self.canvas)
+    self.compAnchor:SetPoint("TOPLEFT", self.compBars[MAX_BARS], "BOTTOMLEFT", 0, 0)
+    self.compAnchor:SetSize(CANVAS_WIDTH, 1)
+
     -- Section: Arena Roster Cards
-    self.rosterTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Last Arena Roster", "TOPLEFT", self.heatAnchor, "BOTTOMLEFT", 0, -SECTION_SPACING)
+    self.rosterTitle = ns.Widgets.CreateSectionTitle(self.canvas, "Last Arena Roster", "TOPLEFT", self.compAnchor, "BOTTOMLEFT", 0, -SECTION_SPACING)
     self.rosterCaption = ns.Widgets.CreateCaption(self.canvas, "Identified enemy slots from the most recent arena session.", "TOPLEFT", self.rosterTitle, "BOTTOMLEFT", 0, -4)
     self.rosterTitle:Hide()
     self.rosterCaption:Hide()
@@ -353,10 +376,69 @@ function OpponentStatsView:Refresh()
     self.heatAnchor:SetSize(CANVAS_WIDTH, math.max(heatGridHeight, 1))
 
     -- -----------------------------------------------------------------
+    -- 2.5. Comp Win Rates
+    -- -----------------------------------------------------------------
+    for _, bar in ipairs(self.compBars) do bar:Hide() end
+    local compWinRates = store:GetCompWinRates()
+    local compList = {}
+    for _, comp in pairs(compWinRates) do
+        compList[#compList + 1] = comp
+    end
+    Helpers.SortByField(compList, "fights", true)
+
+    local compCount = math.min(MAX_BARS, #compList)
+    local lastCompAnchor = self.compCaption
+    if compCount > 0 then
+        self.compTitle:Show()
+        self.compCaption:Show()
+        local maxCompFights = 1
+        for index = 1, compCount do
+            local fights = compList[index].fights or 0
+            if fights > maxCompFights then maxCompFights = fights end
+        end
+        for index = 1, compCount do
+            local comp = compList[index]
+            local bar = self.compBars[index]
+            local fights = comp.fights or 0
+            local wins = comp.wins or 0
+            local losses = comp.losses or 0
+            local winRate = fights > 0 and (wins / fights) or 0
+            local avgPressure = comp.avgPressureScore or 0
+            local avgSurv = comp.avgSurvivabilityScore or 0
+
+            local fillColor = winRate >= 0.6 and Theme.success
+                or winRate >= 0.4 and Theme.accent
+                or Theme.warning
+
+            local label = comp.compLabel
+            if not label or label == "" then
+                label = comp.compKey or "Unknown"
+            end
+
+            local caption = string.format(
+                "W-L: %d-%d (%.0f%%)  |  Avg pressure: %.1f  |  Avg surv: %.1f  |  Avg dur: %s",
+                wins, losses, winRate * 100, avgPressure, avgSurv,
+                Helpers.FormatDuration(comp.avgDuration or 0)
+            )
+
+            bar:SetData(label, string.format("%d fights", fights), caption, fights / maxCompFights, fillColor)
+            bar:Show()
+            lastCompAnchor = bar
+        end
+    else
+        self.compTitle:Hide()
+        self.compCaption:Hide()
+    end
+
+    -- Re-anchor comp section bottom
+    self.compAnchor:ClearAllPoints()
+    self.compAnchor:SetPoint("TOPLEFT", lastCompAnchor, "BOTTOMLEFT", 0, 0)
+
+    -- -----------------------------------------------------------------
     -- 3. Arena Roster Cards
     -- -----------------------------------------------------------------
     self.rosterTitle:ClearAllPoints()
-    self.rosterTitle:SetPoint("TOPLEFT", self.heatAnchor, "BOTTOMLEFT", 0, -SECTION_SPACING)
+    self.rosterTitle:SetPoint("TOPLEFT", self.compAnchor, "BOTTOMLEFT", 0, -SECTION_SPACING)
 
     local showRoster = false
     local rosterCardCount = 0
@@ -514,6 +596,12 @@ function OpponentStatsView:Refresh()
     -- Heat strip section
     totalHeight = totalHeight + SECTION_SPACING + 20 + 16 + 6 + 14 + 6 -- title + caption + legend + gap
     totalHeight = totalHeight + heatGridHeight
+
+    -- Comp win rates section
+    if compCount > 0 then
+        totalHeight = totalHeight + SECTION_SPACING + 20 + 16 + 10 -- title + caption + gap
+        totalHeight = totalHeight + (compCount * (BAR_HEIGHT + BAR_SPACING))
+    end
 
     -- Roster section
     if showRoster then

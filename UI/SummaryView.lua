@@ -275,6 +275,29 @@ function SummaryView:Build(parent)
         self.metricCards[index] = card
     end
 
+    -- T074: Add trend indicator label to each metric card
+    for _, card in ipairs(self.metricCards) do
+        local trendLabel = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        trendLabel:SetPoint("TOPRIGHT", card, "TOPRIGHT", -6, -6)
+        trendLabel:Hide()
+        card._trendLabel = trendLabel
+    end
+
+    -- T053: Rich tooltips on metric cards (populated with session data in Refresh)
+    local metricTooltipTitles = { "Damage Done", "Offensive Pressure", "Survivability", "Fight Snapshot" }
+    for index = 1, 4 do
+        local card = self.metricCards[index]
+        local tooltipTitle = metricTooltipTitles[index]
+        card:EnableMouse(true)
+        card:SetScript("OnEnter", function(self)
+            if ns.Widgets.ShowRichTooltip and self._tooltipData then
+                ns.Widgets.ShowRichTooltip(self, self._tooltipData)
+            end
+        end)
+        card:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        card._tooltipData = { title = tooltipTitle }
+    end
+
     self.scoresTitle = ns.Widgets.CreateSectionTitle(self.canvas, "How To Read The Fight", "TOPLEFT", self.metricCards[3], "BOTTOMLEFT", 0, -22)
     self.scoresCaption = ns.Widgets.CreateCaption(self.canvas, "Each bar explains what the score means for PvP decisions instead of just giving you a number.", "TOPLEFT", self.scoresTitle, "BOTTOMLEFT", 0, -4)
 
@@ -468,6 +491,10 @@ function SummaryView:Refresh(payload)
         if self.partyTitle then self.partyTitle:Hide() end
         if self.partyCaption then self.partyCaption:Hide() end
         for _, peerRow in ipairs(self.partyPeerRows or {}) do peerRow:Hide() end
+        -- T074: Hide trend labels when no session
+        for _, card in ipairs(self.metricCards) do
+            if card._trendLabel then card._trendLabel:Hide() end
+        end
         return
     end
 
@@ -712,6 +739,10 @@ function SummaryView:Refresh(payload)
         Theme.accent
     )
     self.metricCards[1]:Show()
+    -- T051: Animate the damage done number countup
+    if ns.Widgets.AnimateNumber then
+        ns.Widgets.AnimateNumber(self.metricCards[1].value, session.totals.damageDone or 0, 0.4, Helpers.FormatNumber)
+    end
 
     self.metricCards[2]:SetData(
         string.format("%.1f", session.metrics.pressureScore or 0),
@@ -742,6 +773,10 @@ function SummaryView:Refresh(payload)
         Theme.success
     )
     self.metricCards[3]:Show()
+    -- T051: Animate the survivability score countup
+    if ns.Widgets.AnimateNumber then
+        ns.Widgets.AnimateNumber(self.metricCards[3].value, session.metrics.survivabilityScore or 0, 0.4, function(v) return string.format("%.1f", v) end)
+    end
 
     self.metricCards[4]:SetData(
         string.format("%s ilvl", formatItemLevel(itemLevel)),
@@ -750,6 +785,100 @@ function SummaryView:Refresh(payload)
         Theme.text
     )
     self.metricCards[4]:Show()
+
+    -- T053: Populate rich tooltip data for metric cards
+    if ns.Widgets.ShowRichTooltip then
+        self.metricCards[1]._tooltipData = {
+            title = "Damage Done",
+            sessionValue = session.totals.damageDone or 0,
+            sampleCount = buildBaseline and buildBaseline.fights or nil,
+        }
+        self.metricCards[2]._tooltipData = {
+            title = "Offensive Pressure",
+            sessionValue = session.metrics.pressureScore or 0,
+            playerAvg = buildBaseline and buildBaseline.averagePressureScore or nil,
+            sampleCount = buildBaseline and buildBaseline.fights or nil,
+        }
+        self.metricCards[3]._tooltipData = {
+            title = "Survivability",
+            sessionValue = session.metrics.survivabilityScore or 0,
+            sampleCount = buildBaseline and buildBaseline.fights or nil,
+        }
+        self.metricCards[4]._tooltipData = {
+            title = "Fight Snapshot",
+            sessionValue = itemLevel,
+        }
+    end
+
+    -- T074: Trend indicators on metric cards
+    local trendAnalyzer = ns.Addon:GetModule("TrendAnalyzer", true)
+    if trendAnalyzer then
+        local trendContext = session.context or "arena"
+        local trendOk, trendResults = pcall(function() return trendAnalyzer:AnalyzeTrends(trendContext) end)
+        if trendOk and trendResults then
+            local trendMap = {}
+            for _, t in ipairs(trendResults) do
+                trendMap[t.metricName] = t
+            end
+
+            -- Map metric card indices to trend metric names
+            local cardMetricMap = {
+                [1] = nil,  -- Damage Done (no direct trend metric)
+                [2] = "pressureScore",
+                [3] = "survivabilityScore",
+                [4] = nil,  -- Fight Snapshot (no direct trend metric)
+            }
+
+            for cardIdx, metricKey in pairs(cardMetricMap) do
+                local card = self.metricCards[cardIdx]
+                if card and card._trendLabel then
+                    local trend = metricKey and trendMap[metricKey]
+                    if trend then
+                        if trend.direction == "improving" then
+                            card._trendLabel:SetText(string.format("+%.0f%%", trend.pctChange))
+                            card._trendLabel:SetTextColor(0.44, 0.82, 0.60)
+                        else
+                            card._trendLabel:SetText(string.format("%.0f%%", trend.pctChange))
+                            card._trendLabel:SetTextColor(0.90, 0.35, 0.35)
+                        end
+                        card._trendLabel:Show()
+                    else
+                        card._trendLabel:Hide()
+                    end
+                end
+            end
+
+            -- Also check burstScore for card 2 as secondary indicator
+            local burstTrend = trendMap["burstScore"]
+            if burstTrend and not trendMap["pressureScore"] and self.metricCards[2]._trendLabel then
+                if burstTrend.direction == "improving" then
+                    self.metricCards[2]._trendLabel:SetText(string.format("+%.0f%%", burstTrend.pctChange))
+                    self.metricCards[2]._trendLabel:SetTextColor(0.44, 0.82, 0.60)
+                else
+                    self.metricCards[2]._trendLabel:SetText(string.format("%.0f%%", burstTrend.pctChange))
+                    self.metricCards[2]._trendLabel:SetTextColor(0.90, 0.35, 0.35)
+                end
+                self.metricCards[2]._trendLabel:Show()
+            end
+
+            -- rotationConsistencyScore for card 4 if available (as a useful fallback)
+            local rotTrend = trendMap["rotationConsistencyScore"]
+            if rotTrend and self.metricCards[4]._trendLabel then
+                if rotTrend.direction == "improving" then
+                    self.metricCards[4]._trendLabel:SetText(string.format("+%.0f%%", rotTrend.pctChange))
+                    self.metricCards[4]._trendLabel:SetTextColor(0.44, 0.82, 0.60)
+                else
+                    self.metricCards[4]._trendLabel:SetText(string.format("%.0f%%", rotTrend.pctChange))
+                    self.metricCards[4]._trendLabel:SetTextColor(0.90, 0.35, 0.35)
+                end
+                self.metricCards[4]._trendLabel:Show()
+            end
+        else
+            for _, card in ipairs(self.metricCards) do
+                if card._trendLabel then card._trendLabel:Hide() end
+            end
+        end
+    end
 
     self.metricBars[1]:SetData(
         "Pressure",
@@ -788,6 +917,26 @@ function SummaryView:Refresh(payload)
     )
     for _, row in ipairs(self.metricBars) do
         row:Show()
+    end
+
+    -- T052: Smooth-animate metric bar fills from zero to their target widths.
+    if ns.Widgets.SmoothBar then
+        for _, row in ipairs(self.metricBars) do
+            if row.fill and row.barShell then
+                local targetWidth = row.fill:GetWidth()
+                row.fill:SetWidth(1)
+                local startTime = GetTime()
+                local duration = 0.4
+                row.fill:SetScript("OnUpdate", function(self, elapsed)
+                    local progress = math.min((GetTime() - startTime) / duration, 1)
+                    local eased = 1 - (1 - progress) * (1 - progress)
+                    self:SetWidth(math.max(1, targetWidth * eased))
+                    if progress >= 1 then
+                        self:SetScript("OnUpdate", nil)
+                    end
+                end)
+            end
+        end
     end
 
     local comparisonCount = 0

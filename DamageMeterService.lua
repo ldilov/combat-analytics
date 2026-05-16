@@ -146,24 +146,63 @@ local function buildMergedCombatSpellList(spellsById)
     return result
 end
 
+-- F1/B1: Resolve the player's own damage from the post-match scoreboard.
+-- session.postMatchScores is captured secret-safely in
+-- CombatTracker:HarvestPostMatchData (post-match, ApiCompat-sanitized). The
+-- player row is the authoritative per-player figure; enemyDamageTaken includes
+-- teammates' damage and must not be treated as the player's output in PvP.
+local function getScoreboardPlayerDamage(session)
+    local scores = session and session.postMatchScores
+    if type(scores) ~= "table" then
+        return nil
+    end
+    local ApiCompat = ns.ApiCompat
+    local myGuid = ApiCompat and ApiCompat.GetPlayerGUID() or nil
+    local myName = ApiCompat and ApiCompat.GetPlayerName() or nil
+    for _, entry in ipairs(scores) do
+        local isPlayer = (myGuid ~= nil and entry.guid == myGuid)
+            or (entry.guid == nil and myName ~= nil and entry.name == myName)
+        if isPlayer then
+            local dmg = tonumber(entry.damageDone) or 0
+            if dmg > 0 then
+                return dmg
+            end
+            return nil
+        end
+    end
+    return nil
+end
+
 local function getExpectedDamageTotal(session, snapshot)
     local directDamage = tonumber(snapshot and snapshot.damageDone) or 0
     if directDamage > 0 then
+        if session then session.expectedDamageSource = "direct_snapshot" end
         return directDamage
     end
 
     local enemyDamage = tonumber(snapshot and snapshot.enemyDamageTaken) or 0
     if enemyDamage <= 0 or not session then
+        if session then session.expectedDamageSource = "none" end
         return 0
     end
 
     if session.context == Constants.CONTEXT.TRAINING_DUMMY or session.context == Constants.CONTEXT.DUEL then
+        session.expectedDamageSource = "dummy_or_duel_enemy_taken"
         return enemyDamage
     end
 
-    -- Arena/BG: enemyDamageTaken is a valid proxy for the player's damage output
-    -- when the DamageDone source returned zero (restricted CLEU environment).
+    -- Arena/BG: enemyDamageTaken is "all enemies' damage taken" and includes
+    -- damage dealt by the player's teammates. Anchor to the scoreboard player
+    -- row when available; otherwise fall back to the contaminated proxy and
+    -- record an explicit confidence downgrade.
     if session.context == Constants.CONTEXT.ARENA or session.context == Constants.CONTEXT.BATTLEGROUND then
+        local scoreboardDamage = getScoreboardPlayerDamage(session)
+        if scoreboardDamage and scoreboardDamage > 0 then
+            session.expectedDamageSource = "scoreboard_player_row"
+            return scoreboardDamage
+        end
+        session.expectedDamageSource = "enemy_damage_taken_team_contaminated"
+        session.expectedDamageContaminated = true
         return enemyDamage
     end
 
@@ -171,9 +210,11 @@ local function getExpectedDamageTotal(session, snapshot)
     local evidence = identity.evidence or {}
     local opponent = session.primaryOpponent or {}
     if (evidence.dummyScore or 0) >= 60 then
+        session.expectedDamageSource = "dummy_score_enemy_taken"
         return enemyDamage
     end
     if opponent.guid and not opponent.isPlayer then
+        session.expectedDamageSource = "npc_opponent_enemy_taken"
         return enemyDamage
     end
 
@@ -181,9 +222,11 @@ local function getExpectedDamageTotal(session, snapshot)
     -- partial DM import or prior retry) when the snapshot itself had no total.
     local sessionTotal = session and session.totals and tonumber(session.totals.damageDone) or 0
     if sessionTotal > 0 then
+        session.expectedDamageSource = "session_total_fallback"
         return sessionTotal
     end
 
+    session.expectedDamageSource = "none"
     return 0
 end
 
@@ -766,14 +809,28 @@ function DamageMeterService:FindSessionsForImport()
         end
     end
 
-    -- Fallback 3: if still no candidates, take the latest available session
-    -- regardless of baseline. This catches edge cases where the DM session
-    -- was created significantly before combat started (long prep phases,
-    -- Solo Shuffle round transitions).
+    -- Fallback 3: if still no candidates, consider the latest available
+    -- session regardless of baseline (long prep phases, Solo Shuffle round
+    -- transitions). F3/B3: do not accept it blindly — when both the importing
+    -- session's duration and the candidate's duration are known, reject a
+    -- latest-session whose duration is wildly different (a different
+    -- encounter, e.g. a 200s arena imported into a 12s skirmish). Stay
+    -- permissive when a duration is unavailable so training-dummy / duel
+    -- imports do not regress.
     if #candidates == 0 and #sessions > 0 then
         local latest = sessions[#sessions]
-        if not seen[latest.sessionID or 0] then
-            candidates[#candidates + 1] = latest
+        if latest and not seen[latest.sessionID or 0] then
+            local fits = true
+            local expectedDuration = self._importSession and self._importSession.duration
+            local candidateDuration = tonumber(latest.durationSeconds) or 0
+            if expectedDuration and expectedDuration > 0 and candidateDuration > 0 then
+                if getDurationDelta(expectedDuration, candidateDuration) > 15 then
+                    fits = false
+                end
+            end
+            if fits then
+                candidates[#candidates + 1] = latest
+            end
         end
     end
 
@@ -1639,7 +1696,16 @@ function DamageMeterService:ImportSession(session)
         self:CaptureCurrentSessionSnapshot(session)
     end
 
-    local candidateSessions = self:FindSessionsForImport()
+    -- _importSession scopes the Fallback-3 duration guard to this import.
+    -- pcall so an error inside FindSessionsForImport cannot leak a stale
+    -- session reference into the next import (which would corrupt duration
+    -- matching for subsequent sessions).
+    self._importSession = session
+    local okFind, candidateSessions = pcall(self.FindSessionsForImport, self)
+    self._importSession = nil
+    if not okFind or type(candidateSessions) ~= "table" then
+        candidateSessions = {}
+    end
 
     -- T017: Handle FAILED_DAMAGE_METER_UNAVAILABLE — no sessions available.
     if #candidateSessions == 0 then
@@ -1926,6 +1992,17 @@ function DamageMeterService:ImportSession(session)
     local _, _, enemySources = self:CollectEnemyDamageSnapshotForSession(sessionId)
     local sap = ns.Addon:GetModule("SpellAttributionPipeline")
     if sap then
+        -- F4/B4: reset additive per-target accumulators once per import so a
+        -- re-import recomputes detail rows instead of double-counting them.
+        if sap.BeginImportGeneration then
+            sap:BeginImportGeneration(session)
+        end
+        -- B5: seed summonMap from UnitGraphService pet-owner state before the
+        -- merge loop so pet/totem/guardian damage is re-attributed to owners
+        -- even though SPELL_SUMMON never fires in instanced PvP.
+        if sap.PopulateSummonMapFromUnitGraph then
+            sap:PopulateSummonMapFromUnitGraph()
+        end
         for _, entry in ipairs(enemySources or {}) do
             sap:MergeDamageMeterSource(session, entry.combatSource, entry.sessionSource)
         end
@@ -2072,7 +2149,80 @@ function DamageMeterService:ImportSession(session)
         end
     end
 
+    -- F2/B2: correct DM/CLEU under-report so per-spell attribution totals match
+    -- the authoritative total. No-op for pure-DM sessions (factor == 1.0).
+    local cvFactor = self:ComputeCrossValidationFactor(session)
+    if cvFactor and cvFactor > 1.0 then
+        self:ApplyCrossValidationScaling(session, cvFactor)
+    end
+
     return true
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- T029-T030: CLEU Cross-Validation Stubs
+--
+-- When CLEU-derived totalDamageDone is significantly less than the DamageMeter's
+-- authoritative total, compute a scaling factor so per-spell breakdown percentages
+-- remain correct while the absolute total matches the DM's authoritative value.
+--
+-- Integration point:
+--   1. After ImportSession completes, call ComputeCrossValidationFactor(session).
+--   2. If the factor is > 1.0, pass it to SpellAttributionPipeline:ApplyScalingFactor().
+--
+-- These are stubs — full implementation deferred until CLEU ingestion is re-enabled
+-- in Midnight (currently gated behind CA_DEV_LEGACY in HandleNormalizedEvent).
+-- ──────────────────────────────────────────────────────────────────────────────
+
+--- Compute a scaling factor comparing CLEU-local totals to DM authoritative totals.
+--- Returns 1.0 when no scaling is needed, or a factor > 1.0 when CLEU under-reports.
+--- @param session table  A finalized session with both localTotals and importedTotals.
+--- @return number scalingFactor  The ratio to multiply CLEU-derived per-spell amounts by.
+--- @return string|nil reason  "under_reported" if scaling was needed, nil otherwise.
+function DamageMeterService:ComputeCrossValidationFactor(session)
+    if not session then return 1.0, nil end
+
+    local cleuTotal = session.localTotals and session.localTotals.damageDone or 0
+    local dmTotal = session.importedTotals and session.importedTotals.damageDone or 0
+
+    -- Only scale when DM has authoritative data and CLEU under-reports by >10%.
+    if dmTotal <= 0 or cleuTotal <= 0 then
+        return 1.0, nil
+    end
+
+    local ratio = cleuTotal / dmTotal
+    if ratio >= 0.90 then
+        -- CLEU is within 10% of DM — no scaling needed.
+        return 1.0, nil
+    end
+
+    -- CLEU under-reports: compute scaling factor to bring per-spell amounts up.
+    local factor = dmTotal / cleuTotal
+    return factor, "under_reported"
+end
+
+--- Apply a scaling factor to the per-spell breakdown in SpellAttributionPipeline.
+--- Corrects DM/CLEU under-report so attributed per-spell totals match the
+--- authoritative total. No-op when factor <= 1.0 (e.g. pure-DM sessions where
+--- ComputeCrossValidationFactor returns 1.0 because there is no CLEU to scale).
+--- @param session table  The session whose attribution should be scaled.
+--- @param factor number  The scaling factor from ComputeCrossValidationFactor.
+function DamageMeterService:ApplyCrossValidationScaling(session, factor)
+    if not session or not factor or factor <= 1.0 then return end
+
+    local applied = false
+    local sap = ns.Addon:GetModule("SpellAttributionPipeline")
+    if sap and sap.ApplyScalingFactor then
+        sap:ApplyScalingFactor(session, factor)
+        local recon = session.attribution and session.attribution.reconciliation
+        applied = (recon and recon.crossValidationApplied == true) or false
+    end
+
+    -- Record the scaling factor on the session for diagnostics / UI badges.
+    session.crossValidation = {
+        scalingFactor = factor,
+        applied = applied,
+    }
 end
 
 ns.Addon:RegisterModule("DamageMeterService", DamageMeterService)

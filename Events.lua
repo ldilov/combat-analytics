@@ -156,10 +156,8 @@ local function dispatch(tracker, event, ...)
 end
 
 Events:SetScript("OnEvent", function(_, event, ...)
-    local args = { ... }
-
     if event == "ADDON_LOADED" then
-        local addonName = args[1]
+        local addonName = ...
         if addonName ~= ADDON_NAME then
             return
         end
@@ -188,9 +186,9 @@ Events:SetScript("OnEvent", function(_, event, ...)
 
     local tracker = ns.Addon:GetModule("CombatTracker")
     if tracker then
-        local ok, err = xpcall(function()
-            dispatch(tracker, event, unpack(args))
-        end, debugstack)
+        -- Zero-allocation dispatch: forward varargs through xpcall directly
+        -- instead of materializing a { ... } table on every game event.
+        local ok, err = xpcall(dispatch, debugstack, tracker, event, ...)
         if not ok then
             reportError("Event handler failed for " .. event, err)
         end
@@ -395,16 +393,14 @@ Events.RegisterHandler("INSPECT_READY", function(event, ...)
     end
 end)
 
--- Register UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED for native DR tracking.
+-- UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED → native DR tracking + timeline.
+-- Single handler fans out to both consumers to avoid duplicate per-event
+-- module lookups and handler-list iterations.
 Events.RegisterHandler("UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED", function(event, unitTarget, trackerInfo)
     local art = ns.Addon:GetModule("ArenaRoundTracker")
     if art and art.HandleDiminishStateUpdated then
         art:HandleDiminishStateUpdated(unitTarget, trackerInfo)
     end
-end)
-
--- UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED → DRUpdateProducer
-Events.RegisterHandler("UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED", function(event, unitTarget, trackerInfo)
     local tp = ns.Addon:GetModule("TimelineProducer")
     if tp and tp.HandleDiminishStateUpdated then
         tp:HandleDiminishStateUpdated(unitTarget, trackerInfo)

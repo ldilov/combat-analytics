@@ -68,14 +68,8 @@ local function buildDisplayLabel(profile)
         for idStr in profile.pvpTalentSignature:gmatch("[^,]+") do
             local talentId = tonumber(idStr)
             if talentId then
-                local spellName
-                if C_Spell and C_Spell.GetSpellName then
-                    local ok3, n = pcall(C_Spell.GetSpellName, talentId)
-                    spellName = ok3 and n or nil
-                else
-                    local ok3, n = pcall(GetSpellInfo, talentId)
-                    spellName = ok3 and n or nil
-                end
+                local ok3, n = pcall(ns.ApiCompat.GetSpellName, talentId)
+                local spellName = ok3 and n or nil
                 pvpParts[#pvpParts + 1] = spellName or tostring(talentId)
             end
             if #pvpParts >= 2 then break end

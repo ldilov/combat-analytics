@@ -121,6 +121,10 @@ function CombatHistoryView:Build(parent)
                 ns.Addon:OpenView("detail", { sessionId = button.sessionId })
             end
         end)
+        -- T054: Add hover highlight effect to history rows
+        if ns.Widgets.AddHoverEffect then
+            ns.Widgets.AddHoverEffect(row, 0.08)
+        end
         self.rows[index] = row
     end
 
