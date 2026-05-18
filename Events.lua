@@ -14,6 +14,15 @@ local _handlers = {}
 -- (CombatTracker, TimelineProducer) each process one merged call per unit.
 local _pendingAura = {}  -- [unitTarget] = { addedAuras={}, removedAuraInstanceIDs={} }
 
+-- Defined before _flushPendingAura so its error path can actually reach it
+-- (Lua binds the upvalue at closure-creation time; a later `local function`
+-- would leave reportError nil inside _flushPendingAura).
+local function reportError(prefix, message)
+    if ns and ns.Addon and ns.Addon.Warn then
+        ns.Addon:Warn(string.format("%s: %s", prefix, tostring(message)))
+    end
+end
+
 local function _accumulateUnitAura(unitTarget, updateInfo)
     if not unitTarget then return end
     local pending = _pendingAura[unitTarget]
@@ -54,12 +63,6 @@ local function _flushPendingAura()
         end
     end
     wipe(_pendingAura)
-end
-
-local function reportError(prefix, message)
-    if ns and ns.Addon and ns.Addon.Warn then
-        ns.Addon:Warn(string.format("%s: %s", prefix, tostring(message)))
-    end
 end
 
 function Events.RegisterHandler(eventName, handler)

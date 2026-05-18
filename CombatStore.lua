@@ -403,7 +403,17 @@ function CombatStore:Initialize()
         CombatAnalyticsDB.settings.showSummaryAfterCombat = false
         CombatAnalyticsDB.maintenance.stabilizationVersion = 1
     end
-    self:MigrateSchema(CombatAnalyticsDB)
+    -- A single corrupt legacy session record must not abort CombatStore
+    -- initialization (which would leave persistence/aggregates dead for the
+    -- whole play session). Degrade gracefully instead.
+    local ok, err = pcall(function() self:MigrateSchema(CombatAnalyticsDB) end)
+    if not ok then
+        CombatAnalyticsDB.maintenance = CombatAnalyticsDB.maintenance or {}
+        CombatAnalyticsDB.maintenance.migrationError = tostring(err)
+        if ns.Addon and ns.Addon.Warn then
+            ns.Addon:Warn("CombatStore: schema migration failed (%s); continuing with existing data.", tostring(err))
+        end
+    end
 end
 
 -- MigrateSchema applies incremental upgrades to saved data.
@@ -415,6 +425,23 @@ end
 --   • Bump Constants.SCHEMA_VERSION whenever a new gate is added.
 function CombatStore:MigrateSchema(db)
     local version = db.schemaVersion or 0
+
+    -- Downgrade guard: if the DB was written by a NEWER addon build, its
+    -- session/aggregate shapes are unknown to these v<=SCHEMA_VERSION gates.
+    -- Running old aggregate code over future-schema data silently corrupts
+    -- it. Refuse to migrate (and flag it) rather than mutate forward data.
+    local target = (Constants and Constants.SCHEMA_VERSION) or version
+    if version > target then
+        db.maintenance = db.maintenance or {}
+        db.maintenance.downgraded = true
+        if ns.Addon and ns.Addon.Warn then
+            ns.Addon:Warn(
+                "CombatAnalytics: saved data is from a newer version (v%s > v%s). "
+                .. "Skipping migration to avoid corrupting it; some views may be limited.",
+                tostring(version), tostring(target))
+        end
+        return
+    end
 
     -- v1 → v2: introduce rawEventVersion field, arena slot metadata, and
     -- attribution stub on existing sessions. No data backfill — sessions
@@ -1341,7 +1368,12 @@ function CombatStore:PersistSession(session)
             self._queryCache = {}
         end
         C_Timer.After(0, function()
-            self:UpdateAggregatesForSession(session)
+            -- Deferred: guard so an aggregation error on one session can't
+            -- surface as an unhandled timer error and stop later work.
+            local ok, err = pcall(function() self:UpdateAggregatesForSession(session) end)
+            if not ok and ns.Addon and ns.Addon.Warn then
+                ns.Addon:Warn("UpdateAggregatesForSession failed: %s", tostring(err))
+            end
         end)
     end
 

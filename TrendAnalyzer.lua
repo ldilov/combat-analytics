@@ -1,11 +1,11 @@
 local _, ns = ...
 
-local TrendAnalyzer = ns.Addon:NewModule("TrendAnalyzer")
-local Math = nil
+-- Math bound at file scope (Utils\Math.lua loads earlier in the .toc). The
+-- framework RegisterModule's modules but never calls OnInitialize, so the
+-- old OnInitialize-based binding never ran and left Math nil.
+local Math = ns.Math
 
-function TrendAnalyzer:OnInitialize()
-    Math = ns.Math
-end
+local TrendAnalyzer = {}
 
 local CORE_METRICS = { "pressureScore", "burstScore", "survivabilityScore", "rotationConsistencyScore" }
 local MIN_SAMPLES_FOR_TREND = 10
@@ -112,3 +112,5 @@ function TrendAnalyzer:DetectTilt(context, recentSessions)
 
     return nil
 end
+
+ns.Addon:RegisterModule("TrendAnalyzer", TrendAnalyzer)

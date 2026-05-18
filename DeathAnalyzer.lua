@@ -1,9 +1,6 @@
 local _, ns = ...
 
-local DeathAnalyzer = ns.Addon:NewModule("DeathAnalyzer")
-
-function DeathAnalyzer:OnInitialize()
-end
+local DeathAnalyzer = {}
 
 -- Major defensive cooldowns to check (from SeedSpellIntelligence or hardcoded)
 local MAJOR_DEFENSIVES = {
@@ -187,3 +184,5 @@ function DeathAnalyzer:AnalyzeDeaths(session)
 
     return suggestions
 end
+
+ns.Addon:RegisterModule("DeathAnalyzer", DeathAnalyzer)

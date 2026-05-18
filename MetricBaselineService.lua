@@ -1,13 +1,12 @@
 local _, ns = ...
 
-local MetricBaselineService = ns.Addon:NewModule("MetricBaselineService")
-local Math = nil
-local Constants = nil
+-- Math is bound at file scope: Utils\Math.lua loads before this file in the
+-- .toc. The framework only RegisterModule's modules (it does not call
+-- OnInitialize), so the previous OnInitialize-based binding never ran and
+-- left Math nil — a latent runtime crash in RecordMetric.
+local Math = ns.Math
 
-function MetricBaselineService:OnInitialize()
-    Math = ns.Math
-    Constants = ns.Constants
-end
+local MetricBaselineService = {}
 
 local ROLLING_WINDOW_SIZE = 20
 local DEFAULT_PRIOR_WEIGHT = 7
@@ -87,3 +86,5 @@ function MetricBaselineService:GetSampleCount(context, metricName)
     local baseline = self:GetBaseline(context, metricName)
     return baseline and baseline.count or 0
 end
+
+ns.Addon:RegisterModule("MetricBaselineService", MetricBaselineService)

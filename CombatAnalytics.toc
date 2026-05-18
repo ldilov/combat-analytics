@@ -19,10 +19,10 @@ seed\CompArchetypes.lua
 seed\MetricThresholds.lua
 StaticPvpData.lua
 Utils\Math.lua
-MetricBaselineService.lua
 Utils\BuildHash.lua
 ApiCompat.lua
 Core.lua
+MetricBaselineService.lua
 SeedEnricher.lua
 SettingsPanel.lua
 MinimapButton.lua
