@@ -42,3 +42,13 @@ luac.out
 
 .worktrees/
 .claude/worktrees/
+
+# AI tooling / agent artifacts
+.claude/
+.specify/
+graphify-out/
+/md
+specs/
+.hforge/
+.agents/
+AGENTS.md
