@@ -132,6 +132,22 @@ function SessionClassifier:RefreshZone()
     self.zoneName, self.mapId = ApiCompat.GetCurrentZoneName()
 end
 
+-- IsInPracticeZone: true when the player is somewhere training dummies are
+-- expected to live. Used as a zone-gated fallback for unknown-creatureID
+-- dummies whose names don't match TRAINING_DUMMY_PATTERNS. Combined with a
+-- classification deny-list at the call site, this avoids false positives on
+-- vendors/guards.
+function SessionClassifier:IsInPracticeZone()
+    if ApiCompat.AreTrainingGroundsEnabled and ApiCompat.AreTrainingGroundsEnabled() then
+        return true
+    end
+    local mapId = self.mapId
+    if mapId and Constants.PRACTICE_ZONE_MAP_IDS and Constants.PRACTICE_ZONE_MAP_IDS[mapId] then
+        return true
+    end
+    return false
+end
+
 -- T032: Pending duel timeout — 30 seconds prevents stale state from canceled
 -- or ignored duel requests that never receive DUEL_INBOUNDS.
 local DUEL_PENDING_TIMEOUT_SECONDS = 30
@@ -708,18 +724,45 @@ function SessionClassifier:ResolveContextFromState(preferredUnitToken)
                 if dummyScore >= (Constants.TRAINING_DUMMY_PROMOTION_THRESHOLD or 70) then
                 -- Extra guard: if detection was name-only (no creature ID match),
                 -- verify UnitClassification to avoid false positives from NPCs
-                -- whose names happen to contain "dummy" or "training".
+                -- whose names happen to contain "dummy" or "training". 12.0.5
+                -- introduced "normal"-classified dummies (e.g. CID 243214 in
+                -- Silvermoon), so the gate is a deny-list of clearly-hostile
+                -- combatant classifications rather than an allow-list of weak ones.
                 local passedClassificationCheck = true
                 if not info.isTrainingDummyById and info.isTrainingDummyByName then
                     local classification = UnitClassification and UnitClassification(info.unitToken) or nil
-                    -- Training dummies are typically "trivial" or "minus" classification.
-                    -- If we can query classification and it's a normal/elite/boss NPC,
-                    -- do not treat it as a dummy.
-                    if classification and classification ~= "trivial" and classification ~= "minus" then
+                    if classification == "elite"
+                        or classification == "rareelite"
+                        or classification == "rare"
+                        or classification == "worldboss"
+                    then
                         passedClassificationCheck = false
                     end
                 end
                 if passedClassificationCheck then
+                    local subcontext = nil
+                    if ApiCompat.AreTrainingGroundsEnabled() then
+                        subcontext = Constants.SUBCONTEXT.TRAINING_GROUNDS
+                    end
+                    return Constants.CONTEXT.TRAINING_DUMMY, subcontext, info.unitToken
+                end
+            end
+
+            -- Zone-gated fallback: unknown-CID NPC whose name contains "dummy"
+            -- in a known practice zone. Belt-and-suspenders for future dummies
+            -- whose name doesn't match TRAINING_DUMMY_PATTERNS exactly. Skips
+            -- real players and clearly-combatant classifications.
+            if not info.isPlayer
+                and info.name
+                and Helpers.ContainsIgnoreCase(info.name, "dummy")
+                and self:IsInPracticeZone()
+            then
+                local classification = UnitClassification and UnitClassification(info.unitToken) or nil
+                local isCombatantClass = classification == "elite"
+                    or classification == "rareelite"
+                    or classification == "rare"
+                    or classification == "worldboss"
+                if not isCombatantClass then
                     local subcontext = nil
                     if ApiCompat.AreTrainingGroundsEnabled() then
                         subcontext = Constants.SUBCONTEXT.TRAINING_GROUNDS

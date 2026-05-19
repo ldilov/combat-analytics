@@ -92,4 +92,12 @@ ns.GeneratedSeedData.dummyCatalog = {
         isPvPUseful = true,
         isTrainingGrounds = true,
     },
+    [243214] = {
+        creatureID = 243214,
+        displayName = "Training Dummy",
+        normalizedName = "training dummy",
+        family = "basic",
+        benchmarkGroup = "general",
+        isPvPUseful = true,
+    },
 }

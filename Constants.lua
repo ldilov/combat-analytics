@@ -288,6 +288,28 @@ ns.Constants = {
         "damage dummy",
         "healing dummy",
     },
+    -- Capital-city / training-hub mapIds where loose "*dummy*" name matching
+    -- is allowed without a catalogued creature ID. Used by SessionClassifier
+    -- IsInPracticeZone() as a deny-list-gated fallback so unknown dummies
+    -- (e.g. future expansions) still create sessions.
+    PRACTICE_ZONE_MAP_IDS = {
+        [85]   = true,  -- Orgrimmar
+        [84]   = true,  -- Stormwind City
+        [110]  = true,  -- Silvermoon City
+        [87]   = true,  -- Ironforge
+        [88]   = true,  -- Thunder Bluff
+        [89]   = true,  -- Darnassus
+        [103]  = true,  -- The Exodar
+        [90]   = true,  -- Undercity
+        [125]  = true,  -- Dalaran
+        [627]  = true,  -- Dalaran (Legion / Broken Isles)
+        [1355] = true,  -- Nazjatar / Boralus area shared id
+        [1161] = true,  -- Boralus
+        [1163] = true,  -- Dazar'alor
+        [1670] = true,  -- Oribos
+        [2112] = true,  -- Valdrakken
+        [2339] = true,  -- Dornogal
+    },
     -- Creature IDs synced from seed/generated/SeedDummyCatalog.lua.
     -- Enables fast creature-ID-based dummy detection (score 100) without
     -- falling back to name-pattern matching (score 70-85).
@@ -302,6 +324,7 @@ ns.Constants = {
         [194644] = true,  -- Training Grounds Tank Dummy
         [194648] = true,  -- Training Grounds DPS Dummy
         [194649] = true,  -- Training Grounds Healer Dummy
+        [243214] = true,  -- Training Dummy (12.0.5 Silvermoon / capital cities)
     },
     SPELL_CATEGORY = {
         OFFENSIVE = "offensive",

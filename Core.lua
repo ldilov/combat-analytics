@@ -204,9 +204,18 @@ function Addon:Debug(message, ...)
     self:AppendTraceEntry("debug", { message = formatted })
 end
 
-function Addon:Warn(message)
-    self:RecordWarning(message)
-    self:AppendTraceEntry("warn", { message = message })
+function Addon:Warn(message, ...)
+    local formatted = message
+    if select("#", ...) > 0 then
+        -- pcall guard: if a caller passes a malformed format string we still
+        -- record the warning instead of replacing it with a format error.
+        local ok, result = pcall(string.format, message, ...)
+        if ok then
+            formatted = result
+        end
+    end
+    self:RecordWarning(formatted)
+    self:AppendTraceEntry("warn", { message = formatted })
 end
 
 function Addon:GetTraceLog()

@@ -86,6 +86,14 @@
       "benchmarkGroup": "pvp",
       "isPvPUseful": true,
       "isTrainingGrounds": true
+    },
+    {
+      "creatureID": 243214,
+      "displayName": "Training Dummy",
+      "normalizedName": "training dummy",
+      "family": "basic",
+      "benchmarkGroup": "general",
+      "isPvPUseful": true
     }
   ]
 }

@@ -72,6 +72,11 @@ function UnitCanAttack(attacker, target)
     return entry and entry.isHostile or false
 end
 
+function UnitClassification(unitToken)
+    local entry = WowMock.units[unitToken]
+    return entry and entry.classification or "normal"
+end
+
 function UnitIsEnemy(unitA, unitB)
     local entry = WowMock.units[unitB]
     return entry and entry.isHostile or false

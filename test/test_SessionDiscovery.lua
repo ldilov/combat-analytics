@@ -30,6 +30,9 @@ local Constants = {
     TRAINING_DUMMY_CREATURE_IDS = {
         [111111] = true,
     },
+    PRACTICE_ZONE_MAP_IDS = {
+        [110] = true,  -- Silvermoon City (test stand-in)
+    },
 }
 
 local ns = {
@@ -69,8 +72,10 @@ local apiState = {
     trainingGrounds = false,
 }
 
+local currentZone = { name = "Test Zone", mapId = 1 }
+
 ns.ApiCompat = {
-    GetCurrentZoneName = function() return "Test Zone", 1 end,
+    GetCurrentZoneName = function() return currentZone.name, currentZone.mapId end,
     GetServerTime = function() return 1000 end,
     GetPlayerGUID = function() return "Player-self" end,
     IsGuidPet = function(guid) return type(guid) == "string" and guid:sub(1, 4) == "Pet-" end,
@@ -163,6 +168,11 @@ local function resetState()
     apiState.battleground = false
     apiState.soloShuffle = false
     apiState.trainingGrounds = false
+    currentZone.name = "Test Zone"
+    currentZone.mapId = 1
+    if Classifier and Classifier.RefreshZone then
+        Classifier:RefreshZone()
+    end
 end
 
 describe("SessionClassifier / state-surface discovery", function()
@@ -211,6 +221,90 @@ describe("SessionClassifier / state-surface discovery", function()
             isPlayer = false,
             isHostile = true,
             isPet = true,
+        })
+
+        local context = Classifier:ResolveContextFromState()
+        expect(context):toBeNil()
+    end)
+
+    it("promotes name-matched dummy with 'normal' classification (12.0.5 regression fix)", function()
+        resetState()
+        -- CID 222222 is NOT in TRAINING_DUMMY_CREATURE_IDS, only name matches.
+        WowMock.SetUnit("target", {
+            guid = "Creature-0-0-0-0-222222-0000000000",
+            name = "Training Dummy",
+            isPlayer = false,
+            isHostile = true,
+            creatureId = 222222,
+            classification = "normal",
+        })
+
+        local context, _, unitToken = Classifier:ResolveContextFromState()
+        expect(context):toBe(Constants.CONTEXT.TRAINING_DUMMY)
+        expect(unitToken):toBe("target")
+    end)
+
+    it("rejects name-matched 'elite' NPC (avoid false positive on real combatants)", function()
+        resetState()
+        WowMock.SetUnit("target", {
+            guid = "Creature-0-0-0-0-333333-0000000000",
+            name = "Training Dummy Overseer",
+            isPlayer = false,
+            isHostile = true,
+            creatureId = 333333,
+            classification = "elite",
+        })
+
+        local context = Classifier:ResolveContextFromState()
+        expect(context):toBeNil()
+    end)
+
+    it("promotes unknown 'dummy'-named NPC via practice-zone fallback", function()
+        resetState()
+        currentZone.mapId = 110  -- Silvermoon
+        Classifier:RefreshZone()
+        WowMock.SetUnit("target", {
+            guid = "Creature-0-0-0-0-444444-0000000000",
+            name = "Combat Dummy",  -- doesn't match "training dummy" pattern
+            isPlayer = false,
+            isHostile = true,
+            creatureId = 444444,
+            classification = "normal",
+        })
+
+        local context, _, unitToken = Classifier:ResolveContextFromState()
+        expect(context):toBe(Constants.CONTEXT.TRAINING_DUMMY)
+        expect(unitToken):toBe("target")
+    end)
+
+    it("does NOT zone-promote unknown 'dummy' NPC with elite classification", function()
+        resetState()
+        currentZone.mapId = 110
+        Classifier:RefreshZone()
+        WowMock.SetUnit("target", {
+            guid = "Creature-0-0-0-0-555555-0000000000",
+            name = "Dummy Champion",
+            isPlayer = false,
+            isHostile = true,
+            creatureId = 555555,
+            classification = "elite",
+        })
+
+        local context = Classifier:ResolveContextFromState()
+        expect(context):toBeNil()
+    end)
+
+    it("does NOT zone-promote outside a practice zone", function()
+        resetState()
+        currentZone.mapId = 9999  -- not in PRACTICE_ZONE_MAP_IDS
+        Classifier:RefreshZone()
+        WowMock.SetUnit("target", {
+            guid = "Creature-0-0-0-0-666666-0000000000",
+            name = "Combat Dummy",
+            isPlayer = false,
+            isHostile = true,
+            creatureId = 666666,
+            classification = "normal",
         })
 
         local context = Classifier:ResolveContextFromState()
