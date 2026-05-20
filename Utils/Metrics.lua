@@ -599,6 +599,119 @@ function Metrics.DeriveCoordination(session)
     session.metrics.coordinationScore = Helpers.Round(totalWeight > 0 and (weightedScore / totalWeight) or 50, 1)
 end
 
+-- ---------------------------------------------------------------------------
+-- Per-metric provenance (v10+).
+-- ---------------------------------------------------------------------------
+-- buildMetricProvenance records, per individual derived score, where its
+-- inputs came from and how much to trust it. The session already carries one
+-- session-wide `limitedBySource` boolean, but that flattens very different
+-- situations: a pressureScore from an authoritative DamageMeter import and a
+-- rotationalConsistencyScore from a near-empty cast lane both look identical
+-- under one badge. This builds session.metrics.provenance so the UI and the
+-- SuggestionEngine can gate each metric on its own basis.
+--
+-- Three input families drive confidence:
+--   • damage-derived  → session.importedTotals.totalAuthority
+--   • timeline-derived → session.coverage.visibleCasts.score
+--   • CC-derived       → session.coverage.ccReceived.score
+-- session.coverage is written by CoverageService:Finalize. When it is nil
+-- (deferred-import recompute, or metrics ran before coverage) the affected
+-- metrics default to UNKNOWN rather than guessing.
+-- ---------------------------------------------------------------------------
+local function authorityToConfidence(authority)
+    if authority == "authoritative" then
+        return Constants.METRIC_CONFIDENCE.HIGH
+    elseif authority == "estimated" then
+        return Constants.METRIC_CONFIDENCE.ESTIMATED
+    else
+        -- "failed" or nil — no usable damage data.
+        return Constants.METRIC_CONFIDENCE.LOW
+    end
+end
+
+-- Map a coverage lane score (0-1) to a confidence tier. nilScore (lane or
+-- whole coverage table absent) collapses to UNKNOWN.
+local function coverageScoreToConfidence(score)
+    if score == nil then
+        return Constants.METRIC_CONFIDENCE.UNKNOWN
+    elseif score >= 0.7 then
+        return Constants.METRIC_CONFIDENCE.HIGH
+    elseif score >= 0.4 then
+        return Constants.METRIC_CONFIDENCE.ESTIMATED
+    else
+        return Constants.METRIC_CONFIDENCE.LOW
+    end
+end
+
+local function buildMetricProvenance(session)
+    local prov = {}
+    local function set(metricName, confidence, basis)
+        prov[metricName] = { confidence = confidence, basis = basis }
+    end
+
+    -- Damage-derived metrics: trust mirrors the import authority tier.
+    local authority = session.importedTotals and session.importedTotals.totalAuthority
+    local dmgConfidence = authorityToConfidence(authority)
+    local dmgBasis
+    if authority == "authoritative" then
+        dmgBasis = "damage_meter_authoritative"
+    elseif authority == "estimated" then
+        dmgBasis = "scoreboard_or_estimate"
+    else
+        dmgBasis = "no_damage_data"
+    end
+    for _, metricName in ipairs({
+        "pressureScore", "sustainedPressureScore", "burstScore",
+        "sustainedDps", "burstDps", "openerDamage",
+    }) do
+        set(metricName, dmgConfidence, dmgBasis)
+    end
+
+    -- Timeline-derived metrics: trust mirrors visible-cast coverage.
+    local coverage = session.coverage
+    local castScore = coverage and coverage.visibleCasts and coverage.visibleCasts.score
+    local castConfidence = coverageScoreToConfidence(castScore)
+    local castBasis = (castScore == nil) and "coverage_unavailable" or "visible_cast_coverage"
+    for _, metricName in ipairs({
+        "rotationalConsistencyScore", "procConversionScore",
+        "openerCastCount", "firstMajorOffensiveAt", "firstMajorDefensiveAt",
+    }) do
+        set(metricName, castConfidence, castBasis)
+    end
+
+    -- CC-derived metrics: trust mirrors CC-received coverage.
+    local ccScore = coverage and coverage.ccReceived and coverage.ccReceived.score
+    local ccConfidence = coverageScoreToConfidence(ccScore)
+    local ccBasis = (ccScore == nil) and "coverage_unavailable" or "cc_received_coverage"
+    for _, metricName in ipairs({
+        "timeUnderCC", "ccUptimePct", "utilityEfficiencyScore",
+    }) do
+        set(metricName, ccConfidence, ccBasis)
+    end
+
+    -- survivabilityScore: combines import authority with absorb availability.
+    -- Damage-taken numbers drive the score, so import authority is the floor;
+    -- absorb data being present is a positive signal that can lift ESTIMATED
+    -- to HIGH (shields prevented damage we can actually account for).
+    local hasAbsorbData = false
+    if session.absorbs and next(session.absorbs) then
+        hasAbsorbData = true
+    elseif session.survival and (session.survival.totalAbsorbed or 0) > 0 then
+        hasAbsorbData = true
+    end
+    local survConfidence = dmgConfidence
+    local survBasis = dmgBasis
+    if survConfidence == Constants.METRIC_CONFIDENCE.ESTIMATED and hasAbsorbData then
+        survConfidence = Constants.METRIC_CONFIDENCE.HIGH
+        survBasis = "estimate_with_absorb_data"
+    elseif survConfidence == Constants.METRIC_CONFIDENCE.HIGH and not hasAbsorbData then
+        survBasis = "damage_meter_no_absorb_data"
+    end
+    set("survivabilityScore", survConfidence, survBasis)
+
+    return prov
+end
+
 function Metrics.ComputeDerivedMetrics(session)
     -- T020: Prefer activeTime over raw duration for DPS calculations.
     local rawDuration = math.max(session.duration or 0, 1)
@@ -779,6 +892,20 @@ function Metrics.ComputeDerivedMetrics(session)
     -- T062/T063: Inherit degraded import status into metrics so UI layers can
     -- surface a warning badge without needing to touch the numeric score values.
     Metrics.InheritDegradedStatus(session, session.metrics)
+
+    -- v10: Per-metric provenance. Records, per derived score, the input source
+    -- and a confidence tier so coaching advice and the UI can be gated per
+    -- metric instead of under one session-wide "Estimated" badge.
+    session.metrics.provenance = buildMetricProvenance(session)
+
+    -- Keep limitedBySource for backward-compat (CombatStore / older UI paths)
+    -- but derive it from the provenance table: the session is "limited" when
+    -- the headline pressure metric is not HIGH confidence. limitedTimeline
+    -- still feeds the score arithmetic above; this only affects the flag.
+    local pressureProv = session.metrics.provenance.pressureScore
+    session.metrics.limitedBySource = limitedTimeline
+        or (pressureProv ~= nil
+            and pressureProv.confidence ~= Constants.METRIC_CONFIDENCE.HIGH)
 
     return session.metrics
 end

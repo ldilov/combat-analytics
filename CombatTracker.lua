@@ -1679,6 +1679,60 @@ function CombatTracker:ApplyScoreboardAnchorIfNeeded(session)
     return true
 end
 
+-- RestoreScoreboardAnchorIfRegressed: re-asserts the scoreboard anchor after a
+-- post-finalization DM re-import that DOWNGRADED an already-anchored session.
+--
+-- The scoreboard total is authoritative for the damage TOTAL. The only thing
+-- strictly better is a genuinely `authoritative` DM import — it carries the
+-- same total PLUS a per-spell breakdown. Any `estimated`/`failed` re-import is
+-- WORSE than the anchored scoreboard total, so it must NOT replace it.
+--
+-- ApplyScoreboardAnchorIfNeeded cannot cover this case on its own: once a retry
+-- has overwritten the anchored total with a positive `estimated` DM number, its
+-- guard (`damageDone > 0 and authority ~= "failed"`) returns early and the
+-- regression sticks. This helper is the targeted complement: callers capture
+-- `wasAnchored` BEFORE re-importing, and pass it here AFTER; if the session was
+-- anchored and the new authority is anything other than `authoritative`, the
+-- scoreboard total and ANCHORED_FROM_SCOREBOARD status are reinstated.
+--
+-- It deliberately does NOT touch first-time FinalizeSession imports: a fresh
+-- successful estimated DM import (with real per-spell `session.spells` data and
+-- importStatus ~= ANCHORED_FROM_SCOREBOARD) was never anchored, so `wasAnchored`
+-- is false and this is a no-op — that data is preserved.
+-- Returns true when the anchor was restored.
+function CombatTracker:RestoreScoreboardAnchorIfRegressed(session, wasAnchored)
+    if not session or not wasAnchored then
+        return false
+    end
+    local importedTotals = session.importedTotals or {}
+    -- An authoritative re-import is the one outcome strictly better than the
+    -- anchor (same total + per-spell detail): let it stand.
+    if importedTotals.totalAuthority == "authoritative" then
+        return false
+    end
+    -- Still anchored — the re-import did not overwrite anything. No-op.
+    if importedTotals.importStatus == Constants.IMPORT_STATUS.ANCHORED_FROM_SCOREBOARD then
+        return false
+    end
+    -- The re-import downgraded an anchored session. Reinstate the scoreboard
+    -- total. ApplyScoreboardAnchorIfNeeded re-derives the value from
+    -- session.postMatchScores, so this stays a single source of truth.
+    local scoreboardDamage = (session.totals and session.totals.damageDone) or 0
+    session.totals = session.totals or {}
+    session.totals.damageDone = 0  -- force ApplyScoreboardAnchorIfNeeded past its early-return guard
+    local restored = self:ApplyScoreboardAnchorIfNeeded(session)
+    if not restored then
+        -- Scoreboard row no longer resolvable — do not leave the total zeroed;
+        -- fall back to whatever the re-import produced rather than losing data.
+        session.totals.damageDone = scoreboardDamage
+        return false
+    end
+    ns.Addon:Trace("damage_meter.scoreboard_anchor_restored", {
+        context = session.context or "unknown",
+    })
+    return true
+end
+
 function CombatTracker:FinalizeSession(explicitResult, reason)
     local session = self:GetCurrentSession()
     -- Idempotent: only finalizes sessions in "active" state.  Repeated calls
@@ -2044,6 +2098,15 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         end
     end
 
+    -- Compute per-lane data coverage scores (T012) BEFORE deriving metrics.
+    -- v10: ComputeDerivedMetrics reads session.coverage to rate per-metric
+    -- provenance for timeline/CC-derived scores. Coverage only reads
+    -- timelineEvents/importedTotals/totals/arena — none produced by metrics —
+    -- so running it first is safe and gives accurate provenance instead of
+    -- defaulting those metrics to UNKNOWN.
+    local covSvc = ns.Addon:GetModule("CoverageService")
+    if covSvc then covSvc:Finalize(session) end
+
     local okWindows, errWindows = xpcall(function()
         ns.Metrics.DeriveWindows(session)
         ns.Metrics.ComputeDerivedMetrics(session)
@@ -2162,9 +2225,8 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
         end
     end
 
-    -- Compute per-lane data coverage scores (T012).
-    local covSvc = ns.Addon:GetModule("CoverageService")
-    if covSvc then covSvc:Finalize(session) end
+    -- Coverage scores are computed earlier in FinalizeSession (before metric
+    -- derivation) so per-metric provenance can read session.coverage.
 
     session.state = "finalized"
 
@@ -2524,6 +2586,13 @@ function CombatTracker:HandlePlayerRegenEnabled()
                     if damageMeterService.CaptureCurrentSessionSnapshot then
                         damageMeterService:CaptureCurrentSessionSnapshot(deferredSession)
                     end
+                    -- Capture anchor state BEFORE the re-import: a successful
+                    -- but non-authoritative re-import would otherwise silently
+                    -- overwrite the authoritative scoreboard total with a worse
+                    -- estimate. See RestoreScoreboardAnchorIfRegressed.
+                    local wasAnchored = deferredSession.importedTotals
+                        and deferredSession.importedTotals.importStatus
+                            == Constants.IMPORT_STATUS.ANCHORED_FROM_SCOREBOARD
                     damageMeterService:ImportSession(deferredSession)
                     -- Read status after ImportSession populates importedTotals;
                     -- the `and` guard returns false (not nil) when importedTotals
@@ -2535,6 +2604,10 @@ function CombatTracker:HandlePlayerRegenEnabled()
                     -- Terminal anchor before metric recompute, so a re-import
                     -- that still produced nothing falls back to the scoreboard.
                     self:ApplyScoreboardAnchorIfNeeded(deferredSession)
+                    -- Sticky anchor: if this session was already anchored and
+                    -- the re-import downgraded it (estimated/failed), reinstate
+                    -- the authoritative scoreboard total.
+                    self:RestoreScoreboardAnchorIfRegressed(deferredSession, wasAnchored)
                     -- Recompute metrics with actual damage data.
                     local okMetrics, metricsErr = xpcall(function()
                         ns.Metrics.ComputeDerivedMetrics(deferredSession)
@@ -2624,12 +2697,24 @@ function CombatTracker:HandleDamageMeterCombatSessionUpdated(damageMeterType, se
                 local store = ns.Addon:GetModule("CombatStore")
                 if store and damageMeterSvc.ImportSession then
                     local ok = xpcall(function()
+                        -- Capture anchor state BEFORE the re-import. A retry
+                        -- that SUCCEEDS with a positive but non-authoritative
+                        -- estimate would otherwise overwrite the authoritative
+                        -- scoreboard total with worse data.
+                        local wasAnchored = watchSession.importedTotals
+                            and watchSession.importedTotals.importStatus
+                                == Constants.IMPORT_STATUS.ANCHORED_FROM_SCOREBOARD
                         damageMeterSvc:ImportSession(watchSession)
                         self:SetImportAuthority(watchSession, watchSession.importedTotals and watchSession.importedTotals.importStatus)
                         -- Re-assert the scoreboard anchor: if this retry
                         -- re-failed it would otherwise downgrade an already
                         -- anchored session's authority back to failed.
                         self:ApplyScoreboardAnchorIfNeeded(watchSession)
+                        -- Sticky anchor: a successful-but-estimated retry can
+                        -- slip past ApplyScoreboardAnchorIfNeeded's positive-
+                        -- damage guard. Reinstate the authoritative scoreboard
+                        -- total when an anchored session was downgraded.
+                        self:RestoreScoreboardAnchorIfRegressed(watchSession, wasAnchored)
                         store:PersistSession(watchSession)
                     end, debugstack)
                     if not ok then

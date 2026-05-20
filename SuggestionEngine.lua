@@ -112,6 +112,29 @@ local function minEventConfidence(events)
     return CONFIDENCE_TIER_NAME[worst] or "unknown"
 end
 
+-- v10: Per-metric provenance gating. Extends the existing per-lane coverage
+-- gating (hasCastCoverage / hasCCCoverage below) with per-metric trust: a
+-- suggestion that reads a damage-derived score is only as trustworthy as the
+-- import that produced that score. metricConfidence reads
+-- session.metrics.provenance, written by Metrics.ComputeDerivedMetrics; old
+-- sessions lack the table, so it is nil-safe and falls back to UNKNOWN.
+local function metricConfidence(session, metricName)
+    local provenance = session and session.metrics and session.metrics.provenance
+    local record = provenance and provenance[metricName]
+    if record and record.confidence then
+        return record.confidence
+    end
+    return Constants.METRIC_CONFIDENCE.UNKNOWN
+end
+
+-- Step a severity string down one notch (high→medium→low). Used when a
+-- damage-derived suggestion rests on ESTIMATED-tier data: still worth showing,
+-- but it should not outrank advice backed by authoritative data.
+local SEVERITY_DOWNGRADE = { high = "medium", medium = "low", low = "low" }
+local function downgradeSeverity(severity)
+    return SEVERITY_DOWNGRADE[severity] or severity
+end
+
 local function getSuccessfulCastCount(session)
     local total = 0
     for _, spell in pairs(session.spells or {}) do
@@ -181,15 +204,25 @@ function SuggestionEngine:BuildSessionSuggestions(session)
 
     local buildBaseline = store:GetBuildBaseline(buildHash, contextKey, nil, characterKey)
     local pressureThreshold = mbsModule and mbsModule:GetThreshold(session.context, "pressureScore", "p25") or nil
-    if buildBaseline and buildBaseline.fights >= 5 and m.pressureScore and m.pressureScore < (pressureThreshold or (buildBaseline.averagePressureScore * 0.8)) then
+    -- v10: pressureScore is damage-derived — gate on its provenance.
+    local pressureConf = metricConfidence(session, "pressureScore")
+    if buildBaseline and buildBaseline.fights >= 5 and m.pressureScore and m.pressureScore < (pressureThreshold or (buildBaseline.averagePressureScore * 0.8))
+        and pressureConf ~= Constants.METRIC_CONFIDENCE.LOW then
+        local severity = "medium"
+        local suggestionConf = "observed"
+        if pressureConf == Constants.METRIC_CONFIDENCE.ESTIMATED then
+            severity = downgradeSeverity(severity)
+            suggestionConf = "summary_derived"
+        end
         addSuggestion(results, buildSuggestion(
             session,
             "LOW_PRESSURE_VS_BUILD_BASELINE",
-            "medium",
+            severity,
             0.78,
             { samples = buildBaseline.fights, current = m.pressureScore, baseline = buildBaseline.averagePressureScore },
             buildHash,
-            "Pressure score landed below your normal build baseline."
+            "Pressure score landed below your normal build baseline.",
+            suggestionConf
         ))
     end
 
@@ -302,15 +335,25 @@ function SuggestionEngine:BuildSessionSuggestions(session)
 
     local contextBaseline = store:GetContextBaseline(contextKey, nil, characterKey)
     local burstThreshold = mbsModule and mbsModule:GetThreshold(session.context, "burstScore", "p25") or nil
-    if hasRawTimeline and contextBaseline and contextBaseline.fights >= 5 and m.burstScore and m.burstScore < (burstThreshold or (contextBaseline.averageBurstScore * 0.8)) then
+    -- v10: burstScore is damage-derived — gate on its provenance.
+    local burstConf = metricConfidence(session, "burstScore")
+    if hasRawTimeline and contextBaseline and contextBaseline.fights >= 5 and m.burstScore and m.burstScore < (burstThreshold or (contextBaseline.averageBurstScore * 0.8))
+        and burstConf ~= Constants.METRIC_CONFIDENCE.LOW then
+        local severity = "medium"
+        local suggestionConf = "observed"
+        if burstConf == Constants.METRIC_CONFIDENCE.ESTIMATED then
+            severity = downgradeSeverity(severity)
+            suggestionConf = "summary_derived"
+        end
         addSuggestion(results, buildSuggestion(
             session,
             "WEAK_BURST_FOR_CONTEXT",
-            "medium",
+            severity,
             0.72,
             { samples = contextBaseline.fights, current = m.burstScore, baseline = contextBaseline.averageBurstScore },
             contextKey,
-            "Burst windows underperformed relative to this context."
+            "Burst windows underperformed relative to this context.",
+            suggestionConf
         ))
     end
 
@@ -481,15 +524,25 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         for _, benchmark in ipairs(dummyBenchmarks or {}) do
             if benchmark.buildHash == buildHash and benchmark.sessions >= 5 and benchmark.dummyName == (opponent.name or "") then
                 local averageOpenerDamage = benchmark.totalOpenerDamage / math.max(benchmark.sessions, 1)
-                if (m.openerDamage or 0) < (averageOpenerDamage * 0.85) then
+                -- v10: openerDamage is damage-derived — gate on its provenance.
+                local openerConf = metricConfidence(session, "openerDamage")
+                if (m.openerDamage or 0) < (averageOpenerDamage * 0.85)
+                    and openerConf ~= Constants.METRIC_CONFIDENCE.LOW then
+                    local severity = "low"
+                    local suggestionConf = "observed"
+                    if openerConf == Constants.METRIC_CONFIDENCE.ESTIMATED then
+                        severity = downgradeSeverity(severity)
+                        suggestionConf = "summary_derived"
+                    end
                     addSuggestion(results, buildSuggestion(
                         session,
                         "DUMMY_OPENER_VARIANCE",
-                        "low",
+                        severity,
                         0.75,
                         { samples = benchmark.sessions, current = m.openerDamage, baseline = averageOpenerDamage },
                         benchmark.key,
-                        "Opener damage drifted below your benchmark for this dummy and build."
+                        "Opener damage drifted below your benchmark for this dummy and build.",
+                        suggestionConf
                     ))
                 end
                 break
@@ -502,15 +555,25 @@ function SuggestionEngine:BuildSessionSuggestions(session)
         for _, benchmark in ipairs(dummyBenchmarks or {}) do
             if benchmark.buildHash == buildHash and benchmark.sessions >= 5 and benchmark.dummyName == (opponent.name or "") then
                 local averageSustainedDps = benchmark.totalSustainedDps / math.max(benchmark.sessions, 1)
-                if (m.sustainedDps or 0) < (averageSustainedDps * 0.9) then
+                -- v10: sustainedDps is damage-derived — gate on its provenance.
+                local sustainedConf = metricConfidence(session, "sustainedDps")
+                if (m.sustainedDps or 0) < (averageSustainedDps * 0.9)
+                    and sustainedConf ~= Constants.METRIC_CONFIDENCE.LOW then
+                    local severity = "low"
+                    local suggestionConf = "observed"
+                    if sustainedConf == Constants.METRIC_CONFIDENCE.ESTIMATED then
+                        severity = downgradeSeverity(severity)
+                        suggestionConf = "summary_derived"
+                    end
                     addSuggestion(results, buildSuggestion(
                         session,
                         "DUMMY_SUSTAINED_VARIANCE",
-                        "low",
+                        severity,
                         0.77,
                         { samples = benchmark.sessions, current = m.sustainedDps, baseline = averageSustainedDps },
                         benchmark.key,
-                        "Sustained dummy damage landed below your stored benchmark for this build."
+                        "Sustained dummy damage landed below your stored benchmark for this build.",
+                        suggestionConf
                     ))
                 end
                 break

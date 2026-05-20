@@ -112,14 +112,48 @@ local function getInsightRule(key, fallback)
     return fallback
 end
 
-local function buildEvidenceText(suggestion)
+-- v10: Per-metric confidence tag. Old sessions (pre-v10) have no
+-- session.metrics.provenance table — metricConfidenceTag returns nil so the
+-- caller simply omits the tag and the existing session-wide trust card still
+-- communicates overall reliability. Maps which score each score-derived
+-- reason code is built from so the right provenance row can be looked up.
+local REASON_TO_METRIC = {
+    LOW_PRESSURE_VS_BUILD_BASELINE = "pressureScore",
+    WEAK_BURST_FOR_CONTEXT         = "burstScore",
+    DUMMY_OPENER_VARIANCE          = "openerDamage",
+    DUMMY_SUSTAINED_VARIANCE       = "sustainedDps",
+}
+
+local METRIC_CONFIDENCE_LABEL = {
+    high      = "High confidence",
+    estimated = "Estimated",
+    low       = "Low confidence",
+    unknown   = "Unverified",
+}
+
+-- Returns a short " [<label>]" suffix for a score-derived suggestion, or "" if
+-- the session lacks per-metric provenance (pre-v10) or the reason code is not
+-- score-derived.
+local function metricConfidenceTag(suggestion, session)
+    local metricName = REASON_TO_METRIC[suggestion and suggestion.reasonCode]
+    if not metricName then return "" end
+    local provenance = session and session.metrics and session.metrics.provenance
+    local record = provenance and provenance[metricName]
+    if not record or not record.confidence then return "" end
+    local label = METRIC_CONFIDENCE_LABEL[record.confidence] or "Unverified"
+    return string.format(" [%s]", label)
+end
+
+local function buildEvidenceText(suggestion, session)
     local evidence = suggestion.evidence or {}
+    -- v10: per-metric confidence tag for score-derived insight rows.
+    local confTag = metricConfidenceTag(suggestion, session)
 
     if suggestion.reasonCode == "LOW_PRESSURE_VS_BUILD_BASELINE" then
-        return string.format("Pressure %.1f versus %.1f across %d build sessions.", evidence.current or 0, evidence.baseline or 0, evidence.samples or 0)
+        return string.format("Pressure %.1f versus %.1f across %d build sessions.%s", evidence.current or 0, evidence.baseline or 0, evidence.samples or 0, confTag)
     end
     if suggestion.reasonCode == "WEAK_BURST_FOR_CONTEXT" then
-        return string.format("Burst %.1f versus %.1f context average across %d sessions.", evidence.current or 0, evidence.baseline or 0, evidence.samples or 0)
+        return string.format("Burst %.1f versus %.1f context average across %d sessions.%s", evidence.current or 0, evidence.baseline or 0, evidence.samples or 0, confTag)
     end
     if suggestion.reasonCode == "DEFENSIVE_UNUSED_ON_LOSS" then
         return string.format("Unused defensives: %d. Deaths: %d.", evidence.unusedDefensives or 0, evidence.deaths or 0)
@@ -128,10 +162,10 @@ local function buildEvidenceText(suggestion)
         return string.format("Incoming %s versus %s normal taken over %d fights.", ns.Helpers.FormatNumber(evidence.current or 0), ns.Helpers.FormatNumber(evidence.baseline or 0), evidence.samples or 0)
     end
     if suggestion.reasonCode == "DUMMY_OPENER_VARIANCE" then
-        return string.format("Opener %s versus %s benchmark over %d pulls.", ns.Helpers.FormatNumber(evidence.current or 0), ns.Helpers.FormatNumber(evidence.baseline or 0), evidence.samples or 0)
+        return string.format("Opener %s versus %s benchmark over %d pulls.%s", ns.Helpers.FormatNumber(evidence.current or 0), ns.Helpers.FormatNumber(evidence.baseline or 0), evidence.samples or 0, confTag)
     end
     if suggestion.reasonCode == "DUMMY_SUSTAINED_VARIANCE" then
-        return string.format("Sustained %s versus %s benchmark over %d pulls.", ns.Helpers.FormatNumber(evidence.current or 0), ns.Helpers.FormatNumber(evidence.baseline or 0), evidence.samples or 0)
+        return string.format("Sustained %s versus %s benchmark over %d pulls.%s", ns.Helpers.FormatNumber(evidence.current or 0), ns.Helpers.FormatNumber(evidence.baseline or 0), evidence.samples or 0, confTag)
     end
     if suggestion.reasonCode == "ROTATION_GAPS_OBSERVED" then
         return string.format("Casts: %d. Idle time: %.1fs. Rotation score: %.1f.", evidence.casts or 0, evidence.idleSeconds or 0, evidence.rotationScore or 0)
@@ -981,7 +1015,9 @@ function SuggestionsView:Refresh()
                 suggestion.severity,
                 SUGGESTION_TITLES[suggestion.reasonCode] or (suggestion.message or "Insight"),
                 string.format("%s\n%s", suggestion.message or "", buildSessionTag(session)),
-                buildEvidenceText(suggestion)
+                -- v10: pass the session so buildEvidenceText can append a
+                -- per-metric confidence tag for score-derived insight rows.
+                buildEvidenceText(suggestion, session)
             )
             setSeverityBar(severityBar, suggestion.severity, REASON_TO_CATEGORY[suggestion.reasonCode] or "note")
             -- T056: Add pulse glow for high-severity coaching cards

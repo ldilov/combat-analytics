@@ -928,6 +928,21 @@ function CombatStore:MigrateSchema(db)
         })
     end
 
+    if version < 10 then
+        -- v10: per-metric provenance (session.metrics.provenance).
+        -- No backfill is possible: provenance records where a metric's inputs
+        -- came from, and that source information is not recoverable from a
+        -- stored session after the fact. Old sessions simply lack the table;
+        -- SuggestionEngine.metricConfidence and SuggestionsView.metricConfidenceTag
+        -- both nil-guard a missing provenance table (falling back to UNKNOWN
+        -- and the session-wide trust card respectively). Only advance the
+        -- version so freshly finalized sessions start carrying provenance.
+        db.schemaVersion = 10
+        ns.Addon:Trace("migration.v10.complete", {
+            sessions = #(db.combats.order or {}),
+        })
+    end
+
     -- Future migrations go here as additional `if version < N then` blocks.
 
     -- T121: Post-migration validation for mixed-version datasets.

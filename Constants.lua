@@ -2,7 +2,7 @@ local ADDON_NAME, ns = ...
 
 ns.Constants = {
     ADDON_NAME = ADDON_NAME,
-    SCHEMA_VERSION = 9,
+    SCHEMA_VERSION = 10,
     RAW_EVENT_VERSION = 2,
     MAX_RAW_EVENTS_PER_SESSION = 25000,
     RAW_EVENT_WARNING_THRESHOLD = 500000,
@@ -110,6 +110,19 @@ ns.Constants = {
         inferred         = "inferred",         -- Derived from context (target/focus, timing)
         summary_derived  = "summary_derived",  -- From DamageMeter summary data
         unknown          = "unknown",          -- Cannot determine source
+    },
+    -- Per-metric provenance confidence (v10+). Orthogonal to the session-level
+    -- confidence enums above: SESSION_CONFIDENCE rates the whole session,
+    -- METRIC_CONFIDENCE rates one individual derived score in session.metrics.
+    -- A single session can hold a HIGH damage-derived score alongside a LOW
+    -- timeline-derived score, so the UI must show trust per metric, not per
+    -- session. Tiers descend HIGH > ESTIMATED > LOW > UNKNOWN; UNKNOWN means
+    -- the inputs needed to rate the metric were unavailable when it was built.
+    METRIC_CONFIDENCE = {
+        HIGH      = "high",       -- inputs from an authoritative source
+        ESTIMATED = "estimated",  -- inputs from a fallback / approximation
+        LOW       = "low",        -- inputs missing or unreliable
+        UNKNOWN   = "unknown",    -- provenance could not be determined
     },
     -- Timeline lane types for the timelineEvents system (v6+).
     TIMELINE_LANE = {
