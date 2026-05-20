@@ -396,6 +396,10 @@ ns.Constants = {
         IMPORTED_ENEMY_DAMAGE_TAKEN_FALLBACK = "imported_enemy_damage_taken_fallback",
         -- Totals estimated from local cast records (weakest approximation)
         ESTIMATED_FROM_CASTS                 = "estimated_from_casts",
+        -- Match total anchored from the post-match PvP scoreboard player row.
+        -- Authoritative for the damage TOTAL, but carries no per-spell or
+        -- timeline detail, so burst/window metrics stay approximate.
+        ANCHORED_FROM_SCOREBOARD             = "anchored_from_scoreboard",
         -- C_DamageMeter was unavailable or returned zero sessions
         FAILED_DAMAGE_METER_UNAVAILABLE      = "failed_damage_meter_unavailable",
         -- No candidate session could be matched to this encounter
@@ -417,6 +421,7 @@ ns.Constants = {
             imported_current_snapshot            = true,
             imported_enemy_damage_taken_fallback  = true,
             estimated_from_casts                 = true,
+            anchored_from_scoreboard             = true,
         },
         failed = {
             failed_damage_meter_unavailable = true,

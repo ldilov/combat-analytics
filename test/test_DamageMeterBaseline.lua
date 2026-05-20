@@ -98,3 +98,46 @@ describe("DamageMeterService / baseline reuse", function()
         expect(Service.sessionUpdateSignals[11].count):toBe(1)
     end)
 end)
+
+describe("DamageMeterService / scoreboard player damage", function()
+    it("returns the player's damageDone from the post-match scoreboard row", function()
+        local session = {
+            postMatchScores = {
+                { guid = "Player-enemy", name = "Foe", damageDone = 999 },
+                { guid = "Player-self", name = "Self", damageDone = 250000 },
+            },
+        }
+        expect(Service:GetScoreboardPlayerDamage(session)):toBe(250000)
+    end)
+
+    it("returns nil when the session has no post-match scoreboard", function()
+        expect(Service:GetScoreboardPlayerDamage({})):toBeNil()
+    end)
+
+    it("returns nil when the player's scoreboard damage is zero (secret-sanitized)", function()
+        local session = {
+            postMatchScores = {
+                { guid = "Player-self", name = "Self", damageDone = 0 },
+            },
+        }
+        expect(Service:GetScoreboardPlayerDamage(session)):toBeNil()
+    end)
+
+    it("matches the player row by name when guid is absent", function()
+        local session = {
+            postMatchScores = {
+                { guid = nil, name = "Self", damageDone = 71000 },
+            },
+        }
+        expect(Service:GetScoreboardPlayerDamage(session)):toBe(71000)
+    end)
+
+    it("returns nil when no row belongs to the player", function()
+        local session = {
+            postMatchScores = {
+                { guid = "Player-enemy", name = "Foe", damageDone = 123 },
+            },
+        }
+        expect(Service:GetScoreboardPlayerDamage(session)):toBeNil()
+    end)
+end)

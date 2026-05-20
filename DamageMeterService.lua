@@ -447,6 +447,14 @@ function DamageMeterService:GetLatestSessionId()
     return latestSessionId > 0 and latestSessionId or nil
 end
 
+-- Public accessor for the post-match scoreboard player-damage row. Returns the
+-- player's own damageDone from session.postMatchScores, or nil when no usable
+-- row exists. The terminal arena scoreboard anchor in CombatTracker uses this
+-- when C_DamageMeter import produced no total.
+function DamageMeterService:GetScoreboardPlayerDamage(session)
+    return getScoreboardPlayerDamage(session)
+end
+
 function DamageMeterService:Initialize()
     local latestSessionId = self:GetLatestSessionId()
     self.lastSeenSessionId = latestSessionId or 0

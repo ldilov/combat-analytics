@@ -1624,6 +1624,61 @@ function CombatTracker:ExtractPhase3Analytics(session)
     end
 end
 
+-- ApplyScoreboardAnchorIfNeeded: terminal damage fallback for arena sessions.
+-- When C_DamageMeter import produced no usable total (or a failed-authority
+-- total), substitute the player's post-match PvP scoreboard damage row
+-- (C_PvP.GetScoreInfo, captured into session.postMatchScores). The scoreboard
+-- total is authoritative for the match damage TOTAL, so sustained-pressure
+-- metrics become trustworthy; it carries no per-spell timing, so burst/window
+-- metrics stay approximate (authority tier = estimated).
+--
+-- Solo Shuffle is excluded: its scoreboard spans all 6 rounds while a session
+-- is a single round, so anchoring would over-count ~6x. Battlegrounds are a
+-- different context and excluded by construction.
+--
+-- Idempotent and self-healing: callable from every persist path (FinalizeSession,
+-- the deferred re-import, the post-finalize one-shot retry). Re-running after a
+-- failed re-import that downgraded authority restores the anchored total.
+-- Returns true when an anchor was applied.
+function CombatTracker:ApplyScoreboardAnchorIfNeeded(session)
+    if not session or session.context ~= Constants.CONTEXT.ARENA then
+        return false
+    end
+    if session.subcontext == Constants.SUBCONTEXT.SOLO_SHUFFLE then
+        return false
+    end
+
+    local importedTotals = session.importedTotals or {}
+    local damageDone = (session.totals and session.totals.damageDone) or 0
+    -- Anchor when there is no total, or when a (re-)import left the total at a
+    -- failed authority tier — the existing number is untrusted either way.
+    if damageDone > 0 and importedTotals.totalAuthority ~= "failed" then
+        return false
+    end
+
+    local damageMeterSvc = ns.Addon:GetModule("DamageMeterService")
+    local scoreboardDamage = damageMeterSvc
+        and damageMeterSvc.GetScoreboardPlayerDamage
+        and damageMeterSvc:GetScoreboardPlayerDamage(session)
+        or nil
+    if not scoreboardDamage or scoreboardDamage <= 0 then
+        return false
+    end
+
+    session.totals = session.totals or {}
+    session.totals.damageDone = scoreboardDamage
+    session.importedTotals = session.importedTotals or {}
+    session.importedTotals.damageDone = scoreboardDamage
+    -- SetImportAuthority also sets importedTotals.importStatus.
+    self:SetImportAuthority(session, Constants.IMPORT_STATUS.ANCHORED_FROM_SCOREBOARD)
+    ns.Addon:Trace("damage_meter.scoreboard_anchor", {
+        damage = scoreboardDamage,
+        context = session.context or "unknown",
+        subcontext = session.subcontext or "nil",
+    })
+    return true
+end
+
 function CombatTracker:FinalizeSession(explicitResult, reason)
     local session = self:GetCurrentSession()
     -- Idempotent: only finalizes sessions in "active" state.  Repeated calls
@@ -1811,6 +1866,10 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
             })
         end
     end
+
+    -- Arena scoreboard anchor: terminal damage fallback when C_DamageMeter
+    -- import produced no usable total. See ApplyScoreboardAnchorIfNeeded.
+    self:ApplyScoreboardAnchorIfNeeded(session)
 
     -- T019: Zero-damage real-combat override — if retries are exhausted and
     -- damage is still zero on a session with real combat signals, mark failed
@@ -2473,6 +2532,9 @@ function CombatTracker:HandlePlayerRegenEnabled()
                         and deferredSession.importedTotals.importStatus
                         or nil
                     self:SetImportAuthority(deferredSession, newStatus)
+                    -- Terminal anchor before metric recompute, so a re-import
+                    -- that still produced nothing falls back to the scoreboard.
+                    self:ApplyScoreboardAnchorIfNeeded(deferredSession)
                     -- Recompute metrics with actual damage data.
                     local okMetrics, metricsErr = xpcall(function()
                         ns.Metrics.ComputeDerivedMetrics(deferredSession)
@@ -2564,6 +2626,10 @@ function CombatTracker:HandleDamageMeterCombatSessionUpdated(damageMeterType, se
                     local ok = xpcall(function()
                         damageMeterSvc:ImportSession(watchSession)
                         self:SetImportAuthority(watchSession, watchSession.importedTotals and watchSession.importedTotals.importStatus)
+                        -- Re-assert the scoreboard anchor: if this retry
+                        -- re-failed it would otherwise downgrade an already
+                        -- anchored session's authority back to failed.
+                        self:ApplyScoreboardAnchorIfNeeded(watchSession)
                         store:PersistSession(watchSession)
                     end, debugstack)
                     if not ok then
