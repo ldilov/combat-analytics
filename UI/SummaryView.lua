@@ -501,6 +501,13 @@ function SummaryView:Refresh(payload)
 
     self.emptyState:Hide()
 
+    -- Defensive: a session can reach the dashboard before metrics/totals are
+    -- populated (interrupted finalize, pre-metrics schema). Every other view
+    -- guards these — without it a nil deref below aborts the whole render and
+    -- leaves the tab a wall of blank, unlabeled bars.
+    session.metrics = session.metrics or {}
+    session.totals = session.totals or {}
+
     -- Hero scorecards: result pill, context chip, duration, confidence pill.
     if self.heroFrame then
         self.heroFrame:Show()

@@ -973,6 +973,12 @@ function CombatStore:MigrateSchema(db)
             if session.metrics == nil then
                 session.metrics = {}
             end
+            -- Ensure totals is a table. SummaryView and other views deref
+            -- session.totals.* directly; a nil here aborts the whole render
+            -- and leaves the dashboard blank.
+            if session.totals == nil then
+                session.totals = {}
+            end
         end
     end
     if validationErrors > 0 then
