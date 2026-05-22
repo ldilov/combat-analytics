@@ -61,6 +61,33 @@ local function fightCountToConfidence(fights)
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Resolves which fight count and win rate drive the threat / win-rate gauges,
+-- honouring the "All Builds" / "Current Build" toggle. Pure (no frame access)
+-- so it is unit-testable. When "Current Build" is selected but the build has
+-- no recorded games vs the spec, it falls back to the all-builds aggregate so
+-- the gauges still show real data (the caller renders an explanatory banner).
+-- Returns: useCurrentBuild, cbe, cbeFights, noBuildData, fights, winRate
+-- ─────────────────────────────────────────────────────────────────────────────
+local function resolveBuildFilter(buildFilterMode, buildHash, guide)
+    local useCurrentBuild = (buildFilterMode == "current") and buildHash ~= nil
+    local cbe         = guide.currentBuildEffectiveness
+    local cbeFights   = (cbe and cbe.fights) or 0
+    local noBuildData = useCurrentBuild and cbeFights == 0
+    local fights, winRate
+    if useCurrentBuild and cbeFights > 0 then
+        fights  = cbeFights
+        winRate = (cbe.wins or 0) / cbeFights
+    else
+        fights  = guide.historicalFights or 0
+        winRate = guide.historicalWinRate
+    end
+    return useCurrentBuild, cbe, cbeFights, noBuildData, fights, winRate
+end
+
+-- Exposed for unit tests (see test/test_CounterGuide.lua).
+CounterGuideView._resolveBuildFilter = resolveBuildFilter
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Helpers
 -- ─────────────────────────────────────────────────────────────────────────────
 local function buildSpecList()
@@ -130,6 +157,10 @@ end
 function CounterGuideView:Refresh()
     local store = ns.Addon:GetModule("CombatStore")
     local classList = buildSpecList()
+
+    -- Drop the Solo Shuffle win-rate memo so each tab visit re-scans for fresh
+    -- data; within a visit the memo survives build-filter toggles (see RefreshDetail).
+    self._ssMemo = nil
 
     -- Frame-leak fix: hide all pooled spec-list buttons; reuse them by index below
     -- instead of discarding and recreating on every Refresh call.
@@ -356,13 +387,65 @@ function CounterGuideView:RefreshDetail()
 
     yPos = yPos - (ICON_S + 12)
 
+    -- ── BUILD FILTER TOGGLE (T119b — relocated above the gauges it drives) ──
+    -- Pills sit directly under the header so the control is adjacent to the
+    -- threat / win-rate gauges it filters. Only shown when a build hash is
+    -- known; without one, current-build filtering is impossible.
+    if buildHash then
+        local activeBg  = Theme.accent
+        local passiveBg = Theme.panel
+        local isAll     = (self.buildFilterMode ~= "current")
+
+        local allPill = ns.Widgets.CreatePill(canvas, 80, 18)
+        allPill:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+        allPill:SetData("All Builds", isAll and Theme.text or Theme.textMuted,
+            isAll and activeBg or passiveBg)
+
+        local curPill = ns.Widgets.CreatePill(canvas, 100, 18)
+        curPill:SetPoint("LEFT", allPill, "RIGHT", 4, 0)
+        curPill:SetData("Current Build", (not isAll) and Theme.text or Theme.textMuted,
+            (not isAll) and activeBg or passiveBg)
+
+        allPill:SetScript("OnMouseUp", function()
+            self.buildFilterMode = "all"; self:RefreshDetail()
+        end)
+        curPill:SetScript("OnMouseUp", function()
+            self.buildFilterMode = "current"; self:RefreshDetail()
+        end)
+        el[#el + 1] = allPill
+        el[#el + 1] = curPill
+        yPos = yPos - 26
+    end
+
+    -- ── BUILD FILTER RESOLUTION (T119b) ─────────────────────────────────────
+    -- Delegates to the pure resolveBuildFilter helper (unit-tested) so the
+    -- gauges below read build-aware fight / win-rate numbers.
+    local useCurrentBuild, cbe, cbeFights, noBuildData, fights, winRate =
+        resolveBuildFilter(self.buildFilterMode, buildHash, guide)
+
+    if noBuildData then
+        -- Only claim "showing all-build stats" when the all-builds aggregate
+        -- actually has enough fights for the gauges to render real numbers
+        -- (>= 3 is the same gate the threat / win-rate gauges use below).
+        if (guide.historicalFights or 0) >= 3 then
+            addText(
+                "No data for your current build vs this spec — showing all-build stats. "
+                .. "Play more games on this build to unlock build-specific insight.",
+                Theme.warning, "GameFontHighlightSmall")
+        else
+            addText(
+                "No data for your current build vs this spec yet — "
+                .. "play more games on this build to unlock build-specific insight.",
+                Theme.warning, "GameFontHighlightSmall")
+        end
+    end
+
     -- ── THREAT GAUGE (T078.1 — CreateGauge replaces manual bar) ─────────────
     addRule(2)
 
-    local fights       = guide.historicalFights or 0
     local threatScore, isEstimated
-    if fights >= 3 and guide.historicalWinRate then
-        threatScore = 1.0 - guide.historicalWinRate
+    if fights >= 3 and winRate then
+        threatScore = 1.0 - winRate
         isEstimated = false
     elseif guide.baselineThreatScore then
         threatScore = guide.baselineThreatScore
@@ -424,8 +507,8 @@ function CounterGuideView:RefreshDetail()
 
     local wrVal = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     wrVal:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD + BAR_W + 6, yPos)
-    if guide.historicalWinRate and fights >= 3 then
-        local wr = guide.historicalWinRate
+    if winRate and fights >= 3 then
+        local wr = winRate
         wrVal:SetText(string.format("%.0f%%  (%d)", wr * 100, fights))
         wrVal:SetTextColor(unpack(wr >= 0.5 and Theme.success or Theme.warning))
     else
@@ -436,7 +519,7 @@ function CounterGuideView:RefreshDetail()
     yPos = yPos - 18
 
     do
-        local wr = guide.historicalWinRate
+        local wr = winRate
         if wr and fights >= 3 then
             local wrR = wr >= 0.5 and 0.25 or 0.90
             local wrG = wr >= 0.5 and 0.80 or 0.65
@@ -475,6 +558,62 @@ function CounterGuideView:RefreshDetail()
         confPill:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
         el[#el + 1] = confPill
         yPos = yPos - 24
+    end
+
+    -- ── SOLO SHUFFLE WIN RATE ────────────────────────────────────────────────
+    -- A round-level win rate, distinct from the match-level gauge above — never
+    -- merged into it (6 rounds/match vs 1 match/match are different units). The
+    -- result is memoised on (specId, characterKey) so toggling the build filter,
+    -- which re-runs RefreshDetail, does not re-trigger the db scan; the Solo
+    -- Shuffle line is build-independent. The `matches` count is shown alongside
+    -- the round count so the user can judge the true sample size (Solo Shuffle
+    -- draws the same opponents across several rounds of one match).
+    do
+        local ssData
+        if self._ssMemo
+            and self._ssMemo.specId == self.selectedSpecId
+            and self._ssMemo.characterKey == characterKey then
+            ssData = self._ssMemo.data
+        elseif store and store.GetSoloShuffleWinRateVsSpec then
+            ssData = store:GetSoloShuffleWinRateVsSpec(self.selectedSpecId, characterKey)
+            self._ssMemo = {
+                specId       = self.selectedSpecId,
+                characterKey = characterKey,
+                data         = ssData,
+            }
+        end
+
+        local ssRounds = (ssData and ssData.rounds) or 0
+        if ssRounds >= 5 then
+            local ssWR      = (ssData.winRate) or 0
+            local ssMatches = ssData.matches or 0
+            addText(string.format(
+                "Solo Shuffle:  %.0f%% WR  (%d rounds · %d match%s)  est.",
+                ssWR * 100, ssRounds, ssMatches, ssMatches == 1 and "" or "es"),
+                ssWR >= 0.5 and Theme.success or Theme.warning,
+                "GameFontHighlightSmall")
+
+            local ssPill = ns.Widgets.CreateConfidencePill(canvas, fightCountToConfidence(ssRounds))
+            ssPill:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
+            el[#el + 1] = ssPill
+            yPos = yPos - 24
+        elseif ssRounds > 0 then
+            addText(string.format(
+                "Solo Shuffle:  building sample — %d round%s (need 5)",
+                ssRounds, ssRounds == 1 and "" or "s"),
+                Theme.textMuted, "GameFontHighlightSmall")
+        end
+    end
+
+    -- ── CURRENT BUILD EFFECTIVENESS (T119b — surface per-build win rate) ─────
+    if cbe and cbeFights > 0 then
+        local cbWR = (cbe.wins or 0) / cbeFights
+        addText(string.format("Current build:  %.0f%% WR  (%d fight%s)",
+            cbWR * 100, cbeFights, cbeFights == 1 and "" or "s"),
+            cbWR >= 0.5 and Theme.success or Theme.warning, "GameFontHighlightSmall")
+    elseif buildHash then
+        addText("Current build:  no recorded games vs this spec yet",
+            Theme.textMuted, "GameFontHighlightSmall")
     end
 
     -- ── THREAT TAGS ──────────────────────────────────────────────────────────
@@ -552,7 +691,7 @@ function CounterGuideView:RefreshDetail()
 
     -- ── KEY SPELLS TO WATCH (T078.4 — CreateSpellRow with damage fill bars) ─
     if guide.topSpellsFromOpponent and #guide.topSpellsFromOpponent > 0 then
-        addSection("Key Spells to Watch")
+        addSection("Key Spells to Watch  (all builds)")
 
         local maxSpells = math.min(8, #guide.topSpellsFromOpponent)
         local SPELL_ROW_W = WIDTH - PAD
@@ -647,7 +786,11 @@ function CounterGuideView:RefreshDetail()
         -- Show a DeltaBadge if the recommended build differs from current build
         -- and the WR delta can be computed.
         if buildHash and b.buildHash and b.buildHash ~= buildHash and b.winRate then
-            local currentBuildWR = guide.historicalWinRate or 0
+            -- Delta is labelled "vs your current build", so anchor it to the
+            -- actual current-build WR when recorded; fall back to all-builds.
+            local currentBuildWR = (cbe and cbeFights > 0)
+                and ((cbe.wins or 0) / cbeFights)
+                or (guide.historicalWinRate or 0)
             local delta = (b.winRate - currentBuildWR) * 100
 
             local deltaBadge = ns.Widgets.CreateDeltaBadge(canvas, delta, "%.0f%% WR")
@@ -689,39 +832,12 @@ function CounterGuideView:RefreshDetail()
                 end
             end
 
-            -- T119: build filter toggle pills
+            -- T119: build filter — the toggle pills now render above the
+            -- gauges (see BUILD FILTER TOGGLE near the spec header); here we
+            -- only honour the selected mode for the Matchup Memory card.
             local filterHash = nil
-            if buildHash then
-                local activeBg  = Theme.accent
-                local passiveBg = Theme.panel
-
-                local allPill = ns.Widgets.CreatePill(canvas, 80, 18)
-                allPill:SetPoint("TOPLEFT", canvas, "TOPLEFT", PAD, yPos)
-                local curPill = ns.Widgets.CreatePill(canvas, 100, 18)
-                curPill:SetPoint("LEFT", allPill, "RIGHT", 4, 0)
-
-                local function refreshPills()
-                    local isAll = (self.buildFilterMode == "all")
-                    allPill:SetData("All Builds", isAll and Theme.text or Theme.textMuted,
-                        isAll and activeBg or passiveBg)
-                    curPill:SetData("Current Build", (not isAll) and Theme.text or Theme.textMuted,
-                        (not isAll) and activeBg or passiveBg)
-                end
-                refreshPills()
-
-                allPill:SetScript("OnMouseUp", function()
-                    self.buildFilterMode = "all"; self:RefreshDetail()
-                end)
-                curPill:SetScript("OnMouseUp", function()
-                    self.buildFilterMode = "current"; self:RefreshDetail()
-                end)
-                el[#el + 1] = allPill
-                el[#el + 1] = curPill
-                yPos = yPos - 26
-
-                if self.buildFilterMode == "current" then
-                    filterHash = buildHash
-                end
+            if buildHash and self.buildFilterMode == "current" then
+                filterHash = buildHash
             end
 
             local ok2, card = pcall(function()

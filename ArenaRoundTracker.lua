@@ -352,10 +352,31 @@ function ArenaRoundTracker:EndRound(reason, winner, duration)
                 end
             end
         end
+        -- Counters tab: populate the per-round enemy spec list so win rate vs
+        -- specs met only in Solo Shuffle rounds can be derived later. round.slots
+        -- holds only arena1-5 (enemy) slots, so every slot is an opponent — no
+        -- team filter needed. A slot whose spec cannot be resolved flags the
+        -- round specsIncomplete, so the win-rate scan skips it rather than
+        -- silently shrinking the sample.
+        local seenSpec = {}
+        local specsIncomplete = false
+        for _, s in pairs(round.slots) do
+            local sid = s.prepSpecId or s.specId
+            if sid then
+                if not seenSpec[sid] then
+                    seenSpec[sid] = true
+                    opponentSpecs[#opponentSpecs + 1] = sid
+                end
+            else
+                specsIncomplete = true
+            end
+        end
+
         round.soloShuffle.healerClass = healerClass
         round.soloShuffle.healerSpecId = healerSpecId
         round.soloShuffle.partnerSpecs = partnerSpecs
         round.soloShuffle.opponentSpecs = opponentSpecs
+        round.soloShuffle.specsIncomplete = specsIncomplete
     end
 
     -- T044: Determine completionState based on roster and disconnect signals.
@@ -1063,6 +1084,7 @@ function ArenaRoundTracker:CopyStateIntoSession(session)
                 healerSpecId = r.soloShuffle and r.soloShuffle.healerSpecId or nil,
                 partnerSpecs = r.soloShuffle and r.soloShuffle.partnerSpecs or {},
                 opponentSpecs = r.soloShuffle and r.soloShuffle.opponentSpecs or {},
+                specsIncomplete = r.soloShuffle and r.soloShuffle.specsIncomplete or false,
                 duration = r.duration or 0,
                 irregular = r.completionState ~= "complete",
             }

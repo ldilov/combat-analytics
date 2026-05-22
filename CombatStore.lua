@@ -2212,6 +2212,104 @@ function CombatStore:GetSoloShuffleHealerStats()
 end
 
 -- ──────────────────────────────────────────────────────────────────────────────
+-- Solo Shuffle per-spec win rate (Counters tab)
+-- ──────────────────────────────────────────────────────────────────────────────
+-- A Solo Shuffle match is one session whose arena.rounds[] each record a
+-- per-round result and the enemy opponentSpecs for that round. The standard
+-- `specs` aggregate only records primaryOpponent.specId once per match, so a
+-- spec met purely in Solo Shuffle rounds never gets a win rate. The functions
+-- below derive that round-level win rate WITHOUT touching the `specs` bucket —
+-- round-units are deliberately kept separate from match-units.
+
+-- Pure: scan a flat list of sessions for Solo Shuffle rounds in which specId
+-- was an enemy. Excludes rounds that are irregular (leaver/DC), have no
+-- decisive result, or are flagged specsIncomplete (an enemy slot's spec could
+-- not be resolved at record time). A spec counts at most once per round.
+-- `matches` = distinct sessions the spec appeared in; within one Solo Shuffle
+-- match a spec maps to a single player, so `matches` is an honest
+-- unique-opponent signal alongside the raw round count.
+local function computeSoloShuffleWinRate(sessions, specId)
+    local rounds, wins, losses, matches = 0, 0, 0, 0
+    if specId == nil then
+        return { rounds = 0, wins = 0, losses = 0, winRate = nil, matches = 0 }
+    end
+    for _, session in ipairs(sessions or {}) do
+        if session
+            and session.subcontext == Constants.SUBCONTEXT.SOLO_SHUFFLE
+            and type(session.arena) == "table"
+            and type(session.arena.rounds) == "table"
+        then
+            local seenInMatch = false
+            for _, round in ipairs(session.arena.rounds) do
+                if type(round) == "table"
+                    and round.irregular ~= true
+                    and round.specsIncomplete ~= true
+                    and round.result ~= nil
+                then
+                    local present = false
+                    if type(round.opponentSpecs) == "table" then
+                        for _, sid in ipairs(round.opponentSpecs) do
+                            if sid == specId then
+                                present = true
+                                break
+                            end
+                        end
+                    end
+                    if present then
+                        local isWin  = round.result == Constants.SESSION_RESULT.WON
+                            or round.result == "won"
+                        local isLoss = round.result == Constants.SESSION_RESULT.LOST
+                            or round.result == "lost"
+                        if isWin or isLoss then
+                            rounds = rounds + 1
+                            if isWin then
+                                wins = wins + 1
+                            else
+                                losses = losses + 1
+                            end
+                            seenInMatch = true
+                        end
+                    end
+                end
+            end
+            if seenInMatch then
+                matches = matches + 1
+            end
+        end
+    end
+    local winRate = rounds > 0 and (wins / rounds) or nil
+    return { rounds = rounds, wins = wins, losses = losses, winRate = winRate, matches = matches }
+end
+
+-- Exposed for unit tests (see test/test_SoloShuffleSpecWinRate.lua).
+CombatStore._computeSoloShuffleWinRate = computeSoloShuffleWinRate
+
+-- Win rate vs specId across the player's recorded Solo Shuffle rounds.
+-- On-demand scan of db.combats (mirrors GetSpecWinRateByMMRBand); honours an
+-- optional characterKey filter. Returns
+-- { rounds, wins, losses, winRate (nil when rounds == 0), matches }.
+function CombatStore:GetSoloShuffleWinRateVsSpec(specId, characterKey)
+    if specId == nil then
+        return { rounds = 0, wins = 0, losses = 0, winRate = nil, matches = 0 }
+    end
+    local db = self:GetDB()
+    local characterRef = nil
+    if characterKey then
+        characterRef = type(characterKey) == "table"
+            and characterKey
+            or buildCharacterRef(characterKey, nil, nil)
+    end
+    local sessions = {}
+    for _, sessionId in ipairs(db.combats.order or {}) do
+        local session = db.combats.byId[sessionId]
+        if session and (not characterRef or matchesCharacter(session, characterRef)) then
+            sessions[#sessions + 1] = session
+        end
+    end
+    return computeSoloShuffleWinRate(sessions, specId)
+end
+
+-- ──────────────────────────────────────────────────────────────────────────────
 -- Weighted win rate helpers (lazy computation — NOT stored in SavedVariables)
 -- ──────────────────────────────────────────────────────────────────────────────
 
