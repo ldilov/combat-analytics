@@ -474,18 +474,25 @@ function ApiCompat.GetVersatilityBonuses()
     local damageDoneBonus = 0
     local damageTakenReduction = 0
 
-    -- Use GetVersatilityBonus (total including buffs) when available;
-    -- fall back to GetCombatRatingBonus (rating-only). Never sum both.
-    if GetVersatilityBonus and CR_VERSATILITY_DAMAGE_DONE then
-        damageDoneBonus = GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE) or 0
-    elseif GetCombatRatingBonus and CR_VERSATILITY_DAMAGE_DONE then
-        damageDoneBonus = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) or 0
+    -- Char sheet sums BOTH: rating-derived % (GetCombatRatingBonus) plus
+    -- non-rating buff/talent/PvP-scaling/War-Mode % (GetVersatilityBonus).
+    -- See Blizz PaperDollFrame_SetVersatility.
+    if CR_VERSATILITY_DAMAGE_DONE then
+        if GetCombatRatingBonus then
+            damageDoneBonus = damageDoneBonus + (GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) or 0)
+        end
+        if GetVersatilityBonus then
+            damageDoneBonus = damageDoneBonus + (GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE) or 0)
+        end
     end
 
-    if GetVersatilityBonus and CR_VERSATILITY_DAMAGE_TAKEN then
-        damageTakenReduction = GetVersatilityBonus(CR_VERSATILITY_DAMAGE_TAKEN) or 0
-    elseif GetCombatRatingBonus and CR_VERSATILITY_DAMAGE_TAKEN then
-        damageTakenReduction = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_TAKEN) or 0
+    if CR_VERSATILITY_DAMAGE_TAKEN then
+        if GetCombatRatingBonus then
+            damageTakenReduction = damageTakenReduction + (GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_TAKEN) or 0)
+        end
+        if GetVersatilityBonus then
+            damageTakenReduction = damageTakenReduction + (GetVersatilityBonus(CR_VERSATILITY_DAMAGE_TAKEN) or 0)
+        end
     end
 
     return damageDoneBonus, damageTakenReduction
