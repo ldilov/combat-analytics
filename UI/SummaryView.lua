@@ -723,12 +723,24 @@ function SummaryView:Refresh(payload)
             self.dmWarningBanner:SetWordWrap(true)
         end
         local status = importedTotals.importStatus or "unknown"
-        local hint = ""
-        if status == "failed_damage_meter_unavailable" or status == "failed_no_candidate" then
-            hint = "Make sure Blizzard's Damage Meter is enabled: ESC > Options > Gameplay > Combat > Enable Damage Meter."
-        elseif status == "failed_no_meaningful_data" then
-            hint = "C_DamageMeter returned no damage data. Verify the built-in Damage Meter is enabled and visible in your UI."
-        end
+        local IMPORT_STATUS = ns.Constants.IMPORT_STATUS
+        -- Each failure status gets a distinct, accurate hint. Only a genuinely
+        -- unavailable meter should tell the user to enable it — "no candidate"
+        -- means the meter is on but no session matched this fight.
+        local hintByStatus = {
+            [IMPORT_STATUS.FAILED_DAMAGE_METER_UNAVAILABLE] =
+                "Enable Blizzard's Damage Meter: ESC > Options > Gameplay > Combat > Enable Damage Meter.",
+            [IMPORT_STATUS.FAILED_NO_CANDIDATE] =
+                "Damage Meter is enabled, but no matching combat session was found for this fight — it may have ended too quickly or finalized late. The next fight should import normally.",
+            [IMPORT_STATUS.FAILED_NO_PLAYER_SOURCE] =
+                "Damage Meter recorded this fight but no player damage row could be read. Try again next match.",
+            [IMPORT_STATUS.FAILED_NO_MEANINGFUL_DATA] =
+                "C_DamageMeter returned no damage data. Verify the built-in Damage Meter is enabled and visible in your UI.",
+            [IMPORT_STATUS.FAILED_FINALIZED_TOO_EARLY] =
+                "This fight was finalized before Damage Meter data settled. Open the dashboard a moment after combat ends.",
+        }
+        local hint = hintByStatus[status]
+            or "The built-in Damage Meter did not return data for this fight."
         self.dmWarningBanner:SetTextColor(0.96, 0.55, 0.20, 1.0)
         self.dmWarningBanner:SetText("|cFFFF8800(!) Damage import failed:|r " .. hint)
         self.dmWarningBanner:Show()

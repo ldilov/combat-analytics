@@ -31,6 +31,11 @@ local Constants = {
         IMPORTED_CURRENT_SNAPSHOT = "imported_current_snapshot",
         IMPORTED_ENEMY_DAMAGE_TAKEN_FALLBACK = "imported_enemy_damage_taken_fallback",
         ESTIMATED_FROM_CASTS = "estimated_from_casts",
+        FAILED_DAMAGE_METER_UNAVAILABLE = "failed_damage_meter_unavailable",
+        FAILED_NO_CANDIDATE = "failed_no_candidate",
+        FAILED_NO_PLAYER_SOURCE = "failed_no_player_source",
+        FAILED_NO_MEANINGFUL_DATA = "failed_no_meaningful_data",
+        FAILED_FINALIZED_TOO_EARLY = "failed_finalized_too_early",
     },
 }
 
@@ -304,5 +309,55 @@ describe("DamageMeterService / heuristics", function()
         expect(session.totals.damageDone):toBe(240)
         expect(session.damageBreakdownSource):toBe("estimated_from_casts")
         expect(session.spells[123].totalDamage):toBe(240)
+    end)
+
+    -- Import-status disambiguation: ImportSession must write a precise
+    -- importStatus on every failure path so the Summary banner shows the
+    -- real reason instead of a blanket "enable the meter" hint.
+
+    it("flags a genuinely unavailable Damage Meter as FAILED_DAMAGE_METER_UNAVAILABLE", function()
+        local session = makeSession()
+        Service.IsSupported = function() return true end
+        Service.IsAvailable = function() return false, "damage_meter_disabled" end
+
+        local ok = Service:ImportSession(session)
+
+        expect(ok):toBe(false)
+        expect(session.importedTotals.importStatus)
+            :toBe(Constants.IMPORT_STATUS.FAILED_DAMAGE_METER_UNAVAILABLE)
+    end)
+
+    it("flags zero C_DamageMeter sessions as FAILED_DAMAGE_METER_UNAVAILABLE", function()
+        local session = makeSession()
+        Service.currentSessionSnapshot = nil
+        Service.IsSupported = function() return true end
+        Service.IsAvailable = function() return true end
+        Service.CaptureCurrentSessionSnapshot = function() end
+        -- GetAvailableSessions (not FindSessionsForImport) drives the
+        -- unavailable-vs-no-candidate disambiguation in ImportSession.
+        Service.GetAvailableSessions = function() return {} end
+        Service.FindSessionsForImport = function() return {} end
+
+        local ok = Service:ImportSession(session)
+
+        expect(ok):toBe(false)
+        expect(session.importedTotals.importStatus)
+            :toBe(Constants.IMPORT_STATUS.FAILED_DAMAGE_METER_UNAVAILABLE)
+    end)
+
+    it("flags sessions-exist-but-none-matched as FAILED_NO_CANDIDATE", function()
+        local session = makeSession()
+        Service.currentSessionSnapshot = nil
+        Service.IsSupported = function() return true end
+        Service.IsAvailable = function() return true end
+        Service.CaptureCurrentSessionSnapshot = function() end
+        Service.GetAvailableSessions = function() return { { sessionID = 7 } } end
+        Service.FindSessionsForImport = function() return {} end
+
+        local ok = Service:ImportSession(session)
+
+        expect(ok):toBe(false)
+        expect(session.importedTotals.importStatus)
+            :toBe(Constants.IMPORT_STATUS.FAILED_NO_CANDIDATE)
     end)
 end)

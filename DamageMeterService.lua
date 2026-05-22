@@ -1655,6 +1655,14 @@ end
 
 function DamageMeterService:ImportSession(session)
     if not session or not self:IsSupported() then
+        if session then
+            session.importedTotals = session.importedTotals or {}
+            session.importedTotals.importStatus =
+                Constants.IMPORT_STATUS.FAILED_DAMAGE_METER_UNAVAILABLE
+            local diag = buildImportDiagnostics()
+            diag.failureReason = "C_DamageMeter API not supported on this client"
+            session.importedTotals.importDiagnostics = diag
+        end
         return false
     end
 
@@ -1677,6 +1685,11 @@ function DamageMeterService:ImportSession(session)
             cvarEnabled = isDamageMeterEnabled(),
             isSupported = self:IsSupported(),
         })
+        session.importedTotals = session.importedTotals or {}
+        session.importedTotals.importStatus =
+            Constants.IMPORT_STATUS.FAILED_DAMAGE_METER_UNAVAILABLE
+        diag.failureReason = "C_DamageMeter unavailable: " .. tostring(failureReason or "unknown")
+        session.importedTotals.importDiagnostics = diag
         return false
     end
 
@@ -1715,14 +1728,26 @@ function DamageMeterService:ImportSession(session)
         candidateSessions = {}
     end
 
-    -- T017: Handle FAILED_DAMAGE_METER_UNAVAILABLE — no sessions available.
+    -- T017: Zero candidates. Disambiguate "C_DamageMeter produced no sessions
+    -- at all" (meter genuinely not tracking → FAILED_DAMAGE_METER_UNAVAILABLE)
+    -- from "sessions exist but none matched this encounter" (meter is on, the
+    -- fight just finalized on a different cadence → FAILED_NO_CANDIDATE).
     if #candidateSessions == 0 then
+        local noSessionsAtAll = #allSessions == 0
         ns.Addon:Trace("damage_meter.import.none", {
             baseline = self.activeSessionBaselineId or 0,
+            availableSessions = #allSessions,
         })
         session.importedTotals = session.importedTotals or {}
-        session.importedTotals.importStatus = Constants.IMPORT_STATUS.FAILED_DAMAGE_METER_UNAVAILABLE
-        diag.failureReason = "C_DamageMeter returned no sessions"
+        if noSessionsAtAll then
+            session.importedTotals.importStatus =
+                Constants.IMPORT_STATUS.FAILED_DAMAGE_METER_UNAVAILABLE
+            diag.failureReason = "C_DamageMeter returned no sessions"
+        else
+            session.importedTotals.importStatus =
+                Constants.IMPORT_STATUS.FAILED_NO_CANDIDATE
+            diag.failureReason = "no candidate session matched this encounter"
+        end
         session.importedTotals.importDiagnostics = diag
         return false
     end
@@ -1939,6 +1964,13 @@ function DamageMeterService:ImportSession(session)
             end
             return ok
         else
+            session.importedTotals = session.importedTotals or {}
+            session.importedTotals.importStatus =
+                session.importedTotals.importStatus
+                or Constants.IMPORT_STATUS.FAILED_NO_CANDIDATE
+            if diag.failureReason ~= nil or #(diag.candidateIds or {}) > 0 then
+                session.importedTotals.importDiagnostics = diag
+            end
             return false
         end
     end
