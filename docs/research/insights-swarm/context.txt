@@ -1,0 +1,40 @@
+PROBLEM: CombatAnalytics (WoW PvP addon) "Insights" tab is broken. User says it brings no value, layout is broken, garbage.
+
+CURRENT INSIGHTS TAB (UI/SuggestionsView.lua, 1279 lines) renders:
+1. "Session Trust" card — meta-data about confidence (HIGH/MEDIUM/LOW) of the read itself. User sees: "Degraded trust on Player. Limited to CC/control data — damage totals may be unreliable. Timing advice suppressed."
+2. Trust Level severity bar (red/yellow/green fill)
+3. "Fight Story" card — single rule-derived narrative sentence (e.g., "This session ended without one single obvious failure point, so the cleaner read is to review opener pacing and first trade timing together.")
+4. Story severity bar + 4 inline "pills" of evidence (Opener X | first offensive Y | first defensive Z)
+5. "Matchup Memory" card — baseline vs current
+6. Category filter row (All/Offense/Defense/CC/Matchup/Consistency)
+7. "Recent Coaching Notes" section — flat list of up to 8 fixed cards, each with severity bar, title, body, evidence line
+8. "Strategy Spotlight" — counter guide for spec faced
+9. Performance Trends section (often empty)
+
+REASON CODES (30): LOW_PRESSURE_VS_BUILD_BASELINE, WEAK_BURST_FOR_CONTEXT, DEFENSIVE_UNUSED_ON_LOSS, HIGH_DAMAGE_TAKEN_VS_OPPONENT, DUMMY_OPENER_VARIANCE, DUMMY_SUSTAINED_VARIANCE, ROTATION_GAPS_OBSERVED, PROC_WINDOWS_UNDERUSED, LATE_FIRST_GO, DEFENSIVE_DRIFT, DIED_IN_CC, TRINKET_TIMING_POOR, HIGH_CC_UPTIME, SPEC_WINRATE_DEFICIT, SPEC_WINRATE_STRENGTH, REACTIVE_DEFENSIVE_LATE, SUBOPTIMAL_OPENER_SEQUENCE, POOR_INTERRUPT_RATE, LOW_HEALER_PRESSURE, TILT_WARNING, COMP_DEFICIT, CC_DR_WASTE, CC_LATE_TRINKET, CC_MISSED_KILL_WINDOW, CC_GOOD_TRINKET, CC_CHAIN_BREAK, CC_HIGH_UPTIME, DIED_WITH_DEFENSIVES, MIDNIGHT_SAFE_LIMITS, RAW_EVENT_OVERFLOW.
+
+AVAILABLE DATA per session:
+- rawEvents[]: timestampOffset, eventType, spellId, amount, isCrit (when CLEU not restricted)
+- spells{}: per-spell aggregates (casts, hits, crits, damage, intervals)
+- auras{}: uptime, stacks, procs, damage-during-window
+- cooldowns{}: use count, spacing, damage-during-window
+- totals{damageDone, healingDone, damageTaken}
+- metrics{pressureScore, burstScore, survivabilityScore, rotationConsistencyScore}
+- primaryOpponent{guid, name, className, classFile, classId, specId, specName}
+- playerSnapshot{specId, buildHash, talentNodes, pvpTalents, gear, itemLevel}
+- arena{matchKey, roundKey, roster[], opposingTeam[]}
+- attribution{bySource, byTarget, bySourceSpell, summons, reconciliation}
+- captureQuality{confidence, cleuRestricted}
+- suggestions[]
+- Cross-session aggregates: opponents, classes, specs, builds, contexts, daily, weekly, dummyBenchmarks
+- Scoreboard anchor + per-metric provenance shipped
+
+CONSTRAINTS:
+- Lua / WoW Midnight client / Interface 120005
+- Pure addon UI, no browser, must use CreateFrame and addon Widgets
+- CLEU often restricted in arenas — many sessions have degraded data
+- Must work post-combat (no live overlay)
+
+USER EXPLICIT GOALS: design+layout rework AND analytical value rework. UX + analytical value are the chosen focus areas.
+
+TASK: Propose ONE concrete viable redesign of the Insights tab. Be specific: name the sections, layout, what data drives each section, why this is better than current. 350-500 words. Output strict markdown: ## Title, ### Vision, ### Layout, ### Core sections (bulleted), ### Data wiring, ### Why this beats current, ### Risks.

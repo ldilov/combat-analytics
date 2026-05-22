@@ -903,10 +903,14 @@ function SuggestionEngine:BuildSessionSuggestions(session)
     end)
 
     -- Attach metadata to each suggestion: priorityScore, confidenceTier, controllability
+    -- Also expose recurrenceCount (7d occurrences across recent sessions) so the
+    -- new Insights view can rank suggestions through InsightsPriority.Rank without
+    -- having to recompute the aggregate.
     for _, sug in ipairs(results) do
         sug.priorityScore = computePriorityScore(sug, recentSuggestionCounts)
         sug.controllability = sug.controllability or CONTROLLABILITY[sug.reasonCode] or "outcome_based"
         sug.effort = sug.effort or 2
+        sug.recurrenceCount = recentSuggestionCounts[sug.reasonCode] or 0
 
         -- Confidence tier from MetricBaselineService sample count
         local sampleCount = 0

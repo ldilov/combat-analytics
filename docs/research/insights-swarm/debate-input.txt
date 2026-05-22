@@ -1,0 +1,25 @@
+CONSENSUS DIRECTION CHOSEN: Hybrid A+E+F insights tab redesign for WoW PvP addon CombatAnalytics, rendered as a SINGLE scrollview (no sub-tabs).
+
+Layout from top to bottom:
+1. Slim Fidelity bar (was Trust card) — CLEU restricted? Y/N + N samples.
+2. **Next Queue Focus** card (full width, big) — single highest-priority callout. Priority = severity × confidence × recurrence × controllability.
+3. **Fight Timeline Read** — horizontal sequence: opener → first go → first defensive → first CC chain → end. Each node labeled good/late/missing/unknown.
+4. **Pillar Scoreboard** — 4 columns (Pressure / Survival / Control / Consistency). Each: current value, delta vs personal baseline, delta vs matchup baseline, sample size, confidence. Replaces all 30 flat reason-code cards (codes still trigger but bucket into pillars).
+5. **Matchup Plan** — single opponent card: historical W/L vs this spec, common failure pattern, one counter-action. Folds Strategy Spotlight + Matchup Memory.
+6. **Trends row (Option E elements inline)** — 2x2 mini-cards: Drift sparkline (14d), Matchup Mastery delta, Recurring Failures heatmap (codes weighted by week frequency), Learning Velocity.
+7. **Practice Plan** — 1-3 drills generated from RECURRING codes (≥2 occurrences this week), not single-session noise.
+8. **Evidence Drawer** — collapsed by default, lists all 30 reason-code suggestions filterable.
+
+CLEU-restricted rule (Option F): when cleuRestricted=true, the Pillar Scoreboard physically swaps Pressure column → Cooldown-Usage column, hides damage-derived metrics, foregrounds Control + Roster data. No grayed-out fantasy metrics.
+
+YOUR ROLE: Adversarial critic. Be ruthless. The goal of this debate is to surface risks BEFORE we write code, not to validate the plan.
+
+Specifically attack:
+1. Where will this fall apart in practice that the consensus missed?
+2. What alternatives were dismissed too quickly during synthesis?
+3. What's the biggest hidden cost (engineering, UX, data) of this design?
+4. Is the "single scrollview" choice wrong given how dense this content is?
+5. Is the 4-pillar consolidation hiding important signal?
+6. What about new players (<5 sessions) — does anything in this design help them?
+
+Output 200-300 words, brutal and specific. End with the 3 biggest risks ranked.

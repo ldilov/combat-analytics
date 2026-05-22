@@ -454,4 +454,76 @@ ns.Constants = {
         training_dummy = 0.5,
         general        = 0.5,
     },
+    -- ---------------------------------------------------------------------
+    -- Insights tab — new dashboard inputs.
+    -- ---------------------------------------------------------------------
+    -- Number of stored sessions required before a character reaches the
+    -- "full" onboarding state. Below this count the Insights tab degrades
+    -- gracefully via InsightsOnboarding.Classify().
+    INSIGHTS_ONBOARDING_THRESHOLD = 3,
+
+    -- Pillar enum used by the new InsightsView scoreboard. Lowercase
+    -- string literals round-trip cleanly through SavedVariables and the
+    -- existing telemetry helpers.
+    PILLAR = {
+        PRESSURE    = "pressure",
+        SURVIVAL    = "survival",
+        CONTROL     = "control",
+        CONSISTENCY = "consistency",
+    },
+
+    -- Numeric controllability weight per reason code, in 0..1.
+    --
+    -- Parallel to (and intentionally not replacing) the categorical
+    -- CONTROLLABILITY table inside SuggestionEngine.lua, which drives the
+    -- existing RICE pipeline. This numeric table is consumed by
+    -- Insights/InsightsPriority.lua to compute the published Next Queue
+    -- Focus priority:
+    --
+    --   priority = severity * confidence * recurrenceWeight * controllability
+    --
+    -- 1.0 = fully within the player's control (always-actionable defensive
+    -- timing, trinket usage, etc.). Lower values discount insights that
+    -- the player cannot easily change in the next queue (matchup, scaling,
+    -- pure outcome metrics).
+    CONTROLLABILITY = {
+        -- Resource available but unused → fully controllable.
+        DEFENSIVE_UNUSED_ON_LOSS       = 1.0,
+        DIED_WITH_DEFENSIVES           = 1.0,
+        PROC_WINDOWS_UNDERUSED         = 0.9,
+        DIED_IN_CC                     = 0.8,
+        -- Timing-based → near-controllable.
+        LATE_FIRST_GO                  = 0.85,
+        DEFENSIVE_DRIFT                = 0.85,
+        TRINKET_TIMING_POOR            = 0.9,
+        REACTIVE_DEFENSIVE_LATE        = 0.85,
+        POOR_INTERRUPT_RATE            = 0.8,
+        SUBOPTIMAL_OPENER_SEQUENCE     = 0.75,
+        CC_LATE_TRINKET                = 0.9,
+        CC_GOOD_TRINKET                = 0.5,  -- positive, lower weight
+        CC_CHAIN_BREAK                 = 0.7,
+        CC_DR_WASTE                    = 0.7,
+        CC_MISSED_KILL_WINDOW          = 0.7,
+        -- Outcome scores → mid weight (depends on play but also on matchup).
+        LOW_PRESSURE_VS_BUILD_BASELINE = 0.6,
+        ROTATION_GAPS_OBSERVED         = 0.65,
+        WEAK_BURST_FOR_CONTEXT         = 0.55,
+        HIGH_CC_UPTIME                 = 0.55,
+        CC_HIGH_UPTIME                 = 0.55,
+        HIGH_DAMAGE_TAKEN_VS_OPPONENT  = 0.4,
+        HIGH_AVOIDABLE_DAMAGE_TAKEN    = 0.6,
+        LOW_HEALER_PRESSURE            = 0.5,
+        TILT_WARNING                   = 0.5,
+        DUMMY_OPENER_VARIANCE          = 0.55,
+        DUMMY_SUSTAINED_VARIANCE       = 0.5,
+        -- Matchup / scaling → low weight (cannot change mid-session).
+        SPEC_WINRATE_DEFICIT           = 0.3,
+        SPEC_WINRATE_STRENGTH          = 0.2,
+        COMP_DEFICIT                   = 0.25,
+        SPEC_SCALING_NOTABLE           = 0.1,
+        -- Informational / meta — minimal weight, kept above zero so the
+        -- ranker still places them above unmapped codes.
+        RAW_EVENT_OVERFLOW             = 0.05,
+        MIDNIGHT_SAFE_LIMITS           = 0.05,
+    },
 }

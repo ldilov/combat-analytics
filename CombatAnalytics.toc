@@ -55,6 +55,9 @@ ExportSerializer.lua
 PartySyncService.lua
 BuildCatalogService.lua
 BuildComparisonService.lua
+Insights\InsightsPriority.lua
+Insights\InsightsPillarMapper.lua
+Insights\InsightsOnboarding.lua
 Events.lua
 UI\Widgets.lua
 UI\SummaryView.lua
@@ -64,6 +67,7 @@ UI\OpponentStatsView.lua
 UI\ClassSpecView.lua
 UI\DummyBenchmarkView.lua
 UI\SuggestionsView.lua
+UI\Insights\InsightsView.lua
 UI\CleanupView.lua
 UI\RatingView.lua
 UI\CounterGuideView.lua

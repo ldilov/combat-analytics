@@ -10,7 +10,7 @@ local MainFrame = {
         { id = "matchup", label = "Matchup", module = "MatchupDetailView", hidden = true },
         { id = "dummy", label = "Dummy", module = "DummyBenchmarkView" },
         { id = "rating", label = "Rating", module = "RatingView" },
-        { id = "insights", label = "Insights", module = "SuggestionsView" },
+        { id = "insights", label = "Insights", module = "InsightsView" },
         { id = "counterguide", label = "Counters", module = "CounterGuideView" },
         { id = "builds",      label = "Builds",  module = "BuildComparatorView" },
         { id = "cleanup",     label = "Cleanup", module = "CleanupView" },
