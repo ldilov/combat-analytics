@@ -1850,11 +1850,20 @@ function CombatTracker:FinalizeSession(explicitResult, reason)
             return damageMeterService:ImportSession(session)
         end, debugstack)
         if not okImport then
-            self:SetImportAuthority(session, Constants.IMPORT_STATUS.FAILED_DAMAGE_METER_UNAVAILABLE)
+            -- xpcall caught a Lua error. ImportSession may have written a precise
+            -- status before throwing; respect it, else fall back to unavailable.
+            self:SetImportAuthority(session,
+                (session.importedTotals and session.importedTotals.importStatus)
+                or Constants.IMPORT_STATUS.FAILED_DAMAGE_METER_UNAVAILABLE)
             ns.Addon:Warn("Damage Meter import failed; storing limited session data.")
             ns.Addon:Debug("%s", importedOrError)
         elseif not importedOrError then
-            self:SetImportAuthority(session, Constants.IMPORT_STATUS.FAILED_NO_CANDIDATE)
+            -- ImportSession returned false. It sets a precise importStatus on
+            -- every failure path; use it instead of assuming "no candidate" so
+            -- the UI shows the real reason (SetImportAuthority overwrites it).
+            self:SetImportAuthority(session,
+                (session.importedTotals and session.importedTotals.importStatus)
+                or Constants.IMPORT_STATUS.FAILED_NO_CANDIDATE)
         end
     elseif damageMeterService and (InCombatLockdown and InCombatLockdown()) then
         -- Queue deferred import: C_DamageMeter data is secret right now.
