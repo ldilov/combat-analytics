@@ -59,6 +59,7 @@ Insights\InsightsPriority.lua
 Insights\InsightsPillarMapper.lua
 Insights\InsightsOnboarding.lua
 Insights\InsightsTimeline.lua
+Insights\InsightsMatchupSummary.lua
 Events.lua
 UI\Widgets.lua
 UI\SummaryView.lua
@@ -69,6 +70,7 @@ UI\ClassSpecView.lua
 UI\DummyBenchmarkView.lua
 UI\SuggestionsView.lua
 UI\Insights\Sections\FightTimelineRead.lua
+UI\Insights\Sections\MatchupPlanCard.lua
 UI\Insights\InsightsView.lua
 UI\CleanupView.lua
 UI\RatingView.lua

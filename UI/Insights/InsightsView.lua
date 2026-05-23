@@ -295,6 +295,13 @@ function InsightsView:Build(parent)
         self.timelineSection = ns.InsightsFightTimelineRead
     end
 
+    -- ── Matchup Plan (anchors below timeline drawer) ────────────────────
+    if ns.InsightsMatchupPlanCard then
+        local anchor = (self.timelineSection and self.timelineSection.drawer) or self.drilldown
+        ns.InsightsMatchupPlanCard:Build(self.canvas, anchor, 760)
+        self.matchupSection = ns.InsightsMatchupPlanCard
+    end
+
     ns.Widgets.SetCanvasHeight(self.canvas, 600)
 end
 
@@ -345,6 +352,9 @@ function InsightsView:_RecalculateCanvas()
     end
     if self.timelineSection and self.timelineSection.title and self.timelineSection.title:IsShown() then
         base = base + (self.timelineSection:_Height() or 0) + 8
+    end
+    if self.matchupSection and self.matchupSection.title and self.matchupSection.title:IsShown() then
+        base = base + (self.matchupSection:_Height() or 0) + 8
     end
     ns.Widgets.SetCanvasHeight(self.canvas, math.max(base, 400))
 end
@@ -478,6 +488,12 @@ function InsightsView:Refresh(payload)
     if self.timelineSection then
         local timelineVisible = sectionVis.fightTimelineRead and session ~= nil
         self.timelineSection:Refresh(session, suggestions, timelineVisible)
+    end
+
+    -- ----- Matchup Plan -------------------------------------------------
+    if self.matchupSection then
+        local matchupVisible = sectionVis.matchupPlan and session ~= nil
+        self.matchupSection:Refresh(session, matchupVisible)
     end
 
     self:_RecalculateCanvas()
