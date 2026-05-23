@@ -286,6 +286,15 @@ function InsightsView:Build(parent)
     self.drilldown.body:SetJustifyV("TOP")
     self.drilldown.body:SetTextColor(unpack(Theme.textMuted))
 
+    -- ── Fight Timeline Read (anchors below pillar drilldown) ────────────
+    if ns.InsightsFightTimelineRead then
+        ns.InsightsFightTimelineRead:Build(self.canvas, self.drilldown, 760)
+        ns.InsightsFightTimelineRead:OnLayoutChange(function()
+            self:_RecalculateCanvas()
+        end)
+        self.timelineSection = ns.InsightsFightTimelineRead
+    end
+
     ns.Widgets.SetCanvasHeight(self.canvas, 600)
 end
 
@@ -333,6 +342,9 @@ function InsightsView:_RecalculateCanvas()
     base = base + 96 + 8       -- scoreboard row
     if self.drilldown:IsShown() then
         base = base + self.drilldown:GetHeight() + 16
+    end
+    if self.timelineSection and self.timelineSection.title and self.timelineSection.title:IsShown() then
+        base = base + (self.timelineSection:_Height() or 0) + 8
     end
     ns.Widgets.SetCanvasHeight(self.canvas, math.max(base, 400))
 end
@@ -460,6 +472,12 @@ function InsightsView:Refresh(payload)
         self.scoreboardCaption:Hide()
         self.scoreboardRow:Hide()
         self.drilldown:Hide()
+    end
+
+    -- ----- Fight Timeline Read ------------------------------------------
+    if self.timelineSection then
+        local timelineVisible = sectionVis.fightTimelineRead and session ~= nil
+        self.timelineSection:Refresh(session, suggestions, timelineVisible)
     end
 
     self:_RecalculateCanvas()
