@@ -311,6 +311,15 @@ function InsightsView:Build(parent)
         self.trendsSection = ns.InsightsTrendsPeekView
     end
 
+    -- ── Practice Plan (anchors below trends card) ───────────────────────
+    if ns.InsightsPracticePlanList then
+        local anchor = (self.trendsSection and self.trendsSection.card)
+            or (self.matchupSection and self.matchupSection.card)
+            or self.drilldown
+        ns.InsightsPracticePlanList:Build(self.canvas, anchor, 760)
+        self.practiceSection = ns.InsightsPracticePlanList
+    end
+
     ns.Widgets.SetCanvasHeight(self.canvas, 600)
 end
 
@@ -367,6 +376,9 @@ function InsightsView:_RecalculateCanvas()
     end
     if self.trendsSection and self.trendsSection.title and self.trendsSection.title:IsShown() then
         base = base + (self.trendsSection:_Height() or 0) + 8
+    end
+    if self.practiceSection and self.practiceSection.title and self.practiceSection.title:IsShown() then
+        base = base + (self.practiceSection:_Height() or 0) + 8
     end
     ns.Widgets.SetCanvasHeight(self.canvas, math.max(base, 400))
 end
@@ -511,6 +523,11 @@ function InsightsView:Refresh(payload)
     -- ----- Trends Peek --------------------------------------------------
     if self.trendsSection then
         self.trendsSection:Refresh(sectionVis.trendsPeek)
+    end
+
+    -- ----- Practice Plan ------------------------------------------------
+    if self.practiceSection then
+        self.practiceSection:Refresh(sectionVis.practicePlan, session)
     end
 
     self:_RecalculateCanvas()

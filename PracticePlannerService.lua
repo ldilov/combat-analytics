@@ -283,4 +283,44 @@ function PracticePlannerService:GeneratePracticePlan(aggregates, recentSessions)
     return plan
 end
 
+-- ---------------------------------------------------------------------------
+-- Insights v2: GetRecurringDrills — short-window drill list for Insights tab
+-- ---------------------------------------------------------------------------
+--
+-- Returns the list of "drill these next" items derived from reason codes that
+-- recurred at least N times across the player's last weekDays of sessions.
+-- Delegates the math to ns.InsightsRecurringDrills so it stays unit-testable
+-- without a CombatStore round-trip.
+
+local DEFAULT_RECURRING_WEEK_DAYS = 7
+
+--- @param characterKey string?  optional character scope; defaults to active
+--- @param weekDays     number?  window in days (defaults to 7)
+--- @return table  ordered drill list (each: { reasonCode, count, severity, title, action })
+function PracticePlannerService:GetRecurringDrills(characterKey, weekDays)
+    weekDays = weekDays or DEFAULT_RECURRING_WEEK_DAYS
+
+    local Drills = ns.InsightsRecurringDrills
+    if not Drills then return {} end
+
+    local store = ns.Addon and ns.Addon.GetModule and ns.Addon:GetModule("CombatStore", true) or nil
+    local sessions = {}
+    if store and store.GetRecentSessionStreak then
+        local ok, list = pcall(store.GetRecentSessionStreak, store, 50)
+        if ok and type(list) == "table" then sessions = list end
+    end
+
+    if characterKey then
+        local filtered = {}
+        for _, s in ipairs(sessions) do
+            if (s.characterKey or s.character) == characterKey then
+                filtered[#filtered + 1] = s
+            end
+        end
+        sessions = filtered
+    end
+
+    return Drills.Build(sessions, { windowDays = weekDays })
+end
+
 ns.Addon:RegisterModule("PracticePlannerService", PracticePlannerService)

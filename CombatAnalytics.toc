@@ -61,6 +61,7 @@ Insights\InsightsOnboarding.lua
 Insights\InsightsTimeline.lua
 Insights\InsightsMatchupSummary.lua
 Insights\InsightsTrendsPeek.lua
+Insights\InsightsRecurringDrills.lua
 Events.lua
 UI\Widgets.lua
 UI\SummaryView.lua
@@ -73,6 +74,7 @@ UI\SuggestionsView.lua
 UI\Insights\Sections\FightTimelineRead.lua
 UI\Insights\Sections\MatchupPlanCard.lua
 UI\Insights\Sections\TrendsPeek.lua
+UI\Insights\Sections\PracticePlanList.lua
 UI\Insights\InsightsView.lua
 UI\CleanupView.lua
 UI\RatingView.lua
