@@ -302,6 +302,15 @@ function InsightsView:Build(parent)
         self.matchupSection = ns.InsightsMatchupPlanCard
     end
 
+    -- ── Trends Peek (anchors below matchup card) ────────────────────────
+    if ns.InsightsTrendsPeekView then
+        local anchor = (self.matchupSection and self.matchupSection.card)
+            or (self.timelineSection and self.timelineSection.drawer)
+            or self.drilldown
+        ns.InsightsTrendsPeekView:Build(self.canvas, anchor, 760)
+        self.trendsSection = ns.InsightsTrendsPeekView
+    end
+
     ns.Widgets.SetCanvasHeight(self.canvas, 600)
 end
 
@@ -355,6 +364,9 @@ function InsightsView:_RecalculateCanvas()
     end
     if self.matchupSection and self.matchupSection.title and self.matchupSection.title:IsShown() then
         base = base + (self.matchupSection:_Height() or 0) + 8
+    end
+    if self.trendsSection and self.trendsSection.title and self.trendsSection.title:IsShown() then
+        base = base + (self.trendsSection:_Height() or 0) + 8
     end
     ns.Widgets.SetCanvasHeight(self.canvas, math.max(base, 400))
 end
@@ -494,6 +506,11 @@ function InsightsView:Refresh(payload)
     if self.matchupSection then
         local matchupVisible = sectionVis.matchupPlan and session ~= nil
         self.matchupSection:Refresh(session, matchupVisible)
+    end
+
+    -- ----- Trends Peek --------------------------------------------------
+    if self.trendsSection then
+        self.trendsSection:Refresh(sectionVis.trendsPeek)
     end
 
     self:_RecalculateCanvas()
