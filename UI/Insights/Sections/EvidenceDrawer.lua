@@ -22,6 +22,7 @@ local CHIP_GAP         = 6
 local ROW_HEIGHT       = 44
 local ROW_GAP          = 4
 local LIST_PAD_Y       = 12
+local MAX_ROWS         = 30  -- bounded pool; matches SuggestionEngine cap
 
 local EvidenceDrawer = {}
 
@@ -171,6 +172,7 @@ function EvidenceDrawer:_RenderList()
     local filtered = Filter.FilterByChip(self._suggestions, self.activeChip)
 
     for _, row in ipairs(self.rows) do row:Hide() end
+    if self.overflowLabel then self.overflowLabel:Hide() end
 
     if #filtered == 0 then
         self.emptyLabel:SetText("No notes in this category.")
@@ -180,7 +182,9 @@ function EvidenceDrawer:_RenderList()
     end
     self.emptyLabel:Hide()
 
-    for i, sug in ipairs(filtered) do
+    local visibleCount = math.min(#filtered, MAX_ROWS)
+    for i = 1, visibleCount do
+        local sug = filtered[i]
         local row = self.rows[i]
         if not row then
             row = createRow(self.list, self.width - 24)
@@ -196,11 +200,34 @@ function EvidenceDrawer:_RenderList()
         row:Show()
     end
 
-    local listHeight = LIST_PAD_Y + #filtered * (ROW_HEIGHT + ROW_GAP) + 8
+    -- Overflow label when filtered list exceeds the pool cap.
+    local hiddenCount = #filtered - visibleCount
+    if hiddenCount > 0 then
+        if not self.overflowLabel then
+            self.overflowLabel = self.list:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            self.overflowLabel:SetJustifyH("LEFT")
+            self.overflowLabel:SetTextColor(unpack(Theme.textMuted))
+        end
+        self.overflowLabel:ClearAllPoints()
+        local anchor = visibleCount > 0 and self.rows[visibleCount] or self.list
+        if visibleCount > 0 then
+            self.overflowLabel:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -ROW_GAP)
+        else
+            self.overflowLabel:SetPoint("TOPLEFT", self.list, "TOPLEFT", 12, -10)
+        end
+        self.overflowLabel:SetText(string.format("... and %d more note%s not shown.",
+            hiddenCount, hiddenCount == 1 and "" or "s"))
+        self.overflowLabel:Show()
+    end
+
+    local listHeight = LIST_PAD_Y + visibleCount * (ROW_HEIGHT + ROW_GAP) + 8
+    if hiddenCount > 0 then listHeight = listHeight + 16 end
     self.list:SetHeight(math.max(listHeight, ROW_HEIGHT * 2))
 end
 
 function EvidenceDrawer:Toggle()
+    -- Guard against clicks before the first real Refresh has populated state.
+    if not self.toggleButton or not self.title or not self.title:IsShown() then return end
     self.expanded = not self.expanded
     self:Refresh(true, { suggestions = self._suggestions, allSuggestions = self._suggestions })
     if self._onLayoutChange then self._onLayoutChange() end

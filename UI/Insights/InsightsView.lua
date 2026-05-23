@@ -78,7 +78,7 @@ local function evidenceLine(suggestion)
     if suggestion.recurrenceCount and suggestion.recurrenceCount > 0 then
         pieces[#pieces + 1] = string.format("recurrence %d/7d", suggestion.recurrenceCount)
     end
-    if suggestion.confidenceTier then
+    if type(suggestion.confidenceTier) == "string" then
         pieces[#pieces + 1] = (suggestion.confidenceTier:gsub("_", " "))
     end
     return table.concat(pieces, "  |  ")
@@ -404,7 +404,9 @@ end
 function InsightsView:Refresh(payload)
     if not self.frame then return end
 
-    local store = ns.Addon:GetModule("CombatStore", true)
+    -- Guarded GetModule: load-order race (Insights drawn before Addon registers)
+    -- would otherwise raise an unhandled error and freeze the tab.
+    local store = ns.Addon and ns.Addon.GetModule and ns.Addon:GetModule("CombatStore", true) or nil
     local session = resolveSession(store, payload)
     local sessionCount = characterSessionCount(store, session)
 
@@ -434,6 +436,7 @@ function InsightsView:Refresh(payload)
     local onboardMsg = Onboarding and Onboarding.OnboardingMessage(state) or nil
     if onboardMsg then
         self.onboardCard:SetData("medium", "Onboarding", onboardMsg, "")
+        self.onboardCard:Show()
         self.focusCard:ClearAllPoints()
         self.focusCard:SetPoint("TOPLEFT", self.onboardCard, "BOTTOMLEFT", 0, -8)
         self.emptyCard:ClearAllPoints()
