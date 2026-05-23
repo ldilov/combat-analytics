@@ -320,6 +320,18 @@ function InsightsView:Build(parent)
         self.practiceSection = ns.InsightsPracticePlanList
     end
 
+    -- ── Evidence Drawer (anchors at the bottom, collapsed by default) ───
+    if ns.InsightsEvidenceDrawer then
+        local anchor = (self.practiceSection and self.practiceSection.list)
+            or (self.trendsSection and self.trendsSection.card)
+            or self.drilldown
+        ns.InsightsEvidenceDrawer:Build(self.canvas, anchor, 760)
+        ns.InsightsEvidenceDrawer:OnLayoutChange(function()
+            self:_RecalculateCanvas()
+        end)
+        self.evidenceSection = ns.InsightsEvidenceDrawer
+    end
+
     ns.Widgets.SetCanvasHeight(self.canvas, 600)
 end
 
@@ -379,6 +391,9 @@ function InsightsView:_RecalculateCanvas()
     end
     if self.practiceSection and self.practiceSection.title and self.practiceSection.title:IsShown() then
         base = base + (self.practiceSection:_Height() or 0) + 8
+    end
+    if self.evidenceSection and self.evidenceSection.title and self.evidenceSection.title:IsShown() then
+        base = base + (self.evidenceSection:_Height() or 0) + 8
     end
     ns.Widgets.SetCanvasHeight(self.canvas, math.max(base, 400))
 end
@@ -528,6 +543,12 @@ function InsightsView:Refresh(payload)
     -- ----- Practice Plan ------------------------------------------------
     if self.practiceSection then
         self.practiceSection:Refresh(sectionVis.practicePlan, session)
+    end
+
+    -- ----- Evidence Drawer ----------------------------------------------
+    if self.evidenceSection then
+        local evidenceVisible = sectionVis.evidenceDrawer and session ~= nil
+        self.evidenceSection:Refresh(evidenceVisible, session)
     end
 
     self:_RecalculateCanvas()
