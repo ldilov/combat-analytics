@@ -1,532 +1,4 @@
 {
-  "103": [
-    {
-      "talentId": 201,
-      "spellId": 1217017,
-      "name": "Thorns",
-      "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 437 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 203,
-      "spellId": 213200,
-      "name": "Freedom of the Herd",
-      "description": "Your Stampeding Roar clears all roots and snares from yourself and allies.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 601,
-      "spellId": 236012,
-      "name": "Malorne's Swiftness",
-      "description": "Your Travel Form movement speed while within a Battleground or Arena is increased by 20% and you always move at 100% movement speed while in Travel Form.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 611,
-      "spellId": 236020,
-      "name": "Ferocious Wound",
-      "description": "Attacking with a 5 combo point Ferocious Bite reduces the target's maximum health by up to 3% for 30 sec, stacking up to 2 times. Ferocious Wound can only be active on one target at once.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 612,
-      "spellId": 203224,
-      "name": "Fresh Wound",
-      "description": "Rake has a 100% increased critical strike chance if used on a target that doesn\u2019t already have Rake active.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 620,
-      "spellId": 203242,
-      "name": "Wicked Claws",
-      "description": "Infected Wounds can now stack up to 2 times, and reduces 8% of all healing received by the target per stack.\r\n\r\nInfected Wounds can now also be applied from Rip.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 820,
-      "spellId": 205673,
-      "name": "Savage Momentum",
-      "description": "Interrupting a spell with Skull Bash reduces the remaining cooldown of Tiger's Fury, Survival Instincts, and Dash by 10 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 3053,
-      "spellId": 236019,
-      "name": "Strength of the Wild",
-      "description": "You become further adept in Caster Form and Bear Form.\r\n\r\nCaster Form\r\nWhen using Regrowth on an ally the initial heal will have a 30% increased critical chance and the cast time of Regrowth will be reduced by 50% for 6 sec.\r\n\r\nBear Form\r\nMaximum health while in Bear Form increased by 15% and you gain 5 Rage when attacked in Bear Form.\r\n\r\nYou also learn:\r\n\r\n Strength of the Wild\r\nMaul the target for 8% of the target's maximum health in Physical damage.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 3751,
-      "spellId": 202626,
-      "name": "Leader of the Pack",
-      "description": "While in Cat Form, you increase the movement speed of raid members within 20 yards by 10%.\r\n\r\nLeader of the Pack also causes allies to heal themselves for 3% of their maximum health when they critically hit with a direct attack. The healing effect cannot occur more than once every 8 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5384,
-      "spellId": 200931,
-      "name": "High Winds",
-      "description": "Increases the range of Cyclone, Typhoon, and Entangling Roots by 5 yds.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5647,
-      "spellId": 377801,
-      "name": "Tireless Pursuit",
-      "description": "For 3 sec after leaving Cat Form or Travel Form, you retain up to 25% movement speed.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    }
-  ],
-  "250": [
-    {
-      "talentId": 204,
-      "spellId": 202727,
-      "name": "Rot and Wither",
-      "description": "Your Death and Decay rots enemies each time it deals damage, absorbing healing equal to 100% of damage dealt.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 206,
-      "spellId": 47476,
-      "name": "Strangulate",
-      "description": "Shadowy tendrils constrict an enemy's throat, silencing them for 4 sec.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 608,
-      "spellId": 233412,
-      "name": "Last Dance",
-      "description": "Reduces the cooldown of Dancing Rune Weapon by 50% and its duration by 25%.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 609,
-      "spellId": 203173,
-      "name": "Death Chain",
-      "description": "Chains 3 enemies together, dealing 10.1 Shadow damage and causing 20% of all damage taken to also be received by the others in the chain. Lasts for 10 sec.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 841,
-      "spellId": 207018,
-      "name": "Murderous Intent",
-      "description": "You focus the assault on this target, increasing their damage taken by 3% for 6 sec. Each unique player that attacks the target increases the damage taken by an additional 3%, stacking up to 5 times.\r\n\r\nYour melee attacks refresh the duration of Focused Assault.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 3441,
-      "spellId": 199720,
-      "name": "Decomposing Aura",
-      "description": "All enemies within 8 yards slowly decay, losing up to 3% of their max health every 2 sec. Max 5 stacks. Lasts 6 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 3511,
-      "spellId": 77606,
-      "name": "Dark Simulacrum",
-      "description": "Places a dark ward on an enemy player that persists for 12 sec, triggering when the enemy next spends mana on a spell, and allowing the Death Knight to unleash an exact duplicate of that spell.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5587,
-      "spellId": 410301,
-      "name": "Bloodforged Armor",
-      "description": "Death Strike reduces all Physical damage taken by 25% for 4 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5592,
-      "spellId": 410320,
-      "name": "Spellwarden",
-      "description": "Anti-Magic Shell is now usable on allies and its cooldown is reduced by 10 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5712,
-      "spellId": 1233429,
-      "name": "Price of Progress",
-      "description": "You sacrifice 1% of your health every 1 sec and in exchange you cannot be slowed below 90% of normal speed, and you are immune to forced movement effects and knockbacks. Lasts until canceled.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    }
-  ],
-  "63": [
-    {
-      "talentId": 644,
-      "spellId": 203280,
-      "name": "World in Flames",
-      "description": "Empower Flamestrike, dealing up to 50% more damage based on enemies' distance to the center of Flamestrike.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 648,
-      "spellId": 203286,
-      "name": "Greater Pyroblast",
-      "description": "Hurls an immense fiery boulder that deals up to 30% of the target's total health in Fire damage.",
-      "castTime": "4 sec cast",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5389,
-      "spellId": 353082,
-      "name": "Ring of Fire",
-      "description": "Summons a Ring of Fire for 8 sec at the target location. Enemies entering the ring are incapacitated and burn for 3% of their total health over 4 sec.",
-      "castTime": "2 sec cast",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5489,
-      "spellId": 352278,
-      "name": "Ice Wall",
-      "description": "Conjures an Ice Wall 30 yards long that obstructs line of sight. The wall has 30% of your maximum health and lasts up to 15 sec.",
-      "castTime": "1.5 sec cast",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5495,
-      "spellId": 390428,
-      "name": "Glass Cannon",
-      "description": "Increases damage of Fireball, Scorch, and Ignite by 20% but decreases your maximum health by 30%.\r\n",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5588,
-      "spellId": 410248,
-      "name": "Master Shepherd",
-      "description": "While an enemy player is affected by your Polymorph or Mass Polymorph, your movement speed is increased by 25% and your Versatility is increased by 12%. \r\n\r\nAdditionally, Polymorph and Mass Polymorph no longer heal enemies.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5602,
-      "spellId": 410939,
-      "name": "Ethereal Blink",
-      "description": "Blink and Shimmer apply Slow at 100% effectiveness to all enemies you Blink through. For each enemy you Blink through, the cooldown of Blink and Shimmer are reduced by 1 sec, up to 5 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5621,
-      "spellId": 415945,
-      "name": "Improved Mass Invisibility",
-      "description": "The cooldown of Mass Invisibility is reduced by 3 min and it can affect allies in combat.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5706,
-      "spellId": 1220739,
-      "name": "Overpowered Barrier",
-      "description": "Your barriers absorb 60% more damage and have an additional effect, but last 4 sec.\r\n\r\n Prismatic Barrier\r\nIf the barrier is fully consumed, gain Time Warp for 6 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    }
-  ],
-  "64": [
-    {
-      "talentId": 66,
-      "spellId": 407581,
-      "name": "Icy Feet",
-      "description": "When your Frost Nova or Water Elemental's Freeze is dispelled or removed, become immune to snares for 3 sec. \r\n\r\nThis effect can only occur once every 10 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 632,
-      "spellId": 198148,
-      "name": "Concentrated Coolness",
-      "description": "Frozen Orb's damage is increased by 10% and is now castable at a location with a 40 yard range but no longer moves. ",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5390,
-      "spellId": 352278,
-      "name": "Ice Wall",
-      "description": "Conjures an Ice Wall 30 yards long that obstructs line of sight. The wall has 30% of your maximum health and lasts up to 15 sec.",
-      "castTime": "1.5 sec cast",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5490,
-      "spellId": 353082,
-      "name": "Ring of Fire",
-      "description": "Summons a Ring of Fire for 8 sec at the target location. Enemies entering the ring are incapacitated and burn for 3% of their total health over 4 sec.",
-      "castTime": "2 sec cast",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5496,
-      "spellId": 390612,
-      "name": "Frost Bomb",
-      "description": "Places a Frost Bomb on the target. After 5 sec, the bomb explodes, dealing 3,945 Frost damage to the target and 1,967 Frost damage to all other enemies within 10 yards. All affected targets are slowed by 50% for 8 sec. \r\n\r\nIf Frost Bomb is dispelled before it explodes, gain a charge of Brain Freeze.",
-      "castTime": "1.5 sec cast",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5497,
-      "spellId": 389794,
-      "name": "Snowdrift",
-      "description": "Summon a strong Blizzard that surrounds you for 6 sec that slows enemies by 70% and deals 84 Frost damage every 1 sec. \r\n\r\nEnemies that are caught in Snowdrift for 2 sec consecutively become Frozen in ice, stunned for 4 sec.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5581,
-      "spellId": 410248,
-      "name": "Master Shepherd",
-      "description": "While an enemy player is affected by your Polymorph or Mass Polymorph, your movement speed is increased by 25% and your Versatility is increased by 12%. \r\n\r\nAdditionally, Polymorph and Mass Polymorph no longer heal enemies.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5600,
-      "spellId": 410939,
-      "name": "Ethereal Blink",
-      "description": "Blink and Shimmer apply Slow at 100% effectiveness to all enemies you Blink through. For each enemy you Blink through, the cooldown of Blink and Shimmer are reduced by 1 sec, up to 5 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5622,
-      "spellId": 415945,
-      "name": "Improved Mass Invisibility",
-      "description": "The cooldown of Mass Invisibility is reduced by 3 min and it can affect allies in combat.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5708,
-      "spellId": 1220739,
-      "name": "Overpowered Barrier",
-      "description": "Your barriers absorb 60% more damage and have an additional effect, but last 4 sec.\r\n\r\n Prismatic Barrier\r\nIf the barrier is fully consumed, gain Time Warp for 6 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    }
-  ],
   "252": [
     {
       "talentId": 40,
@@ -817,6 +289,402 @@
       ]
     }
   ],
+  "103": [
+    {
+      "talentId": 201,
+      "spellId": 1217017,
+      "name": "Thorns",
+      "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 438 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 203,
+      "spellId": 213200,
+      "name": "Freedom of the Herd",
+      "description": "Your Stampeding Roar clears all roots and snares from yourself and allies.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 601,
+      "spellId": 236012,
+      "name": "Malorne's Swiftness",
+      "description": "Your Travel Form movement speed while within a Battleground or Arena is increased by 20% and you always move at 100% movement speed while in Travel Form.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 611,
+      "spellId": 236020,
+      "name": "Ferocious Wound",
+      "description": "Attacking with a 5 combo point Ferocious Bite reduces the target's maximum health by up to 3% for 30 sec, stacking up to 2 times. Ferocious Wound can only be active on one target at once.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 612,
+      "spellId": 203224,
+      "name": "Fresh Wound",
+      "description": "Rake has a 100% increased critical strike chance if used on a target that doesn\u2019t already have Rake active.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 620,
+      "spellId": 203242,
+      "name": "Wicked Claws",
+      "description": "Infected Wounds can now stack up to 2 times, and reduces 8% of all healing received by the target per stack.\r\n\r\nInfected Wounds can now also be applied from Rip.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 820,
+      "spellId": 205673,
+      "name": "Savage Momentum",
+      "description": "Interrupting a spell with Skull Bash reduces the remaining cooldown of Tiger's Fury, Survival Instincts, and Dash by 10 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 3053,
+      "spellId": 236019,
+      "name": "Strength of the Wild",
+      "description": "You become further adept in Caster Form and Bear Form.\r\n\r\nCaster Form\r\nWhen using Regrowth on an ally the initial heal will have a 30% increased critical chance and the cast time of Regrowth will be reduced by 50% for 6 sec.\r\n\r\nBear Form\r\nMaximum health while in Bear Form increased by 15% and you gain 5 Rage when attacked in Bear Form.\r\n\r\nYou also learn:\r\n\r\n Strength of the Wild\r\nMaul the target for 8% of the target's maximum health in Physical damage.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 3751,
+      "spellId": 202626,
+      "name": "Leader of the Pack",
+      "description": "While in Cat Form, you increase the movement speed of raid members within 20 yards by 10%.\r\n\r\nLeader of the Pack also causes allies to heal themselves for 3% of their maximum health when they critically hit with a direct attack. The healing effect cannot occur more than once every 8 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5384,
+      "spellId": 200931,
+      "name": "High Winds",
+      "description": "Increases the range of Cyclone, Typhoon, and Entangling Roots by 5 yds.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5647,
+      "spellId": 377801,
+      "name": "Tireless Pursuit",
+      "description": "For 3 sec after leaving Cat Form or Travel Form, you retain up to 25% movement speed.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
+  "63": [
+    {
+      "talentId": 644,
+      "spellId": 203280,
+      "name": "World in Flames",
+      "description": "Empower Flamestrike, dealing up to 50% more damage based on enemies' distance to the center of Flamestrike.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 648,
+      "spellId": 203286,
+      "name": "Greater Pyroblast",
+      "description": "Hurls an immense fiery boulder that deals up to 30% of the target's total health in Fire damage.",
+      "castTime": "4 sec cast",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5389,
+      "spellId": 353082,
+      "name": "Ring of Fire",
+      "description": "Summons a Ring of Fire for 8 sec at the target location. Enemies entering the ring are incapacitated and burn for 3% of their total health over 4 sec.",
+      "castTime": "2 sec cast",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5489,
+      "spellId": 352278,
+      "name": "Ice Wall",
+      "description": "Conjures an Ice Wall 30 yards long that obstructs line of sight. The wall has 30% of your maximum health and lasts up to 15 sec.",
+      "castTime": "1.5 sec cast",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5495,
+      "spellId": 390428,
+      "name": "Glass Cannon",
+      "description": "Increases damage of Fireball, Scorch, and Ignite by 20% but decreases your maximum health by 30%.\r\n",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5588,
+      "spellId": 410248,
+      "name": "Master Shepherd",
+      "description": "While an enemy player is affected by your Polymorph or Mass Polymorph, your movement speed is increased by 25% and your Versatility is increased by 12%. \r\n\r\nAdditionally, Polymorph and Mass Polymorph no longer heal enemies.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5602,
+      "spellId": 410939,
+      "name": "Ethereal Blink",
+      "description": "Blink and Shimmer apply Slow at 100% effectiveness to all enemies you Blink through. For each enemy you Blink through, the cooldown of Blink and Shimmer are reduced by 1 sec, up to 5 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5621,
+      "spellId": 415945,
+      "name": "Improved Mass Invisibility",
+      "description": "The cooldown of Mass Invisibility is reduced by 3 min and it can affect allies in combat.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5706,
+      "spellId": 1220739,
+      "name": "Overpowered Barrier",
+      "description": "Your barriers absorb 60% more damage and have an additional effect, but last 4 sec.\r\n\r\n Prismatic Barrier\r\nIf the barrier is fully consumed, gain Time Warp for 6 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
+  "250": [
+    {
+      "talentId": 204,
+      "spellId": 202727,
+      "name": "Rot and Wither",
+      "description": "Your Death and Decay rots enemies each time it deals damage, absorbing healing equal to 100% of damage dealt.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 206,
+      "spellId": 47476,
+      "name": "Strangulate",
+      "description": "Shadowy tendrils constrict an enemy's throat, silencing them for 4 sec.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 608,
+      "spellId": 233412,
+      "name": "Last Dance",
+      "description": "Reduces the cooldown of Dancing Rune Weapon by 50% and its duration by 25%.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 609,
+      "spellId": 203173,
+      "name": "Death Chain",
+      "description": "Chains 3 enemies together, dealing 10.2 Shadow damage and causing 20% of all damage taken to also be received by the others in the chain. Lasts for 10 sec.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 841,
+      "spellId": 207018,
+      "name": "Murderous Intent",
+      "description": "You focus the assault on this target, increasing their damage taken by 3% for 6 sec. Each unique player that attacks the target increases the damage taken by an additional 3%, stacking up to 5 times.\r\n\r\nYour melee attacks refresh the duration of Focused Assault.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 3441,
+      "spellId": 199720,
+      "name": "Decomposing Aura",
+      "description": "All enemies within 8 yards slowly decay, losing up to 3% of their max health every 2 sec. Max 5 stacks. Lasts 6 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 3511,
+      "spellId": 77606,
+      "name": "Dark Simulacrum",
+      "description": "Places a dark ward on an enemy player that persists for 12 sec, triggering when the enemy next spends mana on a spell, and allowing the Death Knight to unleash an exact duplicate of that spell.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5587,
+      "spellId": 410301,
+      "name": "Bloodforged Armor",
+      "description": "Death Strike reduces all Physical damage taken by 25% for 4 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5592,
+      "spellId": 410320,
+      "name": "Spellwarden",
+      "description": "Anti-Magic Shell is now usable on allies and its cooldown is reduced by 10 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5712,
+      "spellId": 1233429,
+      "name": "Price of Progress",
+      "description": "You sacrifice 1% of your health every 1 sec and in exchange you cannot be slowed below 90% of normal speed, and you are immune to forced movement effects and knockbacks. Lasts until canceled.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
   "62": [
     {
       "talentId": 637,
@@ -848,7 +716,7 @@
       "talentId": 5397,
       "spellId": 353128,
       "name": "Arcanosphere",
-      "description": "Builds a sphere of Arcane energy, gaining power over 4 sec. Upon release, the sphere passes through any barriers, knocking enemies back and dealing up to 19,056 Arcane damage.",
+      "description": "Builds a sphere of Arcane energy, gaining power over 4 sec. Upon release, the sphere passes through any barriers, knocking enemies back and dealing up to 19,119 Arcane damage.",
       "castTime": "Channeled",
       "compatibleSlots": [
         1,
@@ -936,12 +804,77 @@
       ]
     }
   ],
-  "73": [
+  "64": [
     {
-      "talentId": 24,
-      "spellId": 236077,
-      "name": "Disarm",
-      "description": "Disarm the enemy's weapons and shield for 5 sec. Disarmed creatures deal significantly reduced damage.",
+      "talentId": 66,
+      "spellId": 407581,
+      "name": "Icy Feet",
+      "description": "When your Frost Nova or Water Elemental's Freeze is dispelled or removed, become immune to snares for 3 sec. \r\n\r\nThis effect can only occur once every 10 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 632,
+      "spellId": 198148,
+      "name": "Concentrated Coolness",
+      "description": "Frozen Orb's damage is increased by 10% and is now castable at a location with a 40 yard range but no longer moves. ",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5390,
+      "spellId": 352278,
+      "name": "Ice Wall",
+      "description": "Conjures an Ice Wall 30 yards long that obstructs line of sight. The wall has 30% of your maximum health and lasts up to 15 sec.",
+      "castTime": "1.5 sec cast",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5490,
+      "spellId": 353082,
+      "name": "Ring of Fire",
+      "description": "Summons a Ring of Fire for 8 sec at the target location. Enemies entering the ring are incapacitated and burn for 3% of their total health over 4 sec.",
+      "castTime": "2 sec cast",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5496,
+      "spellId": 390612,
+      "name": "Frost Bomb",
+      "description": "Places a Frost Bomb on the target. After 5 sec, the bomb explodes, dealing 3,898 Frost damage to the target and 1,956 Frost damage to all other enemies within 10 yards. All affected targets are slowed by 50% for 8 sec. \r\n\r\nIf Frost Bomb is dispelled before it explodes, gain a charge of Brain Freeze.",
+      "castTime": "1.5 sec cast",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5497,
+      "spellId": 389794,
+      "name": "Snowdrift",
+      "description": "Summon a strong Blizzard that surrounds you for 6 sec that slows enemies by 70% and deals 85 Frost damage every 1 sec. \r\n\r\nEnemies that are caught in Snowdrift for 2 sec consecutively become Frozen in ice, stunned for 4 sec.",
       "castTime": "Instant",
       "compatibleSlots": [
         1,
@@ -951,23 +884,10 @@
       ]
     },
     {
-      "talentId": 168,
-      "spellId": 213871,
-      "name": "Bodyguard",
-      "description": "Protect an ally, causing 40% of all Physical damage they take to be transfered to you. When the target takes Physical damage, your Shield Slam cooldown has a 30% chance to be reset. Bodyguard is cancelled if the target is further than 20 yards from you. Lasts 1 min.\r\n\r\nOnly one target can be Bodyguarded at a time.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 171,
-      "spellId": 199023,
-      "name": "Morale Killer",
-      "description": "Reduces the cooldown of Demoralizing Shout by 15 sec, and Demoralizing Shout now reduces the damage enemies deal to all targets, not just you.",
+      "talentId": 5581,
+      "spellId": 410248,
+      "name": "Master Shepherd",
+      "description": "While an enemy player is affected by your Polymorph or Mass Polymorph, your movement speed is increased by 25% and your Versatility is increased by 12%. \r\n\r\nAdditionally, Polymorph and Mass Polymorph no longer heal enemies.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -977,10 +897,10 @@
       ]
     },
     {
-      "talentId": 173,
-      "spellId": 198912,
-      "name": "Shield Bash",
-      "description": "When Shield Slam is used on targets that are casting, it reduces their damage done by 15% for 8 sec and the cooldown is instantly reset.",
+      "talentId": 5600,
+      "spellId": 410939,
+      "name": "Ethereal Blink",
+      "description": "Blink and Shimmer apply Slow at 100% effectiveness to all enemies you Blink through. For each enemy you Blink through, the cooldown of Blink and Shimmer are reduced by 1 sec, up to 5 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -990,10 +910,10 @@
       ]
     },
     {
-      "talentId": 175,
-      "spellId": 199045,
-      "name": "Thunderstruck",
-      "description": "After casting Avatar, Shockwave, or Stormbolt, your next Thunder Clap roots all targets it damages for 4 sec.",
+      "talentId": 5622,
+      "spellId": 415945,
+      "name": "Improved Mass Invisibility",
+      "description": "The cooldown of Mass Invisibility is reduced by 3 min and it can affect allies in combat.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -1003,101 +923,10 @@
       ]
     },
     {
-      "talentId": 831,
-      "spellId": 206572,
-      "name": "Dragon Charge",
-      "description": "Run at high speed at a distance in front of you. All enemies in your path will take 24 Physical damage and be knocked back.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 833,
-      "spellId": 213915,
-      "name": "Rebound",
-      "description": "Spell Reflection reflects the next 2 incoming spells cast on you and reflected spells deal 100% extra damage to the attacker.\r\n\r\nSpell Reflection's cooldown is increased by 10 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 845,
-      "spellId": 205800,
-      "name": "Oppressor",
-      "description": "You focus the assault on this target, increasing their damage taken by 3% for 6 sec. Each unique player that attacks the target increases the damage taken by an additional 3%, stacking up to 5 times.\r\n\r\nYour melee attacks refresh the duration of Focused Assault.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5374,
-      "spellId": 329033,
-      "name": "Demolition",
-      "description": "Reduces the cooldown of your Shattering Throw or Wrecking Throw by 50% and increases its damage to absorb shields by an additional 250%.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5626,
-      "spellId": 424654,
-      "name": "Safeguard",
-      "description": "Intervene now has 2 charges and reduces the ally's damage taken by 20% for 5 sec.\r\n\r\nIntervene's cooldown is increased by 10 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5627,
-      "spellId": 236308,
-      "name": "Storm of Destruction",
-      "description": "Bladestorm, Ravager, and Demolish now snare all targets you hit by 60% for 6 sec and decrease their healing taken by 50% for 10 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5703,
-      "spellId": 1227751,
-      "name": "Berserker Roar",
-      "description": "Berserker Shout also reduces the duration of the next crowd control effect within 5 sec by 50% on group members within 12 yds.\r\n",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5715,
-      "spellId": 1234791,
-      "name": "Power Through Adversity",
-      "description": "Second Wind reduces damage taken by 10% to 40%, with larger attacks being reduced by more.\r\n\r\nWhile Shield Wall is active, healing reductions do not apply to you.",
+      "talentId": 5708,
+      "spellId": 1220739,
+      "name": "Overpowered Barrier",
+      "description": "Your barriers absorb 60% more damage and have an additional effect, but last 4 sec.\r\n\r\n Prismatic Barrier\r\nIf the barrier is fully consumed, gain Time Warp for 6 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -1204,151 +1033,6 @@
       "spellId": 426438,
       "name": "Improved Mass Dispel",
       "description": "Reduces the cooldown of Mass Dispel by 60 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    }
-  ],
-  "265": [
-    {
-      "talentId": 15,
-      "spellId": 248855,
-      "name": "Gateway Mastery",
-      "description": "Increases the range of your Demonic Gateway by 20 yards, and reduces the cast time by 30%. Reduces the time between how often players can take your Demonic Gateway by 30 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 16,
-      "spellId": 212371,
-      "name": "Rot and Decay",
-      "description": "Shadow Bolt damage increases the duration of your Corruption and Agony on the target by 2.0 sec.\r\n\r\nDrain Life and Drain Soul damage increases the duration of your Corruption and Agony on the target by 1.0 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 18,
-      "spellId": 212295,
-      "name": "Nether Ward",
-      "description": "Surrounds the caster with a shield that lasts 3 sec, reflecting all harmful spells cast on you.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 19,
-      "spellId": 221711,
-      "name": "Essence Drain",
-      "description": "Whenever you heal yourself with Drain Life, the enemy target deals 9% reduced damage to you for 10 sec. Stacks up to 4 times.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5386,
-      "spellId": 426352,
-      "name": "Jinx",
-      "description": "Casting a curse now applies Corruption and Agony to your target, but curses now costs 1 Soul Shard.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5392,
-      "spellId": 353294,
-      "name": "Shadow Rift",
-      "description": "Conjure a Shadow Rift at the target location lasting 2 sec. Enemy players within the rift when it expires are teleported to your Demonic Circle.\r\n\r\nMust be within 40 yds of your Demonic Circle to cast.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5546,
-      "spellId": 353753,
-      "name": "Bonds of Fel",
-      "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 12 yd radius they explode, dealing 5,544 Fire damage split amongst all nearby enemies.",
-      "castTime": "1.5 sec cast",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5579,
-      "spellId": 409835,
-      "name": "Impish Instincts",
-      "description": "Taking direct Physical damage reduces the cooldown of Demonic Circle by 3 sec.\r\n\r\nCannot occur more than once every 5 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5608,
-      "spellId": 410598,
-      "name": "Soul Rip",
-      "description": "Fracture the soul of up to 3 target players within 20 yds into the shadows, reducing their damage done by 25% and healing received by 25% for 8 sec. Souls are fractured up to 20 yds from the player's location.\r\n\r\nPlayers can retrieve their souls to remove this effect.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5662,
-      "spellId": 386951,
-      "name": "Soul Swap",
-      "description": "Copies your damage over time effects and Haunt from the target, preserving their duration.\r\n\r\nYour next use of Soul Swap within 10 sec will exhale a copy damage of the effects onto a new target.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5695,
-      "spellId": 1218692,
-      "name": "Bloodstones",
-      "description": "Your Healthstones are replaced with Bloodstones which increase their user's haste by 20% for 12 sec instead of healing.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -1555,6 +1239,322 @@
       ]
     }
   ],
+  "73": [
+    {
+      "talentId": 24,
+      "spellId": 236077,
+      "name": "Disarm",
+      "description": "Disarm the enemy's weapons and shield for 5 sec. Disarmed creatures deal significantly reduced damage.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 168,
+      "spellId": 213871,
+      "name": "Bodyguard",
+      "description": "Protect an ally, causing 40% of all Physical damage they take to be transfered to you. When the target takes Physical damage, your Shield Slam cooldown has a 30% chance to be reset. Bodyguard is cancelled if the target is further than 20 yards from you. Lasts 1 min.\r\n\r\nOnly one target can be Bodyguarded at a time.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 171,
+      "spellId": 199023,
+      "name": "Morale Killer",
+      "description": "Reduces the cooldown of Demoralizing Shout by 15 sec, and Demoralizing Shout now reduces the damage enemies deal to all targets, not just you.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 173,
+      "spellId": 198912,
+      "name": "Shield Bash",
+      "description": "When Shield Slam is used on targets that are casting, it reduces their damage done by 15% for 8 sec and the cooldown is instantly reset.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 175,
+      "spellId": 199045,
+      "name": "Thunderstruck",
+      "description": "After casting Avatar, Shockwave, or Stormbolt, your next Thunder Clap roots all targets it damages for 4 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 831,
+      "spellId": 206572,
+      "name": "Dragon Charge",
+      "description": "Run at high speed at a distance in front of you. All enemies in your path will take 24 Physical damage and be knocked back.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 833,
+      "spellId": 213915,
+      "name": "Rebound",
+      "description": "Spell Reflection reflects the next 2 incoming spells cast on you and reflected spells deal 100% extra damage to the attacker.\r\n\r\nSpell Reflection's cooldown is increased by 10 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 845,
+      "spellId": 205800,
+      "name": "Oppressor",
+      "description": "You focus the assault on this target, increasing their damage taken by 3% for 6 sec. Each unique player that attacks the target increases the damage taken by an additional 3%, stacking up to 5 times.\r\n\r\nYour melee attacks refresh the duration of Focused Assault.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5374,
+      "spellId": 329033,
+      "name": "Demolition",
+      "description": "Reduces the cooldown of your Shattering Throw or Wrecking Throw by 50% and increases its damage to absorb shields by an additional 250%.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5626,
+      "spellId": 424654,
+      "name": "Safeguard",
+      "description": "Intervene now has 2 charges and reduces the ally's damage taken by 20% for 5 sec.\r\n\r\nIntervene's cooldown is increased by 10 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5627,
+      "spellId": 236308,
+      "name": "Storm of Destruction",
+      "description": "Bladestorm, Ravager, and Demolish now snare all targets you hit by 60% for 6 sec and decrease their healing taken by 50% for 10 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5703,
+      "spellId": 1227751,
+      "name": "Berserker Roar",
+      "description": "Berserker Shout also reduces the duration of the next crowd control effect within 5 sec by 50% on group members within 12 yds.\r\n",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5715,
+      "spellId": 1234791,
+      "name": "Power Through Adversity",
+      "description": "Second Wind reduces damage taken by 10% to 40%, with larger attacks being reduced by more.\r\n\r\nWhile Shield Wall is active, healing reductions do not apply to you.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
+  "265": [
+    {
+      "talentId": 15,
+      "spellId": 248855,
+      "name": "Gateway Mastery",
+      "description": "Increases the range of your Demonic Gateway by 20 yards, and reduces the cast time by 30%. Reduces the time between how often players can take your Demonic Gateway by 30 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 16,
+      "spellId": 212371,
+      "name": "Rot and Decay",
+      "description": "Shadow Bolt damage increases the duration of your Corruption and Agony on the target by 2.0 sec.\r\n\r\nDrain Life and Drain Soul damage increases the duration of your Corruption and Agony on the target by 1.0 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 18,
+      "spellId": 212295,
+      "name": "Nether Ward",
+      "description": "Surrounds the caster with a shield that lasts 3 sec, reflecting all harmful spells cast on you.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 19,
+      "spellId": 221711,
+      "name": "Essence Drain",
+      "description": "Whenever you heal yourself with Drain Life, the enemy target deals 9% reduced damage to you for 10 sec. Stacks up to 4 times.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5386,
+      "spellId": 426352,
+      "name": "Jinx",
+      "description": "Casting a curse now applies Corruption and Agony to your target, but curses now costs 1 Soul Shard.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5392,
+      "spellId": 353294,
+      "name": "Shadow Rift",
+      "description": "Conjure a Shadow Rift at the target location lasting 2 sec. Enemy players within the rift when it expires are teleported to your Demonic Circle.\r\n\r\nMust be within 40 yds of your Demonic Circle to cast.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5546,
+      "spellId": 353753,
+      "name": "Bonds of Fel",
+      "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 12 yd radius they explode, dealing 5,511 Fire damage split amongst all nearby enemies.",
+      "castTime": "1.5 sec cast",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5579,
+      "spellId": 409835,
+      "name": "Impish Instincts",
+      "description": "Taking direct Physical damage reduces the cooldown of Demonic Circle by 3 sec.\r\n\r\nCannot occur more than once every 5 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5608,
+      "spellId": 410598,
+      "name": "Soul Rip",
+      "description": "Fracture the soul of up to 3 target players within 20 yds into the shadows, reducing their damage done by 25% and healing received by 25% for 8 sec. Souls are fractured up to 20 yds from the player's location.\r\n\r\nPlayers can retrieve their souls to remove this effect.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5662,
+      "spellId": 386951,
+      "name": "Soul Swap",
+      "description": "Copies your damage over time effects and Haunt from the target, preserving their duration.\r\n\r\nYour next use of Soul Swap within 10 sec will exhale a copy damage of the effects onto a new target.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5695,
+      "spellId": 1218692,
+      "name": "Bloodstones",
+      "description": "Your Healthstones are replaced with Bloodstones which increase their user's haste by 20% for 12 sec instead of healing.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
   "71": [
     {
       "talentId": 28,
@@ -1664,7 +1664,7 @@
       "talentId": 5679,
       "spellId": 206572,
       "name": "Dragon Charge",
-      "description": "Run at high speed at a distance in front of you. All enemies in your path will take 25 Physical damage and be knocked back.",
+      "description": "Run at high speed at a distance in front of you. All enemies in your path will take 24 Physical damage and be knocked back.",
       "castTime": "Instant",
       "compatibleSlots": [
         1,
@@ -2202,125 +2202,6 @@
       ]
     }
   ],
-  "270": [
-    {
-      "talentId": 70,
-      "spellId": 353584,
-      "name": "Eminence",
-      "description": "Transcendence: Transfer can now be cast if you are stunned. Cooldown reduced by 15 sec if you are not.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 679,
-      "spellId": 353502,
-      "name": "Counteract Magic",
-      "description": "Removing hostile magic effects from a target increases the healing they receive from you by 10% for 10 sec, stacking up to 3 times.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 683,
-      "spellId": 1243418,
-      "name": "Healing Spheres",
-      "description": "Your healing has a chance to coalesces a Healing Sphere out of the mists at your target's location after 1.5 sec. If allies walk through it, they consume the sphere, healing themselves for 1,691 and dispelling all harmful periodic magic effects.\r\n\r\nMaximum of 3 Healing Spheres can be active by the Monk at any given time.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 1928,
-      "spellId": 468430,
-      "name": "Zen Focus Tea",
-      "description": "Thunder Focus Tea provides immunity to Silence and Interrupt effects for 5 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5395,
-      "spellId": 353313,
-      "name": "Peaceweaver",
-      "description": "Revival's cooldown is reduced by 16%, and provides immunity to magical damage and harmful effects for 2 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5398,
-      "spellId": 353361,
-      "name": "Dematerialize",
-      "description": "Demateralize into mist while stunned, reducing damage taken by 30%. Each second you remain stunned reduces this bonus by 10%.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5539,
-      "spellId": 202370,
-      "name": "Mighty Ox Kick",
-      "description": "You perform a Mighty Ox Kick, hurling your enemy a distance behind you.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5603,
-      "spellId": 1243554,
-      "name": "Zen Spheres",
-      "description": "Soothing Mist, Crackling Jade Lightning, and Rising Sun Kick form a sphere of Hope or Despair above their targets. Only one of each sphere can be active at a time.\r\n\r\n Sphere of Hope: Increases your healing done to the target by 10%.\r\n Sphere of Despair: Target deals 3% less damage and takes 10% increased damage from all sources.\r\n",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5642,
-      "spellId": 455945,
-      "name": "Absolute Serenity",
-      "description": "Celestial Conduit now prevents all crowd control for its duration.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    }
-  ],
   "66": [
     {
       "talentId": 90,
@@ -2492,6 +2373,125 @@
       ]
     }
   ],
+  "270": [
+    {
+      "talentId": 70,
+      "spellId": 353584,
+      "name": "Eminence",
+      "description": "Transcendence: Transfer can now be cast if you are stunned. Cooldown reduced by 15 sec if you are not.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 679,
+      "spellId": 353502,
+      "name": "Counteract Magic",
+      "description": "Removing hostile magic effects from a target increases the healing they receive from you by 10% for 10 sec, stacking up to 3 times.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 683,
+      "spellId": 1243418,
+      "name": "Healing Spheres",
+      "description": "Your healing has a chance to coalesces a Healing Sphere out of the mists at your target's location after 1.5 sec. If allies walk through it, they consume the sphere, healing themselves for 1,686 and dispelling all harmful periodic magic effects.\r\n\r\nMaximum of 3 Healing Spheres can be active by the Monk at any given time.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 1928,
+      "spellId": 468430,
+      "name": "Zen Focus Tea",
+      "description": "Thunder Focus Tea provides immunity to Silence and Interrupt effects for 5 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5395,
+      "spellId": 353313,
+      "name": "Peaceweaver",
+      "description": "Revival's cooldown is reduced by 16%, and provides immunity to magical damage and harmful effects for 2 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5398,
+      "spellId": 353361,
+      "name": "Dematerialize",
+      "description": "Demateralize into mist while stunned, reducing damage taken by 30%. Each second you remain stunned reduces this bonus by 10%.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5539,
+      "spellId": 202370,
+      "name": "Mighty Ox Kick",
+      "description": "You perform a Mighty Ox Kick, hurling your enemy a distance behind you.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5603,
+      "spellId": 1243554,
+      "name": "Zen Spheres",
+      "description": "Soothing Mist, Crackling Jade Lightning, and Rising Sun Kick form a sphere of Hope or Despair above their targets. Only one of each sphere can be active at a time.\r\n\r\n Sphere of Hope: Increases your healing done to the target by 10%.\r\n Sphere of Despair: Target deals 3% less damage and takes 10% increased damage from all sources.\r\n",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5642,
+      "spellId": 455945,
+      "name": "Absolute Serenity",
+      "description": "Celestial Conduit now prevents all crowd control for its duration.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
   "254": [
     {
       "talentId": 651,
@@ -2510,7 +2510,7 @@
       "talentId": 653,
       "spellId": 356719,
       "name": "Chimaeral Sting",
-      "description": "Stings the target, dealing 52 Nature damage and initiating a series of venoms. Each lasts 3 sec and applies the next effect after the previous one ends.\r\n\r\n Scorpid Venom:\r\n90% reduced movement speed.\r\n\r\n Spider Venom:\r\nSilenced.\r\n\r\n Viper Venom:\r\n20% reduced damage and healing.",
+      "description": "Stings the target, dealing 51 Nature damage and initiating a series of venoms. Each lasts 3 sec and applies the next effect after the previous one ends.\r\n\r\n Scorpid Venom:\r\n90% reduced movement speed.\r\n\r\n Spider Venom:\r\nSilenced.\r\n\r\n Viper Venom:\r\n20% reduced damage and healing.",
       "castTime": "Instant",
       "compatibleSlots": [
         1,
@@ -2919,7 +2919,7 @@
       "talentId": 697,
       "spellId": 1217017,
       "name": "Thorns",
-      "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 440 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
+      "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 435 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -3168,7 +3168,7 @@
       "talentId": 5698,
       "spellId": 1219122,
       "name": "Preemptive Maneuver",
-      "description": "Feint decreases your damage taken by an additional 40% while stunned and its energy cost is reduced by 30%.",
+      "description": "Feint decreases your damage taken by an additional 25% while stunned and its energy cost is reduced by 30%.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -3696,7 +3696,7 @@
       "talentId": 5699,
       "spellId": 1219122,
       "name": "Preemptive Maneuver",
-      "description": "Feint decreases your damage taken by an additional 40% while stunned and its energy cost is reduced by 30%.",
+      "description": "Feint decreases your damage taken by an additional 25% while stunned and its energy cost is reduced by 30%.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -3934,7 +3934,7 @@
       "talentId": 5640,
       "spellId": 375901,
       "name": "Mindgames",
-      "description": "Assault an enemy's mind, dealing 2,791 Shadow damage and briefly reversing their perception of reality.\r\n\r\nFor 7 sec, the next 9,975 damage they deal will heal their target, and the next 9,975 healing they deal will damage their target.",
+      "description": "Assault an enemy's mind, dealing 2,893 Shadow damage and briefly reversing their perception of reality.\r\n\r\nFor 7 sec, the next 9,975 damage they deal will heal their target, and the next 9,975 healing they deal will damage their target.",
       "castTime": "1.5 sec cast",
       "compatibleSlots": [
         1,
@@ -4001,7 +4001,7 @@
       "talentId": 5447,
       "spellId": 357711,
       "name": "Cascading Horrors",
-      "description": "Voidform sends out slow-moving bolts of Shadow energy at random locations every 0.5 sec for 3 sec, dealing 296 Shadow damage to all targets within 8 yds, and causing them to flee in Horror for 2 sec.",
+      "description": "Voidform sends out slow-moving bolts of Shadow energy at random locations every 0.5 sec for 3 sec, dealing 286 Shadow damage to all targets within 8 yds, and causing them to flee in Horror for 2 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -4053,7 +4053,7 @@
       "talentId": 5638,
       "spellId": 375901,
       "name": "Mindgames",
-      "description": "Assault an enemy's mind, dealing 2,892 Shadow damage and briefly reversing their perception of reality.\r\n\r\nFor 7 sec, the next 9,975 damage they deal will heal their target, and the next 9,975 healing they deal will damage their target.",
+      "description": "Assault an enemy's mind, dealing 2,858 Shadow damage and briefly reversing their perception of reality.\r\n\r\nFor 7 sec, the next 9,975 damage they deal will heal their target, and the next 9,975 healing they deal will damage their target.",
       "castTime": "1.5 sec cast",
       "compatibleSlots": [
         1,
@@ -4094,7 +4094,7 @@
       "talentId": 147,
       "spellId": 198145,
       "name": "System Shock",
-      "description": "Casting Envenom with at least 5 combo points on a target afflicted by your Garrote, Rupture, and lethal poison deals 11 Nature damage, and reduces their movement speed by 90% for 2 sec.",
+      "description": "Casting Envenom with at least 5 combo points on a target afflicted by your Garrote, Rupture, and lethal poison deals 10 Nature damage, and reduces their movement speed by 90% for 2 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -4211,7 +4211,7 @@
       "talentId": 5697,
       "spellId": 1219122,
       "name": "Preemptive Maneuver",
-      "description": "Feint decreases your damage taken by an additional 40% while stunned and its energy cost is reduced by 30%.",
+      "description": "Feint decreases your damage taken by an additional 25% while stunned and its energy cost is reduced by 30%.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -4291,7 +4291,7 @@
       "talentId": 5401,
       "spellId": 353753,
       "name": "Bonds of Fel",
-      "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 12 yd radius they explode, dealing 5,583 Fire damage split amongst all nearby enemies.",
+      "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 12 yd radius they explode, dealing 5,634 Fire damage split amongst all nearby enemies.",
       "castTime": "1.5 sec cast",
       "compatibleSlots": [
         1,
@@ -4397,7 +4397,7 @@
       "talentId": 5545,
       "spellId": 353753,
       "name": "Bonds of Fel",
-      "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 12 yd radius they explode, dealing 5,554 Fire damage split amongst all nearby enemies.",
+      "description": "Encircle enemy players with Bonds of Fel. If any affected player leaves the 12 yd radius they explode, dealing 5,428 Fire damage split amongst all nearby enemies.",
       "castTime": "1.5 sec cast",
       "compatibleSlots": [
         1,
@@ -4674,7 +4674,7 @@
       "talentId": 3731,
       "spellId": 1217017,
       "name": "Thorns",
-      "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 431 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
+      "description": "Casting Barkskin sprouts thorns on you for 12 sec. When victim to melee attacks, thorns deals 436 Nature damage back to the attacker.\r\n\r\nAttackers also have their movement speed reduced by 50% for 4 sec.",
       "castTime": "Passive",
       "compatibleSlots": [
         1,
@@ -5013,6 +5013,112 @@
       ]
     }
   ],
+  "1467": [
+    {
+      "talentId": 5456,
+      "spellId": 383005,
+      "name": "Chrono Loop",
+      "description": "Trap the enemy in a time loop for 5 sec. Afterwards, they are returned to their previous location and health. Cannot reduce an enemy's health below 20%.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5460,
+      "spellId": 378444,
+      "name": "Obsidian Mettle",
+      "description": "While Obsidian Scales is active you gain immunity to interrupt, silence, and pushback effects.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5462,
+      "spellId": 378438,
+      "name": "Scouring Flame",
+      "description": "Fire Breath burns away 2 beneficial Magic effects from all targets.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5464,
+      "spellId": 378441,
+      "name": "Time Stop",
+      "description": "Freeze an ally's timestream for 5 sec. While frozen in time they are invulnerable, cannot act, and auras do not progress.\r\n\r\nYou may reactivate Time Stop to end this effect early.",
+      "castTime": "Instant",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5467,
+      "spellId": 1241352,
+      "name": "Nullifying Shroud",
+      "description": "Verdant Embrace wreathes you in arcane energy, preventing the next full loss of control effect against you. Lasts 3 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5469,
+      "spellId": 378437,
+      "name": "Unburdened Flight",
+      "description": "Hover prevents movement speed from being reduced below 100%.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5556,
+      "spellId": 384689,
+      "name": "Divide and Conquer",
+      "description": "Deep Breath forms curtains of fire, preventing line of sight to enemies outside its walls and burning enemies who walk through them for 2,736 Fire damage. Lasts 6 sec.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "talentId": 5617,
+      "spellId": 415651,
+      "name": "Dreamwalker's Embrace",
+      "description": "Verdant Embrace tethers you to an ally, increasing movement speed by 40% and slowing and siphoning 475 life from enemies who come in contact with the tether.\r\n\r\nThe tether lasts up to 10 sec or until you move more than 30 yards away from your ally.",
+      "castTime": "Passive",
+      "compatibleSlots": [
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
   "1468": [
     {
       "talentId": 5455,
@@ -5122,7 +5228,7 @@
       "talentId": 5711,
       "spellId": 377509,
       "name": "Dream Projection",
-      "description": "Summon a flying projection of yourself that heals allies you pass through for 762. Detonating your projection dispels all nearby allies of Magical effects, and heals for 3,684 over 20 sec.",
+      "description": "Summon a flying projection of yourself that heals allies you pass through for 754. Detonating your projection dispels all nearby allies of Magical effects, and heals for 3,673 over 20 sec.",
       "castTime": "0.5 sec cast",
       "compatibleSlots": [
         1,
@@ -5137,112 +5243,6 @@
       "name": "Emerald Communion",
       "description": "Commune with the Emerald Dream, restoring 20% health and 2% mana every 0.9 sec for 4.5 sec. Overhealing is transferred to an injured ally within 40 yds.\r\n\r\nCastable while stunned, disoriented, incapacitated, or silenced.",
       "castTime": "Channeled",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    }
-  ],
-  "1467": [
-    {
-      "talentId": 5456,
-      "spellId": 383005,
-      "name": "Chrono Loop",
-      "description": "Trap the enemy in a time loop for 5 sec. Afterwards, they are returned to their previous location and health. Cannot reduce an enemy's health below 20%.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5460,
-      "spellId": 378444,
-      "name": "Obsidian Mettle",
-      "description": "While Obsidian Scales is active you gain immunity to interrupt, silence, and pushback effects.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5462,
-      "spellId": 378438,
-      "name": "Scouring Flame",
-      "description": "Fire Breath burns away 2 beneficial Magic effects from all targets.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5464,
-      "spellId": 378441,
-      "name": "Time Stop",
-      "description": "Freeze an ally's timestream for 5 sec. While frozen in time they are invulnerable, cannot act, and auras do not progress.\r\n\r\nYou may reactivate Time Stop to end this effect early.",
-      "castTime": "Instant",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5467,
-      "spellId": 1241352,
-      "name": "Nullifying Shroud",
-      "description": "Verdant Embrace wreathes you in arcane energy, preventing the next full loss of control effect against you. Lasts 3 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5469,
-      "spellId": 378437,
-      "name": "Unburdened Flight",
-      "description": "Hover prevents movement speed from being reduced below 100%.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5556,
-      "spellId": 384689,
-      "name": "Divide and Conquer",
-      "description": "Deep Breath forms curtains of fire, preventing line of sight to enemies outside its walls and burning enemies who walk through them for 2,736 Fire damage. Lasts 6 sec.",
-      "castTime": "Passive",
-      "compatibleSlots": [
-        1,
-        2,
-        3,
-        4
-      ]
-    },
-    {
-      "talentId": 5617,
-      "spellId": 415651,
-      "name": "Dreamwalker's Embrace",
-      "description": "Verdant Embrace tethers you to an ally, increasing movement speed by 40% and slowing and siphoning 475 life from enemies who come in contact with the tether.\r\n\r\nThe tether lasts up to 10 sec or until you move more than 30 yards away from your ally.",
-      "castTime": "Passive",
       "compatibleSlots": [
         1,
         2,
